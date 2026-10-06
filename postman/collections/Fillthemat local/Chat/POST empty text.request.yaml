@@ -1,0 +1,12 @@
+$kind: http-request
+id: aa984b179e8ba5f0a6c83316
+name: POST empty text
+method: POST
+url: '{{baseUrl}}/api/chat'
+description: 'User text empty. Expect 400 { error: "invalid_message" }.'
+body:
+  type: json
+  content: '{"slug":"{{slug}}","preview":true,"resumeToken":"{{resumeToken}}","message":{"id":"{{messageId}}","role":"user","parts":[{"type":"text","text":""}]}}'
+headers:
+  - key: Content-Type
+    value: application/json

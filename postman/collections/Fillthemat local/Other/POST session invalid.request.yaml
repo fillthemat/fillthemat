@@ -1,0 +1,12 @@
+$kind: http-request
+id: 80eab3c18de24ae633fc678b
+name: POST session invalid
+method: POST
+url: '{{baseUrl}}/api/sessions'
+description: 'Missing token. Expect 400 { error: "invalid" }.'
+body:
+  type: json
+  content: '{"slug":"{{slug}}"}'
+headers:
+  - key: Content-Type
+    value: application/json

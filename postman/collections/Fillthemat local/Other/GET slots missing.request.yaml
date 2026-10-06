@@ -1,0 +1,6 @@
+$kind: http-request
+id: 3ece5a8fdcfb568b5aada894
+name: GET slots missing
+method: GET
+url: '{{baseUrl}}/api/slots'
+description: 'Missing slug/offeringId. Expect 400 { error: "invalid" }.'

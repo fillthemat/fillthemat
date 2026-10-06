@@ -1,0 +1,12 @@
+$kind: http-request
+id: ab283fca1fb891df504e4ebe
+name: POST invalid
+method: POST
+url: '{{baseUrl}}/api/chat'
+description: 'Missing resumeToken and message. Expect 400 { error: "invalid" }.'
+body:
+  type: json
+  content: '{"slug":"{{slug}}"}'
+headers:
+  - key: Content-Type
+    value: application/json
