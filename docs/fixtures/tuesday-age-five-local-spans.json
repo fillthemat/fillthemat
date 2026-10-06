@@ -1,0 +1,206 @@
+{
+  "fixture": "local in-memory exporter, NOT Langfuse Cloud",
+  "sessionId": "synthetic-tuesday-age-five",
+  "spans": [
+    {
+      "name": "chat",
+      "traceId": "28c7d8feb283ccbb08c18613f4911f9d",
+      "parentSpanId": "66cbd9261b69facb",
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "mock-provider",
+        "gen_ai.request.model": "mock-model-id",
+        "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Are there Tuesday times for my five-year-old?\"}]}]",
+        "gen_ai.tool.definitions": "[{\"type\":\"function\",\"name\":\"list_trial_offerings\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"participantAge\":{\"type\":\"number\"}},\"additionalProperties\":false}},{\"type\":\"function\",\"name\":\"list_trial_slots\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"offeringId\":{\"type\":\"string\",\"format\":\"uuid\",\"pattern\":\"^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[phone masked]|ffffffff-ffff-ffff-ffff-ffffffffffff)$\"}},\"required\":[\"offeringId\"],\"additionalProperties\":false}}]",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "gen_ai.client.operation.duration": 0.0000697499999999991,
+        "gen_ai.response.finish_reasons": ["stop"],
+        "gen_ai.response.id": "aitxt-Ju1aHknPMToDNeYxqxiAHhci",
+        "gen_ai.response.model": "mock-model-id",
+        "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"I'll check the slots for you.\"}],\"finish_reason\":\"stop\"}]"
+      }
+    },
+    {
+      "name": "agent_step",
+      "traceId": "28c7d8feb283ccbb08c18613f4911f9d",
+      "parentSpanId": "9eb5753fe7903461",
+      "attributes": {
+        "gen_ai.operation.name": "agent_step",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn"
+      }
+    },
+    {
+      "name": "invoke_agent",
+      "traceId": "28c7d8feb283ccbb08c18613f4911f9d",
+      "parentSpanId": "9d5c370f43a0719e",
+      "attributes": {
+        "gen_ai.operation.name": "invoke_agent",
+        "gen_ai.provider.name": "mock-provider",
+        "gen_ai.request.model": "mock-model-id",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "gen_ai.response.finish_reasons": ["stop"]
+      }
+    },
+    {
+      "name": "booking-chat.turn",
+      "traceId": "28c7d8feb283ccbb08c18613f4911f9d",
+      "parentSpanId": null,
+      "attributes": {
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "langfuse.internal.is_app_root": true,
+        "langfuse.observation.type": "span",
+        "langfuse.observation.input": "Are there Tuesday times for my five-year-old?",
+        "langfuse.observation.output": "I'll check the slots for you."
+      }
+    },
+    {
+      "name": "chat",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "9061a3dfabb463a2",
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "mock-provider",
+        "gen_ai.request.model": "mock-model-id",
+        "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Did you find any Tuesday times?\"}]}]",
+        "gen_ai.tool.definitions": "[{\"type\":\"function\",\"name\":\"list_trial_offerings\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"participantAge\":{\"type\":\"number\"}},\"additionalProperties\":false}},{\"type\":\"function\",\"name\":\"list_trial_slots\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"offeringId\":{\"type\":\"string\",\"format\":\"uuid\",\"pattern\":\"^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[phone masked]|ffffffff-ffff-ffff-ffff-ffffffffffff)$\"}},\"required\":[\"offeringId\"],\"additionalProperties\":false}}]",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "gen_ai.client.operation.duration": 0.00004283399999999915,
+        "gen_ai.response.finish_reasons": ["tool-calls"],
+        "gen_ai.response.id": "aitxt-R4QyS3P2nCk2OORjue7rWYHZ",
+        "gen_ai.response.model": "mock-model-id",
+        "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"synthetic-call-1\",\"name\":\"list_trial_offerings\",\"arguments\":{\"participantAge\":5}}],\"finish_reason\":\"tool_call\"}]"
+      }
+    },
+    {
+      "name": "execute_tool list_trial_offerings",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "9061a3dfabb463a2",
+      "attributes": {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": "list_trial_offerings",
+        "gen_ai.tool.call.id": "synthetic-call-1",
+        "gen_ai.tool.type": "function",
+        "gen_ai.tool.call.arguments": "{\"participantAge\":5}",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "gen_ai.execute_tool.duration": 0.0000191250000000025,
+        "gen_ai.tool.call.result": "{\"offerings\":[{\"id\":\"00000000-0000-4000-8000-000000000005\",\"name\":\"Kids beginner trial\"}]}"
+      }
+    },
+    {
+      "name": "agent_step",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "5a5988bbb67d4ba2",
+      "attributes": {
+        "gen_ai.operation.name": "agent_step",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn"
+      }
+    },
+    {
+      "name": "chat",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "ec038939a86ad7f1",
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "mock-provider",
+        "gen_ai.request.model": "mock-model-id",
+        "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Did you find any Tuesday times?\"}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"synthetic-call-1\",\"name\":\"list_trial_offerings\",\"arguments\":{\"participantAge\":5}}]},{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"synthetic-call-1\",\"response\":{\"offerings\":[{\"id\":\"00000000-0000-4000-8000-000000000005\",\"name\":\"Kids beginner trial\"}]}}]}]",
+        "gen_ai.tool.definitions": "[{\"type\":\"function\",\"name\":\"list_trial_offerings\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"participantAge\":{\"type\":\"number\"}},\"additionalProperties\":false}},{\"type\":\"function\",\"name\":\"list_trial_slots\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"offeringId\":{\"type\":\"string\",\"format\":\"uuid\",\"pattern\":\"^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[phone masked]|ffffffff-ffff-ffff-ffff-ffffffffffff)$\"}},\"required\":[\"offeringId\"],\"additionalProperties\":false}}]",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "gen_ai.client.operation.duration": 0.000033332999999998944,
+        "gen_ai.response.finish_reasons": ["tool-calls"],
+        "gen_ai.response.id": "aitxt-Cb6G8k54mZokpYUCQcD6fa9X",
+        "gen_ai.response.model": "mock-model-id",
+        "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"synthetic-call-2\",\"name\":\"list_trial_slots\",\"arguments\":{\"offeringId\":\"00000000-0000-4000-8000-000000000005\"}}],\"finish_reason\":\"tool_call\"}]"
+      }
+    },
+    {
+      "name": "execute_tool list_trial_slots",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "ec038939a86ad7f1",
+      "attributes": {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": "list_trial_slots",
+        "gen_ai.tool.call.id": "synthetic-call-2",
+        "gen_ai.tool.type": "function",
+        "gen_ai.tool.call.arguments": "{\"offeringId\":\"00000000-0000-4000-8000-000000000005\"}",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "gen_ai.execute_tool.duration": 0.0000379999999999967,
+        "gen_ai.tool.call.result": "{\"slots\":[{\"day\":\"Tuesday\",\"time\":\"16:00\"}]}"
+      }
+    },
+    {
+      "name": "agent_step",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "5a5988bbb67d4ba2",
+      "attributes": {
+        "gen_ai.operation.name": "agent_step",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn"
+      }
+    },
+    {
+      "name": "chat",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "66548c7d56dee989",
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "mock-provider",
+        "gen_ai.request.model": "mock-model-id",
+        "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Did you find any Tuesday times?\"}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"synthetic-call-1\",\"name\":\"list_trial_offerings\",\"arguments\":{\"participantAge\":5}}]},{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"synthetic-call-1\",\"response\":{\"offerings\":[{\"id\":\"00000000-0000-4000-8000-000000000005\",\"name\":\"Kids beginner trial\"}]}}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"synthetic-call-2\",\"name\":\"list_trial_slots\",\"arguments\":{\"offeringId\":\"00000000-0000-4000-8000-000000000005\"}}]},{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"synthetic-call-2\",\"response\":{\"slots\":[{\"day\":\"Tuesday\",\"time\":\"16:00\"}]}}]}]",
+        "gen_ai.tool.definitions": "[{\"type\":\"function\",\"name\":\"list_trial_offerings\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"participantAge\":{\"type\":\"number\"}},\"additionalProperties\":false}},{\"type\":\"function\",\"name\":\"list_trial_slots\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"offeringId\":{\"type\":\"string\",\"format\":\"uuid\",\"pattern\":\"^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[phone masked]|ffffffff-ffff-ffff-ffff-ffffffffffff)$\"}},\"required\":[\"offeringId\"],\"additionalProperties\":false}}]",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "gen_ai.client.operation.duration": 0.0000410839999999979,
+        "gen_ai.response.finish_reasons": ["stop"],
+        "gen_ai.response.id": "aitxt-7uNPLMS9s46ASJHPp7F5Akrg",
+        "gen_ai.response.model": "mock-model-id",
+        "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Tuesday at 16:00 is available.\"}],\"finish_reason\":\"stop\"}]"
+      }
+    },
+    {
+      "name": "agent_step",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "5a5988bbb67d4ba2",
+      "attributes": {
+        "gen_ai.operation.name": "agent_step",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn"
+      }
+    },
+    {
+      "name": "invoke_agent",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": "20d9bb6385a92552",
+      "attributes": {
+        "gen_ai.operation.name": "invoke_agent",
+        "gen_ai.provider.name": "mock-provider",
+        "gen_ai.request.model": "mock-model-id",
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "gen_ai.response.finish_reasons": ["stop"]
+      }
+    },
+    {
+      "name": "booking-chat.turn",
+      "traceId": "151f30a018448fa732e4a5a2de8c9ffa",
+      "parentSpanId": null,
+      "attributes": {
+        "session.id": "synthetic-tuesday-age-five",
+        "langfuse.trace.name": "booking-chat.turn",
+        "langfuse.internal.is_app_root": true,
+        "langfuse.observation.type": "span",
+        "langfuse.observation.input": "Did you find any Tuesday times?",
+        "langfuse.observation.output": "Tuesday at 16:00 is available."
+      }
+    }
+  ]
+}

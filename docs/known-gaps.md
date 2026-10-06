@@ -12,11 +12,11 @@ Per-school and per-IP booking quotas are not stored or enforced. Email/recipient
 
 ## Chat refresh recovery
 
-GET `/api/chat` exists and can return canonical history, but the prospect client fetches and discards the payload — `useChat` starts empty on reload and the transcript is not hydrated into the UI.
+GET `/api/chat` returns canonical history and the prospect client hydrates it on refresh. Edge cases around concurrent refresh during an unfinished generation and booking preparation derived from historical tool output still need focused end-to-end tests.
 
 ## Privacy-safe chat telemetry
 
-No telemetry table exists in the `app` schema. Model, time-to-first-token, usage, step count, finish/abort, and tool name/result code are not persisted for privacy-safe analytics.
+No telemetry table exists in the `app` schema. The optional, authenticated synthetic preview conversation debugger exports opted-in tests to Langfuse, **not** general production analytics or historical traces. Privacy-safe aggregate model/latency/usage metrics for real traffic are still not persisted. Langfuse retention/deletion and a real hosted smoke must be verified by an operator before enabling capture; hard kills and some stale-lock cases can leave unknown outcomes. See `docs/conversation-debugger-runbook.md`.
 
 ## Integration test coverage
 

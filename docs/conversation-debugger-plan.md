@@ -1,6 +1,14 @@
 # Conversation debugger — implementation handoff
 
-Status: **planned; not implemented**.
+Status: **local implementation in progress; hosted rollout NOT approved or verified**. An opt-in debug gate, signed fresh-conversation context, UI controls, AI SDK 7 tracing and fail-closed exporter are implemented in this worktree. Local scripted spans pass, but there is no Langfuse Cloud/Vercel runtime or retention proof. Do not enable capture until the operator checklist in `docs/conversation-debugger-runbook.md` is satisfied.
+
+## Spike findings (worktree `conversation-debugger`)
+
+- Pinned `@langfuse/vercel-ai-sdk`, `@langfuse/otel`, `@langfuse/tracing` 5.13.0 and the isolated OpenTelemetry Node tracer/exporter packages. No extra model provider or change to AI Gateway.
+- `bun scripts/conversation-debugger-spike.ts` and `node --experimental-strip-types scripts/conversation-debugger-spike.ts` pass: two concurrent synthetic two-step conversations each export two `chat` spans, one `execute_tool` span and a root sharing one trace ID; the second call contains the first tool result. A streamed single-step call retains its root, and an explicitly opted-out generation exports no spans. The script uses the Langfuse span processor with an in-memory exporter, **not** Cloud.
+- Langfuse 5.13.0's `LangfuseSpanProcessor.mask` processes only six Langfuse-specific input/output/metadata attributes. AI SDK 7 emits `gen_ai.input.messages`, `gen_ai.output.messages`, tool arguments/results and more outside those six fields. **Do not rely on `mask` alone**; the app now uses a fail-closed allowlisting exporter tested at the delegate boundary (including nested payloads, errors, and reasoning). Per-call integration avoids enabling telemetry globally. The spike does not make any Cloud calls.
+- The Langfuse SDK 7 integration works in standalone Bun and Node probes using an isolated tracer and a test-only in-memory exporter; a synthetic stalled turn and recovery share one session with distinct trace IDs. Next.js dev on Bun works with capture **off**, but a real model call, hosted Vercel streaming, exporter delivery, Cloud session URL and retention remain unverified. Provisioning/deployment require operator approval. No Langfuse credentials have been configured and no user content has been exported.
+- Current implementation deviations: `context.load` is recorded as a duration on the root after it finishes, not a child observation; persistence outcome is recorded on the root, not as a separate child span. Raw provider finish reasons and Gateway deep links are not exported. These and the remaining failure-path tests must be addressed or accepted before claiming the full definition of done.
 
 ## Goal
 

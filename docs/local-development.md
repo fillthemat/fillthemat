@@ -53,6 +53,7 @@ All optional. The app degrades cleanly without them.
 | Real booking chat | `bunx vercel env pull` (provides `VERCEL_OIDC_TOKEN`) and a free-tier-allowed `BOOKING_AGENT_MODEL` | `/api/chat` returns a deterministic stub |
 | Continue with Google | Replace the placeholders in `supabase/.env` with a real Web client (callback `http://127.0.0.1:54321/auth/v1/callback`), then re-run `bun run setup` | Email sign-in still works; Google is disabled |
 | Real WhatsApp sends | Set `WHATSAPP_SYSTEM_USER_TOKEN` (and optionally `WHATSAPP_APP_SECRET` / `WHATSAPP_VERIFY_TOKEN`) | Webhook + worker use dev-stub values; outbound send is a no-op log |
+| Synthetic conversation debugger | Only after the retention/privacy prerequisites in `docs/conversation-debugger-runbook.md`: enable `CHAT_DEBUG_CAPTURE_ENABLED`, owner UUID allowlist, signed-context secret, and server-only Langfuse Cloud credentials/project | No tracing or debug UI; ordinary chat still works |
 
 ## Checks
 

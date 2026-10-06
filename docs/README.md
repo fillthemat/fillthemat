@@ -6,7 +6,8 @@ Short guide to what is current versus historical. Treat only the files below as 
 
 - `local-development.md` — scripted local stack how-to (`bun run setup`, seed credentials, worktree ports).
 - `known-gaps.md` — still-true remaining work.
-- `conversation-debugger-plan.md` — implementation handoff for opt-in preview conversation timelines, Langfuse tracing, and regression-case capture (planned).
+- `conversation-debugger-plan.md` — opt-in preview debugger contract and remaining hosted verification work (local implementation in progress).
+- `conversation-debugger-runbook.md` — synthetic-debug operator setup, inspection, retention/deletion and rollback; capture stays off until hosted approval.
 - `v1-deploy-current.md` — founder-alpha hosted deploy.
 - `prod-account-cutover.md` — move production vendors off personal email onto `admin@fillthemat.com` + company bank.
 - `product-brief.md` — product intent.

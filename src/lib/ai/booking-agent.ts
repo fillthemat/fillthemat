@@ -1,4 +1,11 @@
-import { gateway, isStepCount, ToolLoopAgent, tool } from "ai";
+import {
+  gateway,
+  isStepCount,
+  type LanguageModel,
+  type Telemetry,
+  ToolLoopAgent,
+  tool,
+} from "ai";
 import { z } from "zod";
 import type { School, TrialOffering, TrialWindow } from "@/db/schema";
 import {
@@ -13,6 +20,14 @@ import { buildBookingAgentInstructions } from "./system-prompt";
 export const BOOKING_AGENT_MODEL =
   process.env.BOOKING_AGENT_MODEL || "anthropic/claude-sonnet-4.6";
 
+export type BookingTraceState = {
+  integration: Telemetry;
+  stepCount: number;
+  stepLimitTriggered: boolean;
+  generationOutcome: "pending" | "complete" | "aborted" | "failed";
+  finishReason?: string;
+};
+
 export function createBookingAgent({
   school,
   offerings,
@@ -20,6 +35,8 @@ export function createBookingAgent({
   occurrences,
   faqs,
   now,
+  trace,
+  model = gateway(BOOKING_AGENT_MODEL),
 }: {
   school: School;
   offerings: TrialOffering[];
@@ -27,9 +44,39 @@ export function createBookingAgent({
   occurrences: SlotOccurrence[];
   faqs: Array<{ question: string; answer: string }>;
   now: Date;
+  trace?: BookingTraceState;
+  model?: LanguageModel;
 }) {
+  const stepCap = isStepCount(MAX_AGENT_STEPS);
   return new ToolLoopAgent({
-    model: gateway(BOOKING_AGENT_MODEL),
+    telemetry: trace
+      ? {
+          functionId: "booking-agent",
+          integrations: [
+            trace.integration,
+            {
+              onAbort: () => {
+                trace.generationOutcome = "aborted";
+              },
+              onError: () => {
+                trace.generationOutcome = "failed";
+              },
+            },
+          ],
+        }
+      : { isEnabled: false },
+    onStepEnd: trace
+      ? () => {
+          trace.stepCount += 1;
+        }
+      : undefined,
+    onEnd: trace
+      ? ({ finishReason }) => {
+          trace.generationOutcome = "complete";
+          trace.finishReason = finishReason;
+        }
+      : undefined,
+    model,
     instructions: buildBookingAgentInstructions({
       name: school.name,
       timezone: school.timezone,
@@ -45,7 +92,11 @@ export function createBookingAgent({
       agentInstructions: school.agentInstructions,
       faqs,
     }),
-    stopWhen: isStepCount(MAX_AGENT_STEPS),
+    stopWhen: ({ steps }) => {
+      const stopped = stepCap({ steps });
+      if (stopped && trace) trace.stepLimitTriggered = true;
+      return stopped;
+    },
     providerOptions: {
       gateway: {
         tags: ["feature:booking-chat"],

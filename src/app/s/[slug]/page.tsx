@@ -3,6 +3,8 @@ import { BookingChat } from "@/components/booking-chat";
 import { LandingSession } from "@/components/landing-session";
 import { getOwnedSchool } from "@/lib/auth/current-school";
 import { getVerifiedClaims } from "@/lib/auth/current-user";
+import { isLocalAiStub } from "@/lib/dev-flags";
+import { debugOwner } from "@/lib/observability/debug-context";
 import { getSchoolBySlug, loadSchoolCatalog } from "@/lib/schools/public";
 
 export default async function PublicSchoolPage({
@@ -52,6 +54,9 @@ export default async function PublicSchoolPage({
         offerings={catalog.offerings}
         welcomeMessage={school.welcomeMessage}
         preview={isPreview || !published}
+        debugAvailable={
+          isPreview && !isLocalAiStub() && Boolean(await debugOwner(school))
+        }
       />
     </main>
   );

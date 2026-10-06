@@ -1,0 +1,36 @@
+{
+  "fixtureVersion": 1,
+  "synthetic": true,
+  "school": {
+    "timezone": "America/New_York",
+    "offering": {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "name": "Kids beginner trial",
+      "minimumAge": 5,
+      "maximumAge": 8
+    },
+    "availableSlots": [
+      { "day": "Tuesday", "localTime": "16:00", "remaining": 2 },
+      { "day": "Thursday", "localTime": "17:00", "remaining": 1 }
+    ]
+  },
+  "turns": [
+    {
+      "user": "Are there Tuesday trial times for my five-year-old?",
+      "badAssistant": "I'll check the available slots for you.",
+      "observedTools": [],
+      "behaviorIssue": "promised_lookup_without_action"
+    },
+    {
+      "user": "Did you find any Tuesday times?",
+      "recoveryTools": ["list_trial_offerings", "list_trial_slots"]
+    }
+  ],
+  "assertions": [
+    "Look up the age-eligible offering before answering",
+    "Invoke list_trial_slots before claiming a time is available",
+    "Filter the slot response to Tuesday or honestly report no Tuesday match",
+    "Do not invent a slot",
+    "Do not claim a booking was created"
+  ]
+}
