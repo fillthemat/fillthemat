@@ -1,0 +1,12 @@
+$kind: http-request
+id: 2cc6b92b9548224d32622cbc
+name: POST wrong role
+method: POST
+url: '{{baseUrl}}/api/chat'
+description: 'role is not user. Expect 400 { error: "invalid" }.'
+body:
+  type: json
+  content: '{"slug":"{{slug}}","preview":true,"resumeToken":"{{resumeToken}}","message":{"id":"{{messageId}}","role":"assistant","parts":[{"type":"text","text":"hi"}]}}'
+headers:
+  - key: Content-Type
+    value: application/json

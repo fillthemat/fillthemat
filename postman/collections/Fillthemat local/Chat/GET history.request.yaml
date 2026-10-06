@@ -1,0 +1,13 @@
+$kind: http-request
+id: cbba389556a9669b6750f025
+name: GET history
+method: GET
+url: '{{baseUrl}}/api/chat?slug={{slug}}&resumeToken={{resumeToken}}&preview=1'
+queryParams:
+  - key: slug
+    value: '{{slug}}'
+  - key: resumeToken
+    value: '{{resumeToken}}'
+  - key: preview
+    value: '1'
+description: Same conversation as POST valid (same slug + resumeToken). Send this after each POST to see the thread grow.

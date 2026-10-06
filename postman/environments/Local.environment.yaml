@@ -1,0 +1,20 @@
+name: Local
+values:
+  - key: baseUrl
+    value: http://127.0.0.1:3000
+    enabled: true
+  - key: slug
+    value: demo
+    enabled: true
+  - key: preview
+    value: 'true'
+    enabled: true
+  - key: resumeToken
+    value: local-postman-token
+    enabled: true
+  - key: messageId
+    value: m1
+    enabled: true
+  - key: userText
+    value: What classes do you offer?
+    enabled: true

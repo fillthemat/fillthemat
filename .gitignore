@@ -63,3 +63,4 @@ supabase/.env
 .pi/skills/
 .pi/settings.json
 .claude/
+.env*

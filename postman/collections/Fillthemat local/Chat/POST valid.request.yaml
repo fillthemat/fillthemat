@@ -1,0 +1,37 @@
+$kind: http-request
+id: 76f205be5b4038b9520a1b0a
+name: POST valid
+method: POST
+url: '{{baseUrl}}/api/chat'
+description: Simulate the landing chat. 1) Select the Production environment. 2) Set slug to a published school and userText to your message. 3) Send — a new messageId is generated each time. 4) Open GET history with the same resumeToken to read the transcript. URL alone is not enough; an empty body 500s.
+body:
+  type: json
+  content: '{"slug":"{{slug}}","resumeToken":"{{resumeToken}}","message":{"id":"{{messageId}}","role":"user","parts":[{"type":"text","text":"{{userText}}"}]}}'
+headers:
+  - key: Content-Type
+    value: application/json
+scripts:
+  - type: beforeRequest
+    code: |
+      if (!pm.environment.get("messageId") || pm.environment.get("messageId") === "m1") {
+        // keep existing if they set one, but always unique per send
+      }
+      pm.environment.set("messageId", "m-" + Date.now());
+      if (!pm.environment.get("resumeToken")) {
+        pm.environment.set("resumeToken", "postman-" + Date.now());
+      }
+    language: text/javascript
+  - type: afterResponse
+    code: |
+      if (pm.response.code === 500) {
+        pm.test("POST /api/chat needs a JSON body", () => {
+          throw new Error(
+            "500 is request.json() dying on an empty body. Open this collection request (not a blank tab), Body → raw JSON, and select the Production/Local environment so {{slug}}, {{resumeToken}}, {{userText}} resolve.",
+          );
+        });
+      } else {
+        pm.test("not an empty-body 500", () => {
+          pm.expect(pm.response.code).to.not.equal(500);
+        });
+      }
+    language: text/javascript

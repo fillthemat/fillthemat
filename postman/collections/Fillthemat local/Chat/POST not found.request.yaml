@@ -1,0 +1,12 @@
+$kind: http-request
+id: a5038b990aeae54f56ed0bb8
+name: POST not found
+method: POST
+url: '{{baseUrl}}/api/chat'
+description: 'Unknown slug. Expect 404 { error: "not_found" }.'
+body:
+  type: json
+  content: '{"slug":"no-such-school","preview":true,"resumeToken":"{{resumeToken}}","message":{"id":"{{messageId}}","role":"user","parts":[{"type":"text","text":"hi"}]}}'
+headers:
+  - key: Content-Type
+    value: application/json

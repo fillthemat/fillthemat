@@ -1,0 +1,6 @@
+$kind: http-request
+id: 5376fb143b0bd016a9fcaf49
+name: GET missing params
+method: GET
+url: '{{baseUrl}}/api/chat'
+description: 'No slug/resumeToken. Expect 400 { error: "invalid" }. The chat UI GET path would silently return.'

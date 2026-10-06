@@ -1,0 +1,12 @@
+$kind: http-request
+id: 55531b32d54792c31800d722
+name: POST duplicate
+method: POST
+url: '{{baseUrl}}/api/chat'
+description: 'Same message.id as a previous POST valid. Expect 409 { error: "duplicate" }.'
+body:
+  type: json
+  content: '{"slug":"{{slug}}","preview":true,"resumeToken":"{{resumeToken}}","message":{"id":"{{messageId}}","role":"user","parts":[{"type":"text","text":"What classes do you offer?"}]}}'
+headers:
+  - key: Content-Type
+    value: application/json
