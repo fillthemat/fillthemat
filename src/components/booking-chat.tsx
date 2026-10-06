@@ -59,7 +59,7 @@ export function BookingChat({
     [slug, preview],
   );
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, setMessages } = useChat({
     transport,
   });
 
@@ -73,9 +73,10 @@ export function BookingChat({
       const payload = (await response.json()) as { messages: UIMessage[] };
       // History is reloaded from the server on refresh via GET; useChat starts empty
       // and the first send continues the server-canonical transcript.
+      setMessages(payload.messages);
       void payload;
     })();
-  }, [resumeToken, slug, preview]);
+  }, [resumeToken, slug, preview, setMessages]);
 
   useEffect(() => {
     for (const message of messages) {
