@@ -41,3 +41,15 @@ At the start of a session:
 4. If the task needs a running app or local Supabase, follow `docs/local-development.md`.
 
 `bun run skills:install` restores every skill listed in the lockfile. Add or refresh skills with `bun run skills:update` or `bunx skills add <package> --skill <name> -y`.
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context layout. See `docs/agents/domain.md`.
