@@ -134,11 +134,56 @@ const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9-]+(?:\.[A-Z0-9-]+)*\.[A-Z]{2,}/gi;
 const PHONE =
   /(?<![\w+-])(?:\+\d{1,3}[ .-]?)?(?:\(\d{1,5}\)[ .-]?)?\d{2,15}(?:[ .-]\d{2,15}){0,5}(?![\w:-])/g;
 
-// Ages, prices, dates and times have too few digits to count as a phone
-// number; 9 to 15 do.
 function maskText(text: string): string {
-  return text.replace(EMAIL, "[email]").replace(PHONE, (match) => {
-    const digits = match.replace(/\D/g, "").length;
-    return digits >= 9 && digits <= 15 ? "[phone]" : match;
+  const withoutEmails = text.replace(EMAIL, "[email]");
+  return withoutEmails.replace(PHONE, (match: string, offset: number) => {
+    // Enough of the text before the number to hold any phone wording.
+    const before = withoutEmails.slice(Math.max(0, offset - 80), offset);
+    return isPhoneNumber(match, before) ? "[phone]" : match;
   });
 }
+
+// Ages, prices, dates and times have too few digits to be a phone number with
+// its area code; 9 to 15 do. A number of 7 or 8 digits, as dialled without
+// the area code, is one only if it's written like one or follows phone
+// wording, and never if it reads as a price, a date or a range.
+function isPhoneNumber(match: string, before: string): boolean {
+  const groups = match.match(/\d+/g) ?? [];
+  const digits = groups.join("").length;
+  if (digits >= 9 && digits <= 15) return true;
+  if (digits < 7 || digits > 8) return false;
+  if (CURRENCY_BEFORE.test(before) || readsAsDateOrRange(groups)) return false;
+  return LOCAL_NUMBER.test(match) || PHONE_WORDING_BEFORE.test(before);
+}
+
+const CURRENCY_BEFORE = /[$£€¥₹] ?$/;
+// A +country code or an (area code), or 3 or 4 digits then 4, as in
+// "555-0142" or "9123 4567".
+const LOCAL_NUMBER = /^[+(]|^\d{3,4}[ -]\d{4}$/;
+// Phone wording, then at most three words on the same line, as in "call me
+// on", "my phone number is" or "WhatsApp:".
+const PHONE_WORDING_BEFORE =
+  /\b(?:(?:tele|cell)?phone[ds]?|tel|mobile|cell|call(?:s|ed|ing)?|text(?:s|ed|ing)?|whats ?app|numbers?)\b[^\w\n]*(?:[a-z']+[^\w\n]+){0,3}$/i;
+
+// A date (2026-10-09, 09.10.2026), or a range of years (2025-2026) or of
+// clock times (0900-1700, 18.00-19.00).
+function readsAsDateOrRange(groups: string[]): boolean {
+  const shape = groups.map((group) => group.length).join("-");
+  if (shape === "4-2-2" || shape === "2-2-4") return true;
+  if (shape === "4-4") {
+    return groups.every(isYear) || groups.every(isClockTime);
+  }
+  if (shape === "2-2-2-2") {
+    const [startHour, startMinute, endHour, endMinute] = groups;
+    return (
+      isClockTime(`${startHour}${startMinute}`) &&
+      isClockTime(`${endHour}${endMinute}`)
+    );
+  }
+  return false;
+}
+
+const isYear = (digits: string) => /^(?:19|20)\d\d$/.test(digits);
+
+const isClockTime = (hhmm: string) =>
+  Number(hhmm.slice(0, 2)) < 24 && Number(hhmm.slice(2)) < 60;
