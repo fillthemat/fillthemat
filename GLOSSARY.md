@@ -21,10 +21,28 @@ The person attending a school's trial class. A participant may be different from
 An enquiry about a trial that the school can follow up on, associated with a contact. A lead is distinct from a booking.
 
 **Conversation**:
-An exchange of messages between a school's assistant and someone interested in a trial.
+An exchange of messages between a school's assistant and someone interested in a trial, over one channel.
+
+**Assistant**:
+The AI that talks with people interested in a trial on a school's behalf. It answers and prepares, but never creates a booking or a lead itself.
+_Avoid_: Agent, booking agent, bot, concierge
+
+**Channel**:
+The medium a conversation happens over: web chat or WhatsApp.
+
+**Turn**:
+One inbound message in a conversation together with the reply to it, whether the assistant or a deterministic platform response produced that reply.
 
 **Booking**:
 A participant's reservation for a specific trial class at a school.
+
+**Booking Intent**:
+A participant, trial offering, and trial occurrence the assistant has proposed but the person has not yet confirmed. It becomes a booking only through the platform's confirmation.
+_Avoid_: Prepared booking, booking capture
+
+**Lead Request**:
+A request to be contacted that the assistant gathered from someone. It becomes a lead only after they consent.
+_Avoid_: Lead capture
 
 **Trial Offering**:
 A class that a school makes available for trials, including its participant eligibility criteria.

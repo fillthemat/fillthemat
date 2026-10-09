@@ -2,6 +2,8 @@
 
 Status: **planned; not implemented**.
 
+> **Superseded in part by [ADR-0001](adr/0001-trace-every-production-turn.md):** every production turn on every channel is traced (with contact masking). The opt-in/allowlist/synthetic-only rules in "Privacy and authorization contract" and the "disable telemetry for WhatsApp" rule no longer apply.
+
 ## Goal
 
 An operator runs a preview conversation, follows a link to its timeline, expands any turn to inspect each model call and tool execution, annotates a bad turn, and compares it with the next recovery turn. The motivating case is: the assistant promises to check slots, stops, and only performs the lookup after another user message.
