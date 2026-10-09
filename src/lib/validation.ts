@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_USER_MESSAGE_CHARS } from "./security/limits";
 import { isValidSlug, normalizeSlug } from "./slug";
 
 export const emailSchema = z
@@ -81,4 +82,26 @@ export const leadRequestSchema = z.object({
   statedNeed: optionalText(1000),
   turnstileToken: z.string().min(1).max(4096),
   landingSessionToken: z.string().min(1).max(256).optional(),
+});
+
+export const chatTranscriptRequestSchema = z.object({
+  slug: z.string().min(1),
+  resumeToken: z.string().min(1),
+  preview: z.boolean().default(false),
+});
+
+export const chatRequestSchema = chatTranscriptRequestSchema.extend({
+  message: z.object({
+    id: z.string().min(1),
+    role: z.literal("user"),
+    parts: z
+      .array(z.object({ type: z.literal("text"), text: z.string() }))
+      .refine((parts) => {
+        const text = parts
+          .map((part) => part.text)
+          .join("")
+          .trim();
+        return text.length > 0 && text.length <= MAX_USER_MESSAGE_CHARS;
+      }, "invalid_message"),
+  }),
 });
