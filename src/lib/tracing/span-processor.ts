@@ -46,7 +46,7 @@ class MaskingSpanProcessor implements SpanProcessor {
         maskSpan(span);
       } catch {
         // Never export what couldn't be masked.
-        console.error("turn-trace: masking failed, span dropped");
+        console.error("tracing: masking failed, span dropped");
         return;
       }
     }

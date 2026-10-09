@@ -129,7 +129,7 @@ export function startTurnTrace({
       ]);
       clearTimeout(timer);
       if (!endedInTime) {
-        console.warn("turn-trace: exporting a turn that has not ended");
+        console.warn("tracing: exporting a turn that has not ended");
       }
       await exportEndedSpans();
     },
@@ -166,7 +166,7 @@ async function exportEndedSpans(): Promise<void> {
   } catch (failure) {
     // Rejects with a list of errors. Log what went wrong, never the spans.
     console.error(
-      "turn-trace: export failed",
+      "tracing: export failed",
       [failure]
         .flat()
         .map((error) =>
