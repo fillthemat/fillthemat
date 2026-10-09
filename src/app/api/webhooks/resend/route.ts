@@ -1,6 +1,4 @@
-import { eq } from "drizzle-orm";
-import { getDb } from "@/db";
-import { emailDeliveries } from "@/db/schema";
+import { recordResendDeliveryEvent } from "@/lib/email/delivery-event";
 import { getResend } from "@/lib/email/resend";
 
 const MAX_BODY_BYTES = 64_000;
@@ -29,27 +27,10 @@ export async function POST(request: Request) {
     return Response.json({ error: "invalid_signature" }, { status: 401 });
   }
 
-  const providerId =
-    "data" in event && event.data && "email_id" in event.data
-      ? String(event.data.email_id)
-      : null;
-  if (!providerId) return Response.json({ ok: true });
-
-  const state =
-    event.type === "email.delivered"
-      ? "delivered"
-      : event.type === "email.bounced"
-        ? "bounced"
-        : event.type === "email.complained"
-          ? "complained"
-          : null;
-  if (!state) return Response.json({ ok: true });
-
-  const db = getDb();
-  await db
-    .update(emailDeliveries)
-    .set({ state, updatedAt: new Date() })
-    .where(eq(emailDeliveries.providerId, providerId));
-
-  return Response.json({ ok: true });
+  const result = await recordResendDeliveryEvent(event);
+  switch (result.status) {
+    case "recorded":
+    case "ignored":
+      return Response.json({ ok: true });
+  }
 }
