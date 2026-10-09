@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   consumeStream,
   convertToModelMessages,
@@ -23,7 +24,16 @@ import {
 import { parseSlotId } from "@/lib/schedule/slot-id";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
 import { defaultLanguageModel } from "./language-model";
-import { buildBookingAgentInstructions } from "./system-prompt";
+import {
+  buildBookingAgentInstructions,
+  PLATFORM_INSTRUCTIONS,
+} from "./system-prompt";
+
+/** A short hash of the platform instructions every reply follows. */
+export const PLATFORM_INSTRUCTIONS_HASH = createHash("sha256")
+  .update(PLATFORM_INSTRUCTIONS)
+  .digest("hex")
+  .slice(0, 12);
 
 export type AssistantSchool = Pick<
   School,
