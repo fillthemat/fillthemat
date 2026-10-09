@@ -1,8 +1,25 @@
 import { type UIMessage, validateUIMessages } from "ai";
 import { addDays } from "date-fns";
-import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { type Database, getDb } from "@/db";
-import { type Conversation, conversations, messages } from "@/db/schema";
+import {
+  type Conversation,
+  conversations,
+  messages,
+  whatsappBookingIntents,
+} from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
 import { TRANSCRIPT_RETENTION_DAYS } from "@/lib/schedule/constants";
 
@@ -27,14 +44,19 @@ function identityPredicate(identity: ConversationIdentity) {
 
 /** Lookup only: never creates a conversation or changes its deadline. */
 export async function findConversation(
-  { schoolId, identity }: ConversationInput,
+  { schoolId, identity, now = new Date() }: ConversationInput,
   db: ConversationDb = getDb(),
 ): Promise<Conversation | undefined> {
   const [conversation] = await db
     .select()
     .from(conversations)
     .where(
-      and(eq(conversations.schoolId, schoolId), identityPredicate(identity)),
+      and(
+        eq(conversations.schoolId, schoolId),
+        identityPredicate(identity),
+        isNull(conversations.endedAt),
+        gt(conversations.expiresAt, now),
+      ),
     )
     .limit(1);
   return conversation;
@@ -47,58 +69,149 @@ export type FindOrCreateConversationResult =
 /** The unique identity indexes settle concurrent first-message inserts. */
 export async function findOrCreateConversation(
   { schoolId, identity, now = new Date() }: ConversationInput,
-  db: ConversationDb = getDb(),
+  db: Database = getDb(),
 ): Promise<FindOrCreateConversationResult> {
-  let conversation = await findConversation({ schoolId, identity }, db);
   const expiresAt = addDays(now, TRANSCRIPT_RETENTION_DAYS);
-  if (!conversation) {
-    const [inserted] = await db
-      .insert(conversations)
-      .values({
-        schoolId,
-        resumeTokenHash: hashToken(
-          identity.channel === "web" ? identity.resumeToken : randomToken(),
-        ),
-        waIdHash:
-          identity.channel === "whatsapp" ? hashWaId(identity.waId) : null,
-        expiresAt,
-      })
-      .onConflictDoNothing(
-        identity.channel === "web"
-          ? { target: conversations.resumeTokenHash }
-          : {
-              target: [conversations.schoolId, conversations.waIdHash],
-              where: sql`${conversations.waIdHash} IS NOT NULL`,
-            },
-      )
-      .returning();
-    conversation =
-      inserted ?? (await findConversation({ schoolId, identity }, db));
-  }
-  if (!conversation) {
-    if (identity.channel === "web") {
-      return { ok: false, reason: "invalid_conversation" };
+  return db.transaction(async (tx) => {
+    for (;;) {
+      // Even an ended token belongs to its original school. It must never be
+      // adopted by another school after the active-only index releases it.
+      if (identity.channel === "web") {
+        const [owner] = await tx
+          .select({ schoolId: conversations.schoolId })
+          .from(conversations)
+          .where(identityPredicate(identity))
+          .limit(1);
+        if (owner && owner.schoolId !== schoolId) {
+          return { ok: false, reason: "invalid_conversation" };
+        }
+      }
+      const [current] = await tx
+        .select()
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.schoolId, schoolId),
+            identityPredicate(identity),
+            isNull(conversations.endedAt),
+          ),
+        )
+        .limit(1);
+      if (current && current.expiresAt > now)
+        return { ok: true, conversation: current };
+      if (current)
+        await endMatchingConversations(
+          and(
+            eq(conversations.id, current.id),
+            lte(conversations.expiresAt, now),
+          ),
+          "inactivity",
+          now,
+          tx,
+        );
+      const [inserted] = await tx
+        .insert(conversations)
+        .values({
+          schoolId,
+          resumeTokenHash: hashToken(
+            identity.channel === "web" ? identity.resumeToken : randomToken(),
+          ),
+          waIdHash:
+            identity.channel === "whatsapp" ? hashWaId(identity.waId) : null,
+          expiresAt,
+        })
+        .onConflictDoNothing(
+          identity.channel === "web"
+            ? {
+                target: conversations.resumeTokenHash,
+                where: sql`${conversations.endedAt} IS NULL`,
+              }
+            : {
+                target: [conversations.schoolId, conversations.waIdHash],
+                where: sql`${conversations.waIdHash} IS NOT NULL AND ${conversations.endedAt} IS NULL`,
+              },
+        )
+        .returning();
+      if (inserted) return { ok: true, conversation: inserted };
+      // A concurrent first message won the partial unique index. Re-read its
+      // conversation, including if it was ended again before this statement.
     }
-    throw new Error("conversation_resolution_failed");
-  }
+  });
+}
 
-  // Preserve WhatsApp's existing sliding deadline during this prefactor.
-  if (identity.channel === "whatsapp") {
-    const [updated] = await db
-      .update(conversations)
-      .set({ expiresAt, updatedAt: now })
-      .where(eq(conversations.id, conversation.id))
-      .returning();
-    if (!updated) throw new Error("conversation_missing");
-    conversation = updated;
-  }
-  return { ok: true, conversation };
+export type ConversationEndReason = NonNullable<Conversation["endReason"]>;
+
+async function endMatchingConversations(
+  predicate: SQL | undefined,
+  reason: ConversationEndReason,
+  now: Date,
+  db: ConversationDb,
+): Promise<number> {
+  const ended = await db
+    .update(conversations)
+    .set({ endedAt: now, endReason: reason, updatedAt: now })
+    .where(and(isNull(conversations.endedAt), predicate))
+    .returning({ id: conversations.id });
+  if (ended.length === 0) return 0;
+  await db
+    .update(whatsappBookingIntents)
+    .set({ state: "expired", updatedAt: now })
+    .where(
+      and(
+        inArray(
+          whatsappBookingIntents.conversationId,
+          ended.map(({ id }) => id),
+        ),
+        eq(whatsappBookingIntents.state, "pending"),
+      ),
+    );
+  return ended.length;
+}
+
+/** Terminal and idempotent: keep the record and expire its pending booking intent. */
+export async function endConversation(
+  conversationId: string,
+  reason: ConversationEndReason,
+  now = new Date(),
+): Promise<boolean> {
+  return getDb().transaction(
+    async (tx) =>
+      (await endMatchingConversations(
+        eq(conversations.id, conversationId),
+        reason,
+        now,
+        tx,
+      )) > 0,
+  );
 }
 
 export type GenerationLock = { release: () => Promise<void> };
 
 // Longer than a live function can run, so only abandoned turns are recovered.
 const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Maintenance never interrupts a live reply, but an abandoned lock cannot retain an inactive conversation. */
+export async function endInactiveConversations(
+  now = new Date(),
+): Promise<number> {
+  return getDb().transaction((tx) =>
+    endMatchingConversations(
+      and(
+        lte(conversations.expiresAt, now),
+        or(
+          isNull(conversations.generatingAt),
+          lt(
+            conversations.generatingAt,
+            new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS),
+          ),
+        ),
+      ),
+      "inactivity",
+      now,
+      tx,
+    ),
+  );
+}
 
 /** Fail fast by default; WhatsApp can wait. Claims older than ten minutes recover. */
 export async function claimGeneration(
@@ -115,6 +228,7 @@ export async function claimGeneration(
       .where(
         and(
           eq(conversations.id, conversationId),
+          isNull(conversations.endedAt),
           or(
             isNull(conversations.generatingAt),
             lt(conversations.generatingAt, abandonedBefore),
@@ -199,14 +313,39 @@ export async function appendMessage({
   completion?: typeof messages.$inferInsert.completion;
   purgeAt?: Date;
 }): Promise<string | undefined> {
-  const [row] = await getDb()
-    .insert(messages)
-    .values({ id, conversationId, messageId, role, parts, completion, purgeAt })
-    .onConflictDoNothing({
-      target: [messages.conversationId, messages.messageId],
-    })
-    .returning({ id: messages.id });
-  return row?.id;
+  return getDb().transaction(async (tx) => {
+    const [row] = await tx
+      .insert(messages)
+      .values({
+        id,
+        conversationId,
+        messageId,
+        role,
+        parts,
+        completion,
+        purgeAt,
+      })
+      .onConflictDoNothing({
+        target: [messages.conversationId, messages.messageId],
+      })
+      .returning({ id: messages.id });
+    if (row && role === "user") {
+      const now = new Date();
+      await tx
+        .update(conversations)
+        .set({
+          expiresAt: addDays(now, TRANSCRIPT_RETENTION_DAYS),
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(conversations.id, conversationId),
+            isNull(conversations.endedAt),
+          ),
+        );
+    }
+    return row?.id;
+  });
 }
 
 /** Tenant-check and attach the first contact within the booking transaction. */
@@ -215,29 +354,29 @@ export async function attachConversationContact(
     schoolId,
     conversationId,
     contactId,
-  }: { schoolId: string; conversationId: string; contactId: string },
+    now = new Date(),
+  }: {
+    schoolId: string;
+    conversationId: string;
+    contactId: string;
+    now?: Date;
+  },
   db: ConversationDb = getDb(),
 ): Promise<string | undefined> {
   const [conversation] = await db
-    .select({ id: conversations.id, contactId: conversations.contactId })
-    .from(conversations)
+    .update(conversations)
+    .set({
+      contactId: sql`coalesce(${conversations.contactId}, ${contactId}::uuid)`,
+      updatedAt: now,
+    })
     .where(
       and(
         eq(conversations.schoolId, schoolId),
         eq(conversations.id, conversationId),
+        isNull(conversations.endedAt),
+        gt(conversations.expiresAt, now),
       ),
     )
-    .limit(1);
-  if (conversation && !conversation.contactId) {
-    await db
-      .update(conversations)
-      .set({ contactId, updatedAt: new Date() })
-      .where(
-        and(
-          eq(conversations.id, conversation.id),
-          isNull(conversations.contactId),
-        ),
-      );
-  }
+    .returning({ id: conversations.id });
   return conversation?.id;
 }

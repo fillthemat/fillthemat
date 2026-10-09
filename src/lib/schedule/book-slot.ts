@@ -316,7 +316,12 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
       }
       if (conversationId) {
         conversationId = await attachConversationContact(
-          { schoolId: input.school.id, conversationId, contactId: contact.id },
+          {
+            schoolId: input.school.id,
+            conversationId,
+            contactId: contact.id,
+            now,
+          },
           tx,
         );
       }

@@ -18,7 +18,6 @@ const refusals = {
   generation_in_progress: { status: 409, error: "generation_in_progress" },
   duplicate: { status: 409, error: "duplicate" },
   message_limit: { status: 429, error: "limit" },
-  expired: { status: 410, error: "expired" },
 } satisfies Record<
   Extract<WebTurnResult, { ok: false }>["reason"],
   { status: number; error: string }

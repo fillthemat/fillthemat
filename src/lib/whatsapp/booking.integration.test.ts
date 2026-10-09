@@ -221,6 +221,50 @@ afterAll(async () => {
 });
 
 describe("WhatsApp booking funnel (Phase 5)", () => {
+  it("a Confirm booking tap after conversation inactivity expires the old intent and sends the expired notice", async () => {
+    const waId = "16505550063";
+    const conversationId = await makeConversation(waId);
+    const intentId = await seedIntent(conversationId, "stale-slot");
+    await db
+      .update(conversations)
+      .set({ expiresAt: addDays(new Date(), -1) })
+      .where(eq(conversations.id, conversationId));
+    const before = await db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.schoolId, schoolId));
+    expect(
+      (
+        await POST(
+          post(
+            buttonReplyPayload(
+              waId,
+              `wamid.inactive-confirm.${suffix}`,
+              confirmBookingButtonId(intentId),
+            ),
+          ),
+        )
+      ).status,
+    ).toBe(200);
+    await runWhatsAppWorkerOnce(randomUUID());
+    expect((await fetchIntent(intentId)).state).toBe("expired");
+    expect(
+      await db.select().from(bookings).where(eq(bookings.schoolId, schoolId)),
+    ).toEqual(before);
+    const [notice] = await db
+      .select()
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, waId),
+        ),
+      );
+    expect(notice?.body).toBe(
+      "That booking option has expired or was replaced. Please ask for available times again.",
+    );
+    expect(notice?.state).toBe("sent");
+  });
   it("confirms a reply-button booking: row + occupancy + WhatsApp template confirmation", async () => {
     const conversationId = await makeConversation(waA);
 
