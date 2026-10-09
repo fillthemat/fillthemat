@@ -10,6 +10,7 @@ import {
   type ReplyFinish,
   streamedReply,
 } from "./assistant";
+import { PLATFORM_INSTRUCTIONS } from "./system-prompt";
 
 type ModelStep = Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>>;
 type ModelStreamPart =
@@ -200,6 +201,101 @@ const input: AssistantInput = {
   messages,
   now,
 };
+
+describe("the assistant's instructions", () => {
+  it("are the platform instructions, then the school's details and FAQs as delimited tenant data", async () => {
+    // A whole School row: the columns the instructions don't use stay out.
+    const schoolRow = {
+      ...school,
+      address: "12 Main St",
+      phone: "+1 512 555 0100",
+      website: "https://tigerdojo.test",
+      parkingNotes: "Park behind the building.",
+      accessNotes: "Step-free entrance on Oak St.",
+      trialGuidance: "Arrive 10 minutes early.",
+      pricing: "$120 a month.",
+      welcomeMessage: "Welcome to Tiger Dojo!",
+      agentInstructions: "Keep answers short.",
+      slug: "tiger-dojo",
+      notificationEmail: "owner@tigerdojo.test",
+    };
+    const model = scriptedModel(textStep("Hi! How can I help?"));
+
+    await completedReply({
+      ...input,
+      school: schoolRow,
+      catalog: {
+        ...input.catalog,
+        faqs: [
+          { question: "Do I need a gi?", answer: "No, sportswear is fine." },
+          { question: "Is parking free?", answer: "Yes." },
+        ],
+      },
+      model,
+    });
+
+    expect(model.doGenerateCalls[0]?.prompt[0]).toEqual({
+      role: "system",
+      content: `${PLATFORM_INSTRUCTIONS}
+
+<school_name>
+Tiger Dojo
+</school_name>
+
+<timezone>
+America/New_York
+</timezone>
+
+<city>
+Austin
+</city>
+
+<address>
+12 Main St
+</address>
+
+<phone>
++1 512 555 0100
+</phone>
+
+<website>
+https://tigerdojo.test
+</website>
+
+<parking_notes>
+Park behind the building.
+</parking_notes>
+
+<access_notes>
+Step-free entrance on Oak St.
+</access_notes>
+
+<trial_guidance>
+Arrive 10 minutes early.
+</trial_guidance>
+
+<pricing>
+$120 a month.
+</pricing>
+
+<welcome_message>
+Welcome to Tiger Dojo!
+</welcome_message>
+
+<faqs>
+Q1: Do I need a gi?
+A1: No, sportswear is fine.
+
+Q2: Is parking free?
+A2: Yes.
+</faqs>
+
+<owner_instructions>
+Keep answers short.
+</owner_instructions>`,
+    });
+  });
+});
 
 describe("the assistant's completed reply", () => {
   it("returns only the reply text for a plain text answer", async () => {
