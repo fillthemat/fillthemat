@@ -2,7 +2,7 @@ import { convertToModelMessages, type UIMessage } from "ai";
 import type { School, TrialOffering, TrialWindow } from "@/db/schema";
 import { isLocalAiStub } from "@/lib/dev-flags";
 import type { SlotOccurrence } from "@/lib/schedule/occurrences";
-import { createBookingAgent } from "./booking-agent";
+import { createBookingAgent } from "./assistant";
 
 export type PrepareBookingCapture = {
   offeringId: string;
