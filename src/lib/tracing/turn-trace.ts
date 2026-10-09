@@ -38,8 +38,6 @@ export type TurnTrace = {
   run<T>(work: () => Promise<T>): Promise<T>;
   /** Ends the turn with its reply, once the turn has settled. */
   end(reply: TurnReply): void;
-  /** Ends the turn as failed. */
-  fail(error: unknown): void;
   /**
    * Exports the turn's trace once the turn has ended, waiting at most
    * END_TIMEOUT_MS. Never rejects: a failed export is only logged.
@@ -101,7 +99,8 @@ export function startTurnTrace({
       ),
   );
 
-  // A turn ends once: whichever of end and fail comes first.
+  // A turn ends once: with its reply, or as failed when work run in it throws,
+  // whichever comes first.
   const ended = Promise.withResolvers<void>();
   let hasEnded = false;
   const endRoot = (attributes: LangfuseSpanAttributes) => {
@@ -112,13 +111,13 @@ export function startTurnTrace({
     ended.resolve();
   };
 
-  const turn: TurnTrace = {
+  return {
     run(work) {
       return context.with(turnContext, async () => {
         try {
           return await work();
         } catch (error) {
-          turn.fail(error);
+          endRoot({ level: "ERROR", statusMessage: failureMessage(error) });
           throw error;
         }
       });
@@ -135,9 +134,6 @@ export function startTurnTrace({
         },
       });
     },
-    fail(error) {
-      endRoot({ level: "ERROR", statusMessage: failureMessage(error) });
-    },
     async exportWhenEnded() {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const endedInTime = await Promise.race([
@@ -153,7 +149,6 @@ export function startTurnTrace({
       await exportEndedTurns();
     },
   };
-  return turn;
 }
 
 // The innermost cause says what actually went wrong, e.g. the database error
