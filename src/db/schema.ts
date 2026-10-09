@@ -421,7 +421,6 @@ export const messages = appSchema.table(
     completion: messageCompletionEnum("completion")
       .notNull()
       .default("complete"),
-    purgeAt: timestamp("purge_at", { withTimezone: true }).notNull(),
     ...timestamps,
   },
   (t) => [
@@ -429,7 +428,6 @@ export const messages = appSchema.table(
       t.conversationId,
       t.messageId,
     ),
-    index("messages_purge_at_idx").on(t.purgeAt),
   ],
 );
 
@@ -755,7 +753,7 @@ export const cronRuns = appSchema.table("cron_runs", {
   reminderCount: integer("reminder_count").notNull().default(0),
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
-  purgedCount: integer("purged_count").notNull().default(0),
+  endedConversationCount: integer("ended_conversation_count").notNull().default(0),
   result: cronResultEnum("result"),
   errorSummary: text("error_summary"),
 });

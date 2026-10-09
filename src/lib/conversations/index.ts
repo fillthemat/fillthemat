@@ -21,7 +21,7 @@ import {
   whatsappBookingIntents,
 } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
-import { TRANSCRIPT_RETENTION_DAYS } from "@/lib/schedule/constants";
+import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
 
 export type ConversationIdentity =
   | { channel: "web"; resumeToken: string }
@@ -71,7 +71,7 @@ export async function findOrCreateConversation(
   { schoolId, identity, now = new Date() }: ConversationInput,
   db: Database = getDb(),
 ): Promise<FindOrCreateConversationResult> {
-  const expiresAt = addDays(now, TRANSCRIPT_RETENTION_DAYS);
+  const expiresAt = addDays(now, CONVERSATION_INACTIVITY_DAYS);
   return db.transaction(async (tx) => {
     for (;;) {
       // Even an ended token belongs to its original school. It must never be
@@ -303,7 +303,6 @@ export async function appendMessage({
   role,
   parts,
   completion = "complete",
-  purgeAt = addDays(new Date(), TRANSCRIPT_RETENTION_DAYS),
 }: {
   id?: string;
   conversationId: string;
@@ -311,7 +310,6 @@ export async function appendMessage({
   role: UIMessage["role"];
   parts: UIMessage["parts"];
   completion?: typeof messages.$inferInsert.completion;
-  purgeAt?: Date;
 }): Promise<string | undefined> {
   return getDb().transaction(async (tx) => {
     const [row] = await tx
@@ -323,7 +321,6 @@ export async function appendMessage({
         role,
         parts,
         completion,
-        purgeAt,
       })
       .onConflictDoNothing({
         target: [messages.conversationId, messages.messageId],
@@ -334,7 +331,7 @@ export async function appendMessage({
       await tx
         .update(conversations)
         .set({
-          expiresAt: addDays(now, TRANSCRIPT_RETENTION_DAYS),
+          expiresAt: addDays(now, CONVERSATION_INACTIVITY_DAYS),
           updatedAt: now,
         })
         .where(

@@ -64,7 +64,6 @@ export type ProcessJobResult = "done" | "failed";
 type JobContext = {
   schoolId: string;
   conversationId: string;
-  purgeAt: Date;
 };
 
 type InboundContext = JobContext & {
@@ -85,7 +84,6 @@ async function saveInboundMessage(ctx: InboundContext): Promise<void> {
     messageId: ctx.message.wamid,
     role: "user",
     parts: [{ type: "text", text: ctx.inboundText }],
-    purgeAt: ctx.purgeAt,
   });
 }
 
@@ -132,7 +130,6 @@ async function handleConfirmation(
     phoneNumberId: ctx.message.phoneNumberId,
     wamid: ctx.message.wamid,
     profileName: ctx.message.profileName,
-    purgeAt: ctx.purgeAt,
     runId: ctx.runId,
   });
 
@@ -225,7 +222,6 @@ async function handleAssistantTurn(
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: body ? [{ type: "text", text: body }] : [],
-      purgeAt: ctx.purgeAt,
     });
 
     const deliveryId = await enqueueWhatsAppDelivery({
@@ -274,7 +270,6 @@ async function handleAssistantTurn(
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: [{ type: "text", text: replyText }],
-      purgeAt: ctx.purgeAt,
     });
     await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${lead.id}`);
     return { text: replyText, messageId: replyMessageId, provenance };
@@ -287,7 +282,6 @@ async function handleAssistantTurn(
     conversationId: ctx.conversationId,
     messageId: generateId(),
     parts: replyText ? [{ type: "text", text: replyText }] : [],
-    purgeAt: ctx.purgeAt,
   });
   await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${generateId()}`);
   return { text: replyText, messageId: replyMessageId, provenance };
@@ -381,7 +375,6 @@ export async function processWhatsAppJob(
       const ctx: InboundContext = {
         schoolId: resolved.schoolId,
         conversationId,
-        purgeAt: result.conversation.expiresAt,
         message,
         inboundText: message.text ?? "",
         inboundMessageId: randomUUID(),

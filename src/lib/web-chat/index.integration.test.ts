@@ -115,7 +115,6 @@ async function existingConversation({
         messageId,
         role: index % 2 === 0 ? "user" : "assistant",
         parts: [{ type: "text", text: `Message ${index + 1}` }],
-        purgeAt: expiresAt,
       })),
     );
   }

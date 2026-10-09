@@ -547,7 +547,6 @@ describe("an inbound WhatsApp message that gets no reply", () => {
           messageId: `earlier-${index}`,
           role: index % 2 === 0 ? "user" : "assistant",
           parts: [{ type: "text", text: `Message ${index + 1}` }],
-          purgeAt: addDays(new Date(), 30),
         }),
       ),
     );

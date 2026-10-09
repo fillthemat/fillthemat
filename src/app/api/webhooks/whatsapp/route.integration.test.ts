@@ -368,7 +368,6 @@ describe("conversation invariants survive enqueue-then-ack", () => {
           role: "user" as const,
           parts: [{ type: "text", text: `fill ${index}` }],
           completion: "complete" as const,
-          purgeAt: addDays(new Date(), 30),
         })),
       );
     }

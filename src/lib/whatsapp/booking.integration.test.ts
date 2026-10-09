@@ -427,7 +427,6 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
         phoneNumberId,
         wamid: `wamid.quota.${i}.${suffix}`,
         profileName: "Alex Rivera",
-        purgeAt: addDays(new Date(), 30),
         runId: randomUUID(),
       });
       expect(outcome.status).toBe("booked");
@@ -447,7 +446,6 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       phoneNumberId,
       wamid: `wamid.quota.over.${suffix}`,
       profileName: "Alex Rivera",
-      purgeAt: addDays(new Date(), 30),
       runId: randomUUID(),
     });
     expect(outcome.status).toBe("rate_limited");

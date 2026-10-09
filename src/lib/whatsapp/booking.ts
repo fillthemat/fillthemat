@@ -76,7 +76,6 @@ export async function confirmWhatsAppBooking({
   phoneNumberId,
   wamid,
   profileName,
-  purgeAt,
   runId,
 }: {
   schoolId: string;
@@ -86,7 +85,6 @@ export async function confirmWhatsAppBooking({
   phoneNumberId: string;
   wamid: string;
   profileName: string | null;
-  purgeAt: Date;
   runId: string;
 }): Promise<ConfirmWhatsAppBookingResult> {
   const now = new Date();
@@ -176,7 +174,6 @@ export async function confirmWhatsAppBooking({
     conversationId,
     messageId: generateId(),
     parts: [{ type: "text", text: transcript }],
-    purgeAt,
   });
 
   // No-email prospect confirmation → WhatsApp template (decision B / D8). The
