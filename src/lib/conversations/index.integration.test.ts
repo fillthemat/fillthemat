@@ -93,4 +93,36 @@ describe("conversations", () => {
     expect(await claimGeneration(id)).toBeUndefined();
     await nextLock?.release();
   });
+
+  it("takes an abandoned generation lock only after more than ten minutes", async () => {
+    const result = await findOrCreateConversation({
+      schoolId: schoolIds[0],
+      identity: { channel: "web", resumeToken: randomUUID() },
+    });
+    if (!result.ok) throw new Error("conversation refused");
+    const id = result.conversation.id;
+    const abandonedAt = new Date("2026-10-09T12:00:00.000Z");
+    const abandoned = await claimGeneration(id, { now: abandonedAt });
+    expect(abandoned).toBeDefined();
+    expect(
+      await claimGeneration(id, { now: new Date("2026-10-09T12:09:59.999Z") }),
+    ).toBeUndefined();
+    expect(
+      await claimGeneration(id, { now: new Date("2026-10-09T12:10:00.000Z") }),
+    ).toBeUndefined();
+
+    const claims = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        claimGeneration(id, { now: new Date("2026-10-09T12:10:00.001Z") }),
+      ),
+    );
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    const recovered = claims.find(Boolean);
+    expect(recovered).toBeDefined();
+    await abandoned?.release();
+    expect(
+      await claimGeneration(id, { now: new Date("2026-10-09T12:10:00.002Z") }),
+    ).toBeUndefined();
+    await recovered?.release();
+  });
 });
