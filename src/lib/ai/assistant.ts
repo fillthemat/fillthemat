@@ -252,6 +252,8 @@ export type CompletedReply = {
   text: string;
   bookingIntent: BookingIntent | null;
   leadRequest: LeadRequest | null;
+  /** The language model that wrote the reply. */
+  modelId: string;
 };
 
 /**
@@ -262,7 +264,7 @@ export async function completedReply({
   messages,
   ...input
 }: AssistantInput): Promise<CompletedReply> {
-  const { assistant } = createAssistant(input);
+  const { assistant, modelId } = createAssistant(input);
   const result = await assistant.generate({
     messages: await convertToModelMessages(messages, {
       tools: assistant.tools,
@@ -293,6 +295,7 @@ export async function completedReply({
           statedNeed: lastCaptureLead.output.statedNeed,
         }
       : null,
+    modelId,
   };
 }
 

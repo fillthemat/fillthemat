@@ -1,9 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { generateId, type UIMessage, validateUIMessages } from "ai";
 import { addHours } from "date-fns";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { schools, type WhatsAppJob } from "@/db/schema";
-import { completedReply } from "@/lib/ai/assistant";
+import {
+  schools,
+  type WhatsAppBookingIntent,
+  type WhatsAppJob,
+} from "@/db/schema";
+import { completedReply, PLATFORM_INSTRUCTIONS_HASH } from "@/lib/ai/assistant";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { loadSchoolCatalog } from "@/lib/schools/public";
@@ -11,6 +16,11 @@ import {
   MAX_CHAT_MESSAGES_PER_CONVERSATION,
   whatsappOutboundQuotaExceeded,
 } from "@/lib/security/limits";
+import {
+  startTurnTrace,
+  type TurnReply,
+  type TurnTrace,
+} from "@/lib/tracing/turn-trace";
 import { confirmWhatsAppBooking } from "./booking";
 import {
   CHOOSE_ANOTHER_TIME_BUTTON_ID,
@@ -60,10 +70,19 @@ type JobContext = {
 
 type InboundContext = JobContext & {
   message: InboundWhatsAppMessage;
+  /**
+   * The row id the inbound message is saved under. Traces use it instead of
+   * the wamid, which encodes the sender's phone number.
+   */
+  inboundMessageId: string;
   runId: string;
 };
 
-async function sendNotice(ctx: InboundContext, text: string): Promise<void> {
+// Notices are sent but not saved as messages, so their reply has no id.
+async function sendNotice(
+  ctx: InboundContext,
+  text: string,
+): Promise<TurnReply> {
   const deliveryId = await enqueueWhatsAppDelivery({
     schoolId: ctx.schoolId,
     recipientWaId: ctx.message.waId,
@@ -73,47 +92,34 @@ async function sendNotice(ctx: InboundContext, text: string): Promise<void> {
     windowExpiresAt: addHours(new Date(), 24),
   });
   if (deliveryId) await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
+  return { replyText: text };
 }
 
 /**
- * Deterministic confirmation path (addendum "Deterministic confirmation"):
- * recognize a `confirm_booking:<id>` reply button or an exact affirmative while
- * a pending intent exists, and route those straight to `bookSlot` instead of
- * the agent. Returns true when the inbound message was fully handled here.
+ * Confirmation turn: books the confirmed Booking Intent, or says the option
+ * expired or was replaced when there is none.
  */
 async function handleConfirmation(
   ctx: InboundContext,
-  now: Date,
-): Promise<boolean> {
-  const inboundText = ctx.message.text ?? "";
-  const buttonIntentId = parseConfirmBookingButton(inboundText);
-  const pending = await getPendingBookingIntent(ctx.conversationId, now);
-
-  if (!buttonIntentId && !(pending && isAffirmativeConfirmation(inboundText))) {
-    return false;
-  }
-
-  const intent = buttonIntentId
-    ? await getPendingBookingIntentById(buttonIntentId, ctx.schoolId, now)
-    : pending;
-
+  intent: WhatsAppBookingIntent | null,
+): Promise<TurnReply> {
   // Book BEFORE persisting the user message so a crash/retry replays into the
   // same deterministic idempotency key instead of silently dropping a confirm.
   if (!intent) {
     await persistUserMessage({
+      id: ctx.inboundMessageId,
       conversationId: ctx.conversationId,
       messageId: ctx.message.wamid,
-      text: inboundText,
+      text: ctx.message.text ?? "",
       purgeAt: ctx.purgeAt,
     });
-    await sendNotice(
+    return sendNotice(
       ctx,
       "That booking option has expired or was replaced. Please ask for available times again.",
     );
-    return true;
   }
 
-  await confirmWhatsAppBooking({
+  const { reply } = await confirmWhatsAppBooking({
     schoolId: ctx.schoolId,
     conversationId: ctx.conversationId,
     intent,
@@ -126,12 +132,13 @@ async function handleConfirmation(
   });
 
   await persistUserMessage({
+    id: ctx.inboundMessageId,
     conversationId: ctx.conversationId,
     messageId: ctx.message.wamid,
-    text: inboundText,
+    text: ctx.message.text ?? "",
     purgeAt: ctx.purgeAt,
   });
-  return true;
+  return { replyMessageId: reply.messageId, replyText: reply.text };
 }
 
 async function enqueueAndSendTextReplies(
@@ -165,26 +172,24 @@ async function enqueueAndSendTextReplies(
  */
 async function handleAssistantTurn(
   ctx: InboundContext,
+  history: UIMessage[],
   now: Date,
-): Promise<void> {
-  const history = await loadValidatedConversationMessages(ctx.conversationId);
-  if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) return;
-
+): Promise<TurnReply> {
   // 429-equivalent: per-wa_id daily outbound cap (Phase 5 abuse controls).
   if (
     await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
   ) {
     await persistUserMessage({
+      id: ctx.inboundMessageId,
       conversationId: ctx.conversationId,
       messageId: ctx.message.wamid,
       text: ctx.message.text ?? "",
       purgeAt: ctx.purgeAt,
     });
-    await sendNotice(
+    return sendNotice(
       ctx,
       "You've reached today's message limit. Please try again tomorrow.",
     );
-    return;
   }
 
   const inboundUIMessage: UIMessage = {
@@ -211,8 +216,13 @@ async function handleAssistantTurn(
     messages: uiMessages,
     now,
   });
+  const assistant = {
+    modelId: reply.modelId,
+    platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
+  };
 
   await persistUserMessage({
+    id: ctx.inboundMessageId,
     conversationId: ctx.conversationId,
     messageId: ctx.message.wamid,
     text: ctx.message.text ?? "",
@@ -237,7 +247,7 @@ async function handleAssistantTurn(
     const body =
       reply.text ||
       "I found a time that works. Use the buttons below to confirm.";
-    await persistAssistantMessage({
+    const replyMessageId = await persistAssistantMessage({
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: body ? [{ type: "text", text: body }] : [],
@@ -259,7 +269,7 @@ async function handleAssistantTurn(
     if (deliveryId) {
       await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
     }
-    return;
+    return { replyMessageId, replyText: body, assistant };
   }
 
   // Lead: platform writes it (shared create-lead). Owner delivery stays email.
@@ -285,25 +295,54 @@ async function handleAssistantTurn(
     const replyText =
       reply.text ||
       "Thanks — I've passed your details along and the school will contact you to find a time.";
-    await persistAssistantMessage({
+    const replyMessageId = await persistAssistantMessage({
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: [{ type: "text", text: replyText }],
       purgeAt: ctx.purgeAt,
     });
     await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${lead.id}`);
-    return;
+    return { replyMessageId, replyText, assistant };
   }
 
   // Plain text reply.
   const replyText = reply.text;
-  await persistAssistantMessage({
+  const replyMessageId = await persistAssistantMessage({
     conversationId: ctx.conversationId,
     messageId: generateId(),
     parts: replyText ? [{ type: "text", text: replyText }] : [],
     purgeAt: ctx.purgeAt,
   });
   await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${generateId()}`);
+  return { replyMessageId, replyText, assistant };
+}
+
+/**
+ * Decides how to answer the inbound message before answering it, and returns
+ * the turn that sends the reply. Returns null when the message gets no reply:
+ * the conversation has reached its message limit and it isn't a confirmation.
+ *
+ * Deterministic confirmation path (addendum "Deterministic confirmation"): a
+ * `confirm_booking:<id>` reply button, or an exact affirmative while a pending
+ * intent exists, goes straight to `bookSlot` instead of the agent.
+ */
+async function planReply(
+  ctx: InboundContext,
+  now: Date,
+): Promise<(() => Promise<TurnReply>) | null> {
+  const inboundText = ctx.message.text ?? "";
+  const buttonIntentId = parseConfirmBookingButton(inboundText);
+  const pending = await getPendingBookingIntent(ctx.conversationId, now);
+  if (buttonIntentId || (pending && isAffirmativeConfirmation(inboundText))) {
+    const intent = buttonIntentId
+      ? await getPendingBookingIntentById(buttonIntentId, ctx.schoolId, now)
+      : pending;
+    return () => handleConfirmation(ctx, intent);
+  }
+
+  const history = await loadValidatedConversationMessages(ctx.conversationId);
+  if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) return null;
+  return () => handleAssistantTurn(ctx, history, now);
 }
 
 /**
@@ -317,6 +356,7 @@ export async function processWhatsAppJob(
 ): Promise<ProcessJobResult> {
   const message = job.payload as InboundWhatsAppMessage;
   let conversationId: string | null = null;
+  let turn: TurnTrace | undefined;
   try {
     const resolved = await resolveInboundConversation(message, new Date());
     if (!resolved.resolved) {
@@ -350,12 +390,22 @@ export async function processWhatsAppJob(
         conversationId,
         purgeAt: resolved.purgeAt,
         message,
+        inboundMessageId: randomUUID(),
         runId,
       };
 
-      const confirmed = await handleConfirmation(ctx, now);
-      if (!confirmed) {
-        await handleAssistantTurn(ctx, now);
+      const sendReply = await planReply(ctx, now);
+      if (sendReply) {
+        // A message that gets a reply is a turn. Its trace starts only once
+        // that's known, because a started trace can't be dropped.
+        turn = startTurnTrace({
+          channel: "whatsapp",
+          conversationId,
+          schoolId: resolved.schoolId,
+          inboundMessageId: ctx.inboundMessageId,
+          inboundText: message.text ?? "",
+        });
+        turn.end(await turn.run(sendReply));
       }
 
       await markJobDone(job.id, resolved.schoolId);
@@ -372,6 +422,11 @@ export async function processWhatsAppJob(
     await failJob(job.id, job.attempts, message);
     console.error("whatsapp: job failed", job.id, message);
     return "failed";
+  } finally {
+    // Before the worker finishes, so the trace isn't lost when its invocation
+    // ends, and after the lock is released, so exporting never holds up the
+    // conversation's next message. A failed export is only logged.
+    await turn?.exportWhenEnded();
   }
 }
 

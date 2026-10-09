@@ -115,11 +115,14 @@ export async function messageExists(
 }
 
 export async function persistUserMessage({
+  id,
   conversationId,
   messageId,
   text,
   purgeAt,
 }: {
+  /** The saved row's id, chosen before saving. */
+  id: string;
   conversationId: string;
   messageId: string;
   text: string;
@@ -129,6 +132,7 @@ export async function persistUserMessage({
   const [row] = await db
     .insert(messages)
     .values({
+      id,
       conversationId,
       messageId,
       role: "user",
@@ -143,6 +147,7 @@ export async function persistUserMessage({
   return Boolean(row);
 }
 
+/** Returns the saved row's id, or undefined if the message was already saved. */
 export async function persistAssistantMessage({
   conversationId,
   messageId,
@@ -153,9 +158,9 @@ export async function persistAssistantMessage({
   messageId: string;
   parts: UIMessage["parts"];
   purgeAt: Date;
-}): Promise<void> {
+}): Promise<string | undefined> {
   const db = getDb();
-  await db
+  const [row] = await db
     .insert(messages)
     .values({
       conversationId,
@@ -167,7 +172,9 @@ export async function persistAssistantMessage({
     })
     .onConflictDoNothing({
       target: [messages.conversationId, messages.messageId],
-    });
+    })
+    .returning({ id: messages.id });
+  return row?.id;
 }
 
 export async function claimGenerating(

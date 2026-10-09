@@ -48,6 +48,7 @@ The current Langfuse integration guide has a dedicated SDK 7 path using `@langfu
 | File | Responsibility / change seam |
 | --- | --- |
 | `src/app/api/chat/route.ts` | Access check, resume-token lookup, conversation lock, canonical history, turn trace, stream, assistant persistence |
+| `src/lib/whatsapp/worker.ts` | WhatsApp inbound jobs: conversation lock, confirmations, assistant replies and notices; a turn trace for each message that gets a reply, exported before the worker finishes |
 | `src/lib/ai/assistant.ts` | The assistant: `ToolLoopAgent`, four tools, eight-step cap; streamed reply (web chat) and completed reply (WhatsApp) |
 | `src/lib/ai/language-model.ts` | Model choice: the Gateway model, or a scripted local model without a Gateway token |
 | `src/lib/ai/system-prompt.ts` | Platform prompt plus school settings and FAQs |

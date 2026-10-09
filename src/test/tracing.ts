@@ -48,6 +48,14 @@ export async function exportedSpans(): Promise<ReadableSpan[]> {
   return tracing.exporter.getFinishedSpans();
 }
 
+/**
+ * The spans exported so far during the current test. Unlike `exportedSpans`,
+ * this leaves spans that are still waiting in a batch unexported.
+ */
+export function spansExportedSoFar(): ReadableSpan[] {
+  return [...tracing.exporter.getFinishedSpans()];
+}
+
 const OBSERVATION_METADATA = "langfuse.observation.metadata.";
 
 /** The span every other span in its trace descends from. */

@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { WHATSAPP_STUB_APP_SECRET } from "@/lib/whatsapp/config";
+import buttonReply from "./fixtures/whatsapp/button-reply.json";
 import textInbound from "./fixtures/whatsapp/text-inbound.json";
 
 /** The `x-hub-signature-256` value Meta sends for `body`. */
@@ -26,6 +27,28 @@ export function textInboundPayload({
   value.messages[0].from = waId;
   value.messages[0].id = wamid;
   if (text !== undefined) value.messages[0].text.body = text;
+  return payload;
+}
+
+/** The button-reply fixture: `waId` pressed the reply button `buttonId`. */
+export function buttonReplyPayload({
+  phoneNumberId,
+  waId,
+  wamid,
+  buttonId,
+}: {
+  phoneNumberId: string;
+  waId: string;
+  wamid: string;
+  buttonId: string;
+}) {
+  const payload = structuredClone(buttonReply);
+  const { value } = payload.entry[0].changes[0];
+  value.metadata.phone_number_id = phoneNumberId;
+  value.contacts[0].wa_id = waId;
+  value.messages[0].from = waId;
+  value.messages[0].id = wamid;
+  value.messages[0].interactive.button_reply.id = buttonId;
   return payload;
 }
 
