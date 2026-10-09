@@ -10,6 +10,7 @@ import {
   lt,
   lte,
   or,
+  type SQL,
   sql,
 } from "drizzle-orm";
 import { type Database, getDb } from "@/db";
@@ -72,19 +73,19 @@ export async function findOrCreateConversation(
 ): Promise<FindOrCreateConversationResult> {
   const expiresAt = addDays(now, TRANSCRIPT_RETENTION_DAYS);
   return db.transaction(async (tx) => {
-    // Even an ended token belongs to its original school. It must never be
-    // adopted by another school after the active-only index releases it.
-    if (identity.channel === "web") {
-      const [owner] = await tx
-        .select({ schoolId: conversations.schoolId })
-        .from(conversations)
-        .where(identityPredicate(identity))
-        .limit(1);
-      if (owner && owner.schoolId !== schoolId) {
-        return { ok: false, reason: "invalid_conversation" };
-      }
-    }
     for (;;) {
+      // Even an ended token belongs to its original school. It must never be
+      // adopted by another school after the active-only index releases it.
+      if (identity.channel === "web") {
+        const [owner] = await tx
+          .select({ schoolId: conversations.schoolId })
+          .from(conversations)
+          .where(identityPredicate(identity))
+          .limit(1);
+        if (owner && owner.schoolId !== schoolId) {
+          return { ok: false, reason: "invalid_conversation" };
+        }
+      }
       const [current] = await tx
         .select()
         .from(conversations)
@@ -98,7 +99,16 @@ export async function findOrCreateConversation(
         .limit(1);
       if (current && current.expiresAt > now)
         return { ok: true, conversation: current };
-      if (current) await endWithDb(current.id, "inactivity", now, tx, true);
+      if (current)
+        await endMatchingConversations(
+          and(
+            eq(conversations.id, current.id),
+            lte(conversations.expiresAt, now),
+          ),
+          "inactivity",
+          now,
+          tx,
+        );
       const [inserted] = await tx
         .insert(conversations)
         .values({
@@ -125,50 +135,37 @@ export async function findOrCreateConversation(
       if (inserted) return { ok: true, conversation: inserted };
       // A concurrent first message won the partial unique index. Re-read its
       // conversation, including if it was ended again before this statement.
-      if (identity.channel === "web") {
-        const [owner] = await tx
-          .select({ schoolId: conversations.schoolId })
-          .from(conversations)
-          .where(identityPredicate(identity))
-          .limit(1);
-        if (owner && owner.schoolId !== schoolId)
-          return { ok: false, reason: "invalid_conversation" };
-      }
     }
   });
 }
 
 export type ConversationEndReason = NonNullable<Conversation["endReason"]>;
 
-async function endWithDb(
-  conversationId: string,
+async function endMatchingConversations(
+  predicate: SQL | undefined,
   reason: ConversationEndReason,
   now: Date,
   db: ConversationDb,
-  onlyIfInactive = false,
-): Promise<boolean> {
-  const [ended] = await db
+): Promise<number> {
+  const ended = await db
     .update(conversations)
     .set({ endedAt: now, endReason: reason, updatedAt: now })
-    .where(
-      and(
-        eq(conversations.id, conversationId),
-        isNull(conversations.endedAt),
-        onlyIfInactive ? lte(conversations.expiresAt, now) : undefined,
-      ),
-    )
+    .where(and(isNull(conversations.endedAt), predicate))
     .returning({ id: conversations.id });
-  if (!ended) return false;
+  if (ended.length === 0) return 0;
   await db
     .update(whatsappBookingIntents)
     .set({ state: "expired", updatedAt: now })
     .where(
       and(
-        eq(whatsappBookingIntents.conversationId, conversationId),
+        inArray(
+          whatsappBookingIntents.conversationId,
+          ended.map(({ id }) => id),
+        ),
         eq(whatsappBookingIntents.state, "pending"),
       ),
     );
-  return true;
+  return ended.length;
 }
 
 /** Terminal and idempotent: keep the record and expire its pending booking intent. */
@@ -177,8 +174,14 @@ export async function endConversation(
   reason: ConversationEndReason,
   now = new Date(),
 ): Promise<boolean> {
-  return getDb().transaction((tx) =>
-    endWithDb(conversationId, reason, now, tx),
+  return getDb().transaction(
+    async (tx) =>
+      (await endMatchingConversations(
+        eq(conversations.id, conversationId),
+        reason,
+        now,
+        tx,
+      )) > 0,
   );
 }
 
@@ -191,40 +194,23 @@ const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 export async function endInactiveConversations(
   now = new Date(),
 ): Promise<number> {
-  return getDb().transaction(async (tx) => {
-    const ended = await tx
-      .update(conversations)
-      .set({ endedAt: now, endReason: "inactivity", updatedAt: now })
-      .where(
-        and(
-          isNull(conversations.endedAt),
-          lte(conversations.expiresAt, now),
-          or(
-            isNull(conversations.generatingAt),
-            lt(
-              conversations.generatingAt,
-              new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS),
-            ),
+  return getDb().transaction((tx) =>
+    endMatchingConversations(
+      and(
+        lte(conversations.expiresAt, now),
+        or(
+          isNull(conversations.generatingAt),
+          lt(
+            conversations.generatingAt,
+            new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS),
           ),
         ),
-      )
-      .returning({ id: conversations.id });
-    if (ended.length > 0) {
-      await tx
-        .update(whatsappBookingIntents)
-        .set({ state: "expired", updatedAt: now })
-        .where(
-          and(
-            inArray(
-              whatsappBookingIntents.conversationId,
-              ended.map(({ id }) => id),
-            ),
-            eq(whatsappBookingIntents.state, "pending"),
-          ),
-        );
-    }
-    return ended.length;
-  });
+      ),
+      "inactivity",
+      now,
+      tx,
+    ),
+  );
 }
 
 /** Fail fast by default; WhatsApp can wait. Claims older than ten minutes recover. */

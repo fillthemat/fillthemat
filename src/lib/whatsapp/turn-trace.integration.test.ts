@@ -390,7 +390,7 @@ describe("a WhatsApp turn answered without the assistant", () => {
     expect(conversation.id).toBe(original.id);
     expect(await savedMessages(conversation)).toEqual(transcript);
     expect(conversation.generatingAt).toBeNull();
-    expect(conversation.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(conversation.expiresAt).toEqual(original.expiresAt);
     const [notice] = await db
       .select({
         body: whatsappDeliveries.body,
@@ -421,6 +421,7 @@ describe("a WhatsApp turn answered without the assistant", () => {
       const nextDay = await conversationWith(waId);
       expect(nextDay.id).toBe(original.id);
       expect(nextDay.generatingAt).toBeNull();
+      expect(nextDay.expiresAt).toEqual(addDays(new Date(), 30));
       const saved = await savedMessages(nextDay);
       expect(saved).toHaveLength(4);
       expect(saved.filter(({ role }) => role === "user").map(textOf)).toEqual([

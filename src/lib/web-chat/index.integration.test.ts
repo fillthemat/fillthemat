@@ -180,6 +180,22 @@ afterAll(async () => {
 });
 
 describe("a web chat turn with no AI Gateway token", () => {
+  it("loads an empty transcript after a conversation has ended even before its deadline", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1", "reply-1"],
+    });
+    await db
+      .update(conversations)
+      .set({ endedAt: new Date(), endReason: "message_limit" })
+      .where(eq(conversations.id, conversationId));
+    expect(
+      await loadWebTranscript({ slug, preview: false, resumeToken }),
+    ).toEqual({ ok: true, messages: [] });
+    expect(await savedMessageIds(conversationId)).toEqual([
+      "question-1",
+      "reply-1",
+    ]);
+  });
   it("slides the inactivity deadline on an accepted message, but not a duplicate refusal", async () => {
     const { resumeToken, conversationId } = await existingConversation({
       expiresAt: addDays(new Date(), 1),
