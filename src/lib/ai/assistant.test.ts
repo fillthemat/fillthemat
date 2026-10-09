@@ -63,16 +63,19 @@ function scriptedModel(...steps: ModelStep[]) {
   return new MockLanguageModelV4({ doGenerate: steps });
 }
 
-// Step 1 lists the trial offerings. Step 2, once that tool result is back,
-// streams the reply word by word.
-function streamingModel(reply: string, { chunkDelayInMs = 0 } = {}) {
+// The same scripted steps, streamed one per model call, text word by word.
+function streamingModel(steps: ModelStep[], { chunkDelayInMs = 0 } = {}) {
   return new MockLanguageModelV4({
-    doStream: async ({ prompt }) => {
-      const chunks: ModelStreamPart[] =
-        prompt.at(-1)?.role === "tool"
-          ? [
+    doStream: steps.map((step) => ({
+      stream: simulateReadableStream<ModelStreamPart>({
+        chunkDelayInMs,
+        chunks: [
+          ...step.content.flatMap((part): ModelStreamPart[] => {
+            if (part.type === "tool-call") return [part];
+            if (part.type !== "text") return [];
+            return [
               { type: "text-start", id: "reply" },
-              ...reply.split(/(?<= )/).map(
+              ...part.text.split(/(?<= )/).map(
                 (delta): ModelStreamPart => ({
                   type: "text-delta",
                   id: "reply",
@@ -80,27 +83,16 @@ function streamingModel(reply: string, { chunkDelayInMs = 0 } = {}) {
                 }),
               ),
               { type: "text-end", id: "reply" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: undefined },
-                usage,
-              },
-            ]
-          : [
-              {
-                type: "tool-call",
-                toolCallId: randomUUID(),
-                toolName: "list_trial_offerings",
-                input: "{}",
-              },
-              {
-                type: "finish",
-                finishReason: { unified: "tool-calls", raw: undefined },
-                usage,
-              },
             ];
-      return { stream: simulateReadableStream({ chunks, chunkDelayInMs }) };
-    },
+          }),
+          {
+            type: "finish",
+            finishReason: step.finishReason,
+            usage: step.usage,
+          },
+        ],
+      }),
+    })),
   });
 }
 
@@ -479,7 +471,10 @@ describe("the assistant's streamed reply", () => {
     const finishes: ReplyFinish[] = [];
     const response = await streamedReply({
       ...input,
-      model: streamingModel("We offer Kids BJJ."),
+      model: streamingModel([
+        toolCallStep("list_trial_offerings", {}),
+        textStep("We offer Kids BJJ."),
+      ]),
       onFinish: (finish) => {
         finishes.push(finish);
       },
@@ -513,9 +508,13 @@ describe("the assistant's streamed reply", () => {
     const firstFinish = Promise.withResolvers<void>();
     const response = await streamedReply({
       ...input,
-      model: streamingModel("We offer Kids BJJ on Wednesdays at 6 PM.", {
-        chunkDelayInMs: 5,
-      }),
+      model: streamingModel(
+        [
+          toolCallStep("list_trial_offerings", {}),
+          textStep("We offer Kids BJJ on Wednesdays at 6 PM."),
+        ],
+        { chunkDelayInMs: 5 },
+      ),
       onFinish: (finish) => {
         finishes.push(finish);
         firstFinish.resolve();
@@ -586,7 +585,10 @@ describe("the assistant's streamed reply", () => {
     try {
       const response = await streamedReply({
         ...input,
-        model: streamingModel("We offer Kids BJJ."),
+        model: streamingModel([
+          toolCallStep("list_trial_offerings", {}),
+          textStep("We offer Kids BJJ."),
+        ]),
         onFinish: () => {
           throw new Error("Database unavailable");
         },
