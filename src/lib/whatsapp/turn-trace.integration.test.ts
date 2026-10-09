@@ -8,7 +8,12 @@ import { hashWaId } from "@/lib/crypto";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
-import { exportedSpans, exportedTraces, isRoot } from "@/test/tracing";
+import {
+  exportedSpans,
+  exportedTraces,
+  isRoot,
+  spansExportedSoFar,
+} from "@/test/tracing";
 import { post, textInboundPayload } from "@/test/whatsapp-webhook";
 
 loadLocalEnv();
@@ -134,5 +139,21 @@ describe("a WhatsApp assistant turn's trace", () => {
       modelId: "scripted-local",
       platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
     });
+  });
+
+  it("is exported by the time the worker finishes", async () => {
+    const waId = "16505550104";
+
+    await sendText(waId, "What can my son try?");
+
+    const exportedByWorker = spansExportedSoFar();
+    const conversation = await conversationWith(waId);
+    expect(
+      exportedByWorker
+        .filter(isRoot)
+        .map(({ attributes }) => attributes["session.id"]),
+    ).toEqual([conversation.id]);
+    // Nothing was left waiting to be exported.
+    expect(await exportedSpans()).toHaveLength(exportedByWorker.length);
   });
 });

@@ -12,7 +12,11 @@ import {
   MAX_CHAT_MESSAGES_PER_CONVERSATION,
   whatsappOutboundQuotaExceeded,
 } from "@/lib/security/limits";
-import { startTurnTrace, type TurnReply } from "@/lib/tracing/turn-trace";
+import {
+  startTurnTrace,
+  type TurnReply,
+  type TurnTrace,
+} from "@/lib/tracing/turn-trace";
 import { confirmWhatsAppBooking } from "./booking";
 import {
   CHOOSE_ANOTHER_TIME_BUTTON_ID,
@@ -330,6 +334,7 @@ export async function processWhatsAppJob(
 ): Promise<ProcessJobResult> {
   const message = job.payload as InboundWhatsAppMessage;
   let conversationId: string | null = null;
+  let turn: TurnTrace | undefined;
   try {
     const resolved = await resolveInboundConversation(message, new Date());
     if (!resolved.resolved) {
@@ -373,7 +378,7 @@ export async function processWhatsAppJob(
           ctx.conversationId,
         );
         if (history.length < MAX_CHAT_MESSAGES_PER_CONVERSATION) {
-          const turn = startTurnTrace({
+          turn = startTurnTrace({
             channel: "whatsapp",
             conversationId,
             schoolId: resolved.schoolId,
@@ -400,6 +405,11 @@ export async function processWhatsAppJob(
     await failJob(job.id, job.attempts, message);
     console.error("whatsapp: job failed", job.id, message);
     return "failed";
+  } finally {
+    // Before the worker finishes, so the trace isn't lost when its invocation
+    // ends, and after the lock is released, so exporting never holds up the
+    // conversation's next message. A failed export is only logged.
+    await turn?.exportWhenEnded();
   }
 }
 
