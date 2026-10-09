@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { addDays } from "date-fns";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
@@ -10,6 +11,7 @@ import {
   users,
 } from "@/db/schema";
 import { hashToken } from "@/lib/crypto";
+import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 import {
   authSql,
   deleteAuthUser,
@@ -60,6 +62,47 @@ async function conversationFor(resumeToken: string) {
     .where(eq(conversations.resumeTokenHash, hashToken(resumeToken)))
     .limit(1);
   return requireRow(conversation, "conversation");
+}
+
+// A conversation as the route would have left it after earlier turns.
+async function existingConversation({
+  messageIds = [],
+  generatingAt = null,
+  expiresAt = addDays(new Date(), 30),
+}: {
+  messageIds?: string[];
+  generatingAt?: Date | null;
+  expiresAt?: Date;
+}) {
+  const resumeToken = randomUUID();
+  const [conversation] = await db
+    .insert(conversations)
+    .values({
+      schoolId,
+      resumeTokenHash: hashToken(resumeToken),
+      generatingAt,
+      expiresAt,
+    })
+    .returning({ id: conversations.id });
+  const conversationId = requireRow(conversation, "conversation").id;
+  if (messageIds.length > 0) {
+    await db.insert(messages).values(
+      messageIds.map((messageId, index) => ({
+        conversationId,
+        messageId,
+        role: index % 2 === 0 ? "user" : "assistant",
+        parts: [{ type: "text", text: `Message ${index + 1}` }],
+        purgeAt: expiresAt,
+      })),
+    );
+  }
+  return { resumeToken, conversationId };
+}
+
+// Sorted: rows inserted together share a created_at.
+async function savedMessageIds(conversationId: string) {
+  const saved = await savedMessages(conversationId);
+  return saved.map(({ messageId }) => messageId).sort();
 }
 
 async function savedMessages(conversationId: string) {
@@ -186,5 +229,84 @@ describe("a web chat turn with no AI Gateway token", () => {
         text: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
       }),
     );
+  });
+});
+
+describe("a rejected web chat message", () => {
+  it("gets 409 while another reply is generating, saves nothing, and leaves that reply's lock in place", async () => {
+    const lockedAt = new Date(Date.now() - 5_000);
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1"],
+      generatingAt: lockedAt,
+    });
+
+    const response = await sendMessage(resumeToken, "question-2", "Hello?");
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "generation_in_progress" });
+    expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
+    expect((await conversationFor(resumeToken)).generatingAt).toEqual(lockedAt);
+  });
+
+  it("gets 409 when the message was already sent, saves no reply, and releases the lock", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1", "reply-1"],
+    });
+
+    const response = await sendMessage(resumeToken, "question-1", "Hello?");
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "duplicate" });
+    expect(await savedMessageIds(conversationId)).toEqual([
+      "question-1",
+      "reply-1",
+    ]);
+    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
+  });
+
+  it("gets 429 once the conversation is at its message limit, saves nothing, and releases the lock", async () => {
+    const messageIds = Array.from(
+      { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
+      (_, index) => `message-${index + 1}`,
+    );
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds,
+    });
+
+    const response = await sendMessage(resumeToken, "one-more", "Hello?");
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "limit" });
+    expect(await savedMessageIds(conversationId)).toEqual(
+      messageIds.toSorted(),
+    );
+    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
+  });
+
+  it("gets 410 once the conversation has expired, and saves nothing", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1"],
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+
+    const response = await sendMessage(resumeToken, "question-2", "Hello?");
+
+    expect(response.status).toBe(410);
+    expect(await response.json()).toEqual({ error: "expired" });
+    expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
+    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
+  });
+});
+
+describe("a web chat turn that fails before its reply starts", () => {
+  it("releases the conversation lock", async () => {
+    const resumeToken = randomUUID();
+
+    // Postgres cannot store a NUL character, so saving this message fails.
+    await expect(
+      sendMessage(resumeToken, "question-1", "Hello\u0000"),
+    ).rejects.toThrow();
+
+    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
   });
 });

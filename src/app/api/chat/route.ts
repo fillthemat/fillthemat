@@ -120,6 +120,9 @@ export async function POST(request: Request) {
       .where(eq(conversations.id, conversation.id));
   };
 
+  // Every way out of this handler releases the lock, unless the reply has
+  // started streaming: then its onFinish releases it once the reply is saved.
+  let replyOwnsLock = false;
   try {
     const stored = await db
       .select()
@@ -155,7 +158,7 @@ export async function POST(request: Request) {
       purgeAt,
     });
 
-    return await streamedReply({
+    const response = await streamedReply({
       school,
       catalog,
       messages: uiMessages,
@@ -175,9 +178,10 @@ export async function POST(request: Request) {
         }
       },
     });
-  } catch (error) {
-    await releaseLock();
-    throw error;
+    replyOwnsLock = true;
+    return response;
+  } finally {
+    if (!replyOwnsLock) await releaseLock();
   }
 }
 
