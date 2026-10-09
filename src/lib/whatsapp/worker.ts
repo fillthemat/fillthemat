@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { generateId, type UIMessage, validateUIMessages } from "ai";
 import { addHours } from "date-fns";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools, type WhatsAppJob } from "@/db/schema";
-import { completedReply } from "@/lib/ai/assistant";
+import { completedReply, PLATFORM_INSTRUCTIONS_HASH } from "@/lib/ai/assistant";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { loadSchoolCatalog } from "@/lib/schools/public";
@@ -11,6 +12,7 @@ import {
   MAX_CHAT_MESSAGES_PER_CONVERSATION,
   whatsappOutboundQuotaExceeded,
 } from "@/lib/security/limits";
+import { startTurnTrace, type TurnReply } from "@/lib/tracing/turn-trace";
 import { confirmWhatsAppBooking } from "./booking";
 import {
   CHOOSE_ANOTHER_TIME_BUTTON_ID,
@@ -60,6 +62,11 @@ type JobContext = {
 
 type InboundContext = JobContext & {
   message: InboundWhatsAppMessage;
+  /**
+   * The inbound message's id in traces, instead of its wamid, which encodes
+   * the sender's phone number.
+   */
+  inboundMessageId: string;
   runId: string;
 };
 
@@ -101,6 +108,7 @@ async function handleConfirmation(
   // same deterministic idempotency key instead of silently dropping a confirm.
   if (!intent) {
     await persistUserMessage({
+      id: ctx.inboundMessageId,
       conversationId: ctx.conversationId,
       messageId: ctx.message.wamid,
       text: inboundText,
@@ -126,6 +134,7 @@ async function handleConfirmation(
   });
 
   await persistUserMessage({
+    id: ctx.inboundMessageId,
     conversationId: ctx.conversationId,
     messageId: ctx.message.wamid,
     text: inboundText,
@@ -165,26 +174,24 @@ async function enqueueAndSendTextReplies(
  */
 async function handleAssistantTurn(
   ctx: InboundContext,
+  history: UIMessage[],
   now: Date,
-): Promise<void> {
-  const history = await loadValidatedConversationMessages(ctx.conversationId);
-  if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) return;
-
+): Promise<TurnReply> {
   // 429-equivalent: per-wa_id daily outbound cap (Phase 5 abuse controls).
   if (
     await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
   ) {
     await persistUserMessage({
+      id: ctx.inboundMessageId,
       conversationId: ctx.conversationId,
       messageId: ctx.message.wamid,
       text: ctx.message.text ?? "",
       purgeAt: ctx.purgeAt,
     });
-    await sendNotice(
-      ctx,
-      "You've reached today's message limit. Please try again tomorrow.",
-    );
-    return;
+    const notice =
+      "You've reached today's message limit. Please try again tomorrow.";
+    await sendNotice(ctx, notice);
+    return { replyText: notice };
   }
 
   const inboundUIMessage: UIMessage = {
@@ -211,8 +218,13 @@ async function handleAssistantTurn(
     messages: uiMessages,
     now,
   });
+  const assistant = {
+    modelId: reply.modelId,
+    platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
+  };
 
   await persistUserMessage({
+    id: ctx.inboundMessageId,
     conversationId: ctx.conversationId,
     messageId: ctx.message.wamid,
     text: ctx.message.text ?? "",
@@ -237,7 +249,7 @@ async function handleAssistantTurn(
     const body =
       reply.text ||
       "I found a time that works. Use the buttons below to confirm.";
-    await persistAssistantMessage({
+    const replyMessageId = await persistAssistantMessage({
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: body ? [{ type: "text", text: body }] : [],
@@ -259,7 +271,7 @@ async function handleAssistantTurn(
     if (deliveryId) {
       await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
     }
-    return;
+    return { replyMessageId, replyText: body, assistant };
   }
 
   // Lead: platform writes it (shared create-lead). Owner delivery stays email.
@@ -285,25 +297,26 @@ async function handleAssistantTurn(
     const replyText =
       reply.text ||
       "Thanks — I've passed your details along and the school will contact you to find a time.";
-    await persistAssistantMessage({
+    const replyMessageId = await persistAssistantMessage({
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: [{ type: "text", text: replyText }],
       purgeAt: ctx.purgeAt,
     });
     await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${lead.id}`);
-    return;
+    return { replyMessageId, replyText, assistant };
   }
 
   // Plain text reply.
   const replyText = reply.text;
-  await persistAssistantMessage({
+  const replyMessageId = await persistAssistantMessage({
     conversationId: ctx.conversationId,
     messageId: generateId(),
     parts: replyText ? [{ type: "text", text: replyText }] : [],
     purgeAt: ctx.purgeAt,
   });
   await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${generateId()}`);
+  return { replyMessageId, replyText, assistant };
 }
 
 /**
@@ -350,12 +363,27 @@ export async function processWhatsAppJob(
         conversationId,
         purgeAt: resolved.purgeAt,
         message,
+        inboundMessageId: randomUUID(),
         runId,
       };
 
       const confirmed = await handleConfirmation(ctx, now);
       if (!confirmed) {
-        await handleAssistantTurn(ctx, now);
+        const history = await loadValidatedConversationMessages(
+          ctx.conversationId,
+        );
+        if (history.length < MAX_CHAT_MESSAGES_PER_CONVERSATION) {
+          const turn = startTurnTrace({
+            channel: "whatsapp",
+            conversationId,
+            schoolId: resolved.schoolId,
+            inboundMessageId: ctx.inboundMessageId,
+            inboundText: message.text ?? "",
+          });
+          turn.end(
+            await turn.run(() => handleAssistantTurn(ctx, history, now)),
+          );
+        }
       }
 
       await markJobDone(job.id, resolved.schoolId);
