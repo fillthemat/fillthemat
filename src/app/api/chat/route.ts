@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { type UIMessage, validateUIMessages } from "ai";
 import { addDays } from "date-fns";
 import { and, asc, eq, isNull } from "drizzle-orm";
@@ -144,11 +145,12 @@ export async function POST(request: Request) {
     // after the response, once the turn has ended: a browser that disconnects
     // early closes the response before the reply is saved.
     const message = body.message;
+    const inboundMessageId = randomUUID();
     const turn = startTurnTrace({
       channel: "web",
       conversationId: conversation.id,
       schoolId: school.id,
-      inboundMessageId: message.id,
+      inboundMessageId,
       inboundText: userText,
     });
     try {
@@ -171,6 +173,7 @@ export async function POST(request: Request) {
       });
 
       await db.insert(messages).values({
+        id: inboundMessageId,
         conversationId: conversation.id,
         messageId: message.id,
         role: "user",
@@ -185,10 +188,12 @@ export async function POST(request: Request) {
         messages: uiMessages,
         now,
         onFinish: async ({ reply, completion, modelId }) => {
+          const replyMessageId = randomUUID();
           // Saving the reply is the last of the turn's work.
           await turn.run(async () => {
             try {
               await db.insert(messages).values({
+                id: replyMessageId,
                 conversationId: conversation.id,
                 messageId: reply.id,
                 role: "assistant",
@@ -201,7 +206,7 @@ export async function POST(request: Request) {
             }
           });
           turn.end({
-            replyMessageId: reply.id,
+            replyMessageId,
             replyText: textFromMessage(reply),
             completion,
             assistant: {

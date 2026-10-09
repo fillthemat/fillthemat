@@ -365,11 +365,14 @@ describe("a web chat turn's trace", () => {
     ).text();
 
     const conversation = await conversationFor(resumeToken);
-    const [question, reply] = await savedMessages(conversation.id);
+    const saved = await db
+      .select({ id: messages.id, role: messages.role })
+      .from(messages)
+      .where(eq(messages.conversationId, conversation.id));
     const [turnTrace] = await exportedTraces();
     expect(turnTrace?.metadata).toEqual({
-      inboundMessageId: question?.messageId,
-      replyMessageId: reply?.messageId,
+      inboundMessageId: saved.find(({ role }) => role === "user")?.id,
+      replyMessageId: saved.find(({ role }) => role === "assistant")?.id,
       completion: "complete",
       modelId: "scripted-local",
       platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),

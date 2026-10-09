@@ -12,12 +12,16 @@ export type TurnTraceStart = {
   channel: Channel;
   conversationId: string;
   schoolId: string;
+  /** The id of the inbound message's saved row. */
   inboundMessageId: string;
   inboundText: string;
 };
 
 export type TurnReply = {
-  /** Absent when the reply was sent but not saved as a message. */
+  /**
+   * The id of the reply's saved row. Absent when the reply was sent but not
+   * saved as a message.
+   */
   replyMessageId?: string;
   replyText: string;
   /** How the saved reply ended, where it can end short of complete. */
