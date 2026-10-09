@@ -473,6 +473,57 @@ describe("a web chat turn's trace", () => {
   });
 });
 
+describe("a web chat turn whose browser disconnects mid-reply", () => {
+  it("still saves the reply, releases the lock, and is traced once, with the saved reply as output", async () => {
+    const { resumeToken, conversationId } = await existingConversation({});
+
+    await whileSavingRepliesIn(
+      conversationId,
+      "perform pg_sleep(0.5)",
+      async () => {
+        const response = await sendMessage(
+          resumeToken,
+          "question-1",
+          "What can my son try?",
+        );
+        const body = response.body?.getReader();
+        await body?.read();
+        await body?.cancel();
+
+        // The browser left before the reply was saved.
+        expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
+        await vi.waitFor(
+          async () =>
+            expect(
+              (await conversationFor(resumeToken)).generatingAt,
+            ).toBeNull(),
+          { timeout: 5_000 },
+        );
+      },
+    );
+
+    const [, reply] = await savedMessages(conversationId);
+    expect(reply).toEqual(
+      expect.objectContaining({ role: "assistant", completion: "complete" }),
+    );
+    expect(reply?.parts).toContainEqual(
+      expect.objectContaining({
+        type: "text",
+        text: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
+      }),
+    );
+    await vi.waitFor(async () =>
+      expect(await exportedTraces()).toEqual([
+        expect.objectContaining({
+          sessionId: conversationId,
+          output:
+            "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
+        }),
+      ]),
+    );
+  });
+});
+
 describe("a web chat turn whose trace can't be exported", () => {
   it("still replies, saves the reply, and releases the lock, logging the failure without the conversation", async () => {
     failSpanExports();
