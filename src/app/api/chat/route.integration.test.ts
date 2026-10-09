@@ -339,6 +339,53 @@ describe("a web chat turn's trace", () => {
     );
   });
 
+  it("keeps the turns of two conversations replying at once in their own traces", async () => {
+    const turns = [
+      { resumeToken: randomUUID(), question: "Do you have adult classes?" },
+      { resumeToken: randomUUID(), question: "What can my son try?" },
+    ];
+
+    await Promise.all(
+      turns.map(async ({ resumeToken, question }) =>
+        (await sendMessage(resumeToken, "question-1", question)).text(),
+      ),
+    );
+
+    const spans = await exportedSpans();
+    const traces = [
+      ...Map.groupBy(spans, (span) => span.spanContext().traceId).values(),
+    ].map((traceSpans) => {
+      const question = String(
+        traceSpans.find(isRoot)?.attributes["langfuse.observation.input"],
+      );
+      return {
+        question,
+        sessions: [
+          ...new Set(traceSpans.map((span) => span.attributes["session.id"])),
+        ],
+        assistantRunsThatSawIt: traceSpans
+          .filter(
+            (span) =>
+              span.attributes["gen_ai.operation.name"] === "invoke_agent",
+          )
+          .map((span) =>
+            String(span.attributes["gen_ai.input.messages"]).includes(question),
+          ),
+      };
+    });
+    expect(
+      traces.toSorted((a, b) => a.question.localeCompare(b.question)),
+    ).toEqual(
+      await Promise.all(
+        turns.map(async ({ resumeToken, question }) => ({
+          question,
+          sessions: [(await conversationFor(resumeToken)).id],
+          assistantRunsThatSawIt: [true],
+        })),
+      ),
+    );
+  });
+
   it("records the saved message ids, the model, and a short hash of the platform instructions", async () => {
     const resumeToken = randomUUID();
 
