@@ -1,6 +1,6 @@
 # Conversation debugger — implementation handoff
 
-Status: **planned; not implemented**.
+Status: **partly implemented**. Turn tracing has shipped: every web chat and WhatsApp turn is one Langfuse trace, with contact details masked (`src/lib/tracing/`). The debug gate, operator entry point, annotations, and runbook are not implemented.
 
 > **Superseded in part by [ADR-0001](adr/0001-trace-every-production-turn.md):** every production turn on every channel is traced (with contact masking). The opt-in/allowlist/synthetic-only rules in "Privacy and authorization contract" and the "disable telemetry for WhatsApp" rule no longer apply.
 
@@ -145,7 +145,7 @@ Exit: captured test spans demonstrate correct hierarchy and safe disabled behavi
 
 ### Phase 2 — request/agent instrumentation and lifecycle
 
-- Add the debug gate/context verification and identities in `/api/chat`, on the turn trace (`src/lib/tracing/turn-trace.ts`); the assistant does no tracing of its own. Non-debug callers default to tracing disabled.
+- Add the debug gate/context verification and identities in `/api/chat`, on the turn trace (`src/lib/tracing/turn-trace.ts`); the assistant does no tracing of its own. Non-debug turns are traced too (ADR-0001).
 - Capture accepted turns plus authorized rejected attempts (duplicate, expired, generation-in-progress, limits) with distinguishable outcomes. Never duplicate a canonical message for tracing.
 - Integrate effective prompt/settings versions, model generations, tools, and actual stop-predicate evidence. Use SDK lifecycle hooks only where automatic integration lacks required fields.
 - Keep the root observation alive through asynchronous streaming and assistant persistence; use one idempotent finalizer across completion/error/abort paths. Close spans and preserve/release conversation locks according to existing semantics, independently of exporter success.
