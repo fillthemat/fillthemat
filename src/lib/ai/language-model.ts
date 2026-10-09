@@ -1,5 +1,6 @@
 import { gateway, generateId, type LanguageModel } from "ai";
 import { z } from "zod";
+import { hasGatewayToken } from "./gateway-token";
 
 type LanguageModelV4 = Extract<LanguageModel, { specificationVersion: "v4" }>;
 type Prompt = Parameters<LanguageModelV4["doGenerate"]>[0]["prompt"];
@@ -22,10 +23,7 @@ function gatewayLanguageModel(): LanguageModelV4 {
  * assistant and its tools run without a paid model call.
  */
 export function defaultLanguageModel(): LanguageModelV4 {
-  const hasGatewayToken = Boolean(
-    process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN,
-  );
-  if (process.env.NODE_ENV === "production" || hasGatewayToken) {
+  if (process.env.NODE_ENV === "production" || hasGatewayToken()) {
     return gatewayLanguageModel();
   }
   return scriptedLocalModel;

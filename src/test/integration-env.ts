@@ -1,12 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import postgres from "postgres";
+import { GATEWAY_TOKEN_ENV_VARS } from "@/lib/ai/gateway-token";
 
 // Integration tests must never call the paid AI Gateway. A credential can come
 // from .env.local (the main checkout's has a real VERCEL_OIDC_TOKEN) or from the
 // shell; without one the assistant uses its scripted local model.
-const AI_GATEWAY_CREDENTIALS = ["VERCEL_OIDC_TOKEN", "AI_GATEWAY_API_KEY"];
-
 export function loadLocalEnv(envFile = ".env.local") {
   if (!existsSync(envFile)) {
     throw new Error(
@@ -17,7 +16,7 @@ export function loadLocalEnv(envFile = ".env.local") {
   for (const [key, value] of Object.entries(parsed)) {
     if (value !== undefined && !process.env[key]) process.env[key] = value;
   }
-  for (const key of AI_GATEWAY_CREDENTIALS) delete process.env[key];
+  for (const name of GATEWAY_TOKEN_ENV_VARS) delete process.env[name];
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is not set after loading .env.local.");
   }

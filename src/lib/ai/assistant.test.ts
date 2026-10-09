@@ -10,6 +10,7 @@ import {
   type ReplyFinish,
   streamedReply,
 } from "./assistant";
+import { GATEWAY_TOKEN_ENV_VARS } from "./gateway-token";
 import { PLATFORM_INSTRUCTIONS } from "./system-prompt";
 
 type ModelStep = Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>>;
@@ -430,8 +431,7 @@ describe("the assistant's completed reply", () => {
 
 describe("the assistant's completed reply with no model passed", () => {
   beforeEach(() => {
-    vi.stubEnv("VERCEL_OIDC_TOKEN", undefined);
-    vi.stubEnv("AI_GATEWAY_API_KEY", undefined);
+    for (const name of GATEWAY_TOKEN_ENV_VARS) vi.stubEnv(name, undefined);
   });
 
   afterEach(() => {
