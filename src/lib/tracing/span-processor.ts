@@ -11,9 +11,9 @@ import type {
  * The span processor that exports traces to Langfuse, with email addresses
  * and phone numbers masked in everything a span exports.
  *
- * Production passes no exporter: spans are batched and sent to Langfuse over
- * OTLP, and each turn flushes them. Tests pass an in-memory exporter, and each
- * span is exported as soon as it ends.
+ * Spans are batched, and each turn flushes them. Production passes no
+ * exporter: batches are sent to Langfuse over OTLP. Tests pass an in-memory
+ * exporter, which receives spans exactly when Langfuse would.
  */
 export function createTraceSpanProcessor({
   exporter,
@@ -23,7 +23,7 @@ export function createTraceSpanProcessor({
   return new MaskingSpanProcessor(
     new LangfuseSpanProcessor({
       exporter,
-      exportMode: exporter ? "immediate" : "batched",
+      exportMode: "batched",
       mediaUploadEnabled: false,
     }),
   );
