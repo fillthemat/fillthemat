@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import postgres from "postgres";
@@ -30,6 +31,39 @@ export function authSql() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
   return postgres(url, { prepare: false, max: 1 });
+}
+
+/**
+ * Runs `work` while the database runs `statement` (PL/pgSQL) before saving
+ * each of the conversation's messages with `role`, e.g. to make saving slow
+ * or fail.
+ */
+export async function whileSavingMessages(
+  sql: ReturnType<typeof postgres>,
+  {
+    conversationId,
+    role,
+    statement,
+  }: {
+    conversationId: string;
+    role: "user" | "assistant";
+    statement: string;
+  },
+  work: () => Promise<void>,
+) {
+  const name = `test_message_save_${randomUUID().replaceAll("-", "")}`;
+  await sql.unsafe(
+    `create function public.${name}() returns trigger language plpgsql as $$ begin ${statement}; return new; end $$`,
+  );
+  await sql.unsafe(
+    `create trigger ${name} before insert on app.messages for each row when (new.conversation_id = '${conversationId}' and new.role = '${role}') execute function public.${name}()`,
+  );
+  try {
+    await work();
+  } finally {
+    await sql.unsafe(`drop trigger ${name} on app.messages`);
+    await sql.unsafe(`drop function public.${name}()`);
+  }
 }
 
 export async function insertAuthUser(

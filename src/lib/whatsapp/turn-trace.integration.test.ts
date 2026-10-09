@@ -29,14 +29,20 @@ import {
 import { confirmBookingButtonId } from "@/lib/whatsapp/confirmation";
 import { upsertPendingBookingIntent } from "@/lib/whatsapp/intents";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
-import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
+import {
+  authSql,
+  loadLocalEnv,
+  requireRow,
+  whileSavingMessages,
+} from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
-  everythingExported,
   exportedSpans,
   exportedTraces,
   holdSpanExports,
+  isAssistantRun,
   isRoot,
+  leaks,
   spansExportedSoFar,
 } from "@/test/tracing";
 import {
@@ -150,26 +156,6 @@ async function startConversation(waId: string) {
   return requireRow(conversation, "conversation").id;
 }
 
-// Runs `work` while saving the conversation's inbound messages fails.
-async function whileSavingInboundMessagesFails(
-  conversationId: string,
-  work: () => Promise<void>,
-) {
-  const name = `test_inbound_save_${randomUUID().replaceAll("-", "")}`;
-  await sql.unsafe(
-    `create function public.${name}() returns trigger language plpgsql as $$ begin raise exception 'disk full'; end $$`,
-  );
-  await sql.unsafe(
-    `create trigger ${name} before insert on app.messages for each row when (new.conversation_id = '${conversationId}' and new.role = 'user') execute function public.${name}()`,
-  );
-  try {
-    await work();
-  } finally {
-    await sql.unsafe(`drop trigger ${name} on app.messages`);
-    await sql.unsafe(`drop function public.${name}()`);
-  }
-}
-
 // A conversation with `waId` whose Booking Intent awaits confirmation.
 async function proposedBooking(
   waId: string,
@@ -258,9 +244,7 @@ describe("a WhatsApp assistant turn's trace", () => {
     ]);
     const spans = await exportedSpans();
     const root = spans.find(isRoot);
-    const assistantRun = spans.find(
-      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
-    );
+    const assistantRun = spans.find(isAssistantRun);
     expect(assistantRun?.parentSpanContext?.spanId).toBe(
       root?.spanContext().spanId,
     );
@@ -311,13 +295,7 @@ describe("a WhatsApp assistant turn's trace", () => {
 
     const spans = await exportedSpans();
     expect(spans.filter(isRoot)).toHaveLength(1);
-    const identifiers = [waId, hashWaId(waId), wamid];
-    const leaks = spans.flatMap((span) =>
-      identifiers
-        .filter((identifier) => everythingExported(span).includes(identifier))
-        .map((identifier) => `${span.name}: ${identifier}`),
-    );
-    expect(leaks).toEqual([]);
+    expect(leaks(spans, [waId, hashWaId(waId), wamid])).toEqual([]);
   });
 });
 
@@ -569,8 +547,14 @@ describe("a WhatsApp turn whose attempt fails", () => {
     const conversationId = await startConversation(waId);
     const wamid = wamidFrom(waId);
 
-    await whileSavingInboundMessagesFails(conversationId, () =>
-      sendText(waId, "What can my son try?", wamid),
+    await whileSavingMessages(
+      sql,
+      {
+        conversationId,
+        role: "user",
+        statement: "raise exception 'disk full'",
+      },
+      () => sendText(waId, "What can my son try?", wamid),
     );
 
     const exportedByWorker = spansExportedSoFar();
@@ -581,9 +565,7 @@ describe("a WhatsApp turn whose attempt fails", () => {
       "langfuse.observation.status_message":
         expect.stringContaining("disk full"),
     });
-    const assistantRun = exportedByWorker.find(
-      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
-    );
+    const assistantRun = exportedByWorker.find(isAssistantRun);
     expect(assistantRun?.parentSpanContext?.spanId).toBe(
       failedTurn?.spanContext().spanId,
     );

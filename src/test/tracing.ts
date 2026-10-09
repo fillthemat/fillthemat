@@ -58,10 +58,25 @@ export function isRoot(span: ReadableSpan) {
   return !span.parentSpanContext;
 }
 
+/** The span of one assistant run: its model calls and tool calls nest under it. */
+export function isAssistantRun(span: ReadableSpan) {
+  return span.attributes["gen_ai.operation.name"] === "invoke_agent";
+}
+
 /** Everything a span sends to Langfuse about itself, as one string. */
-export function everythingExported(span: ReadableSpan): string {
+function everythingExported(span: ReadableSpan): string {
   const { name, attributes, events, status, links } = span;
   return JSON.stringify({ name, attributes, events, status, links });
+}
+
+/** Each of `values` that any of `spans` sends to Langfuse, by span name. */
+export function leaks(spans: ReadableSpan[], values: string[]): string[] {
+  return spans.flatMap((span) => {
+    const exported = everythingExported(span);
+    return values
+      .filter((value) => exported.includes(value))
+      .map((value) => `${span.name}: ${value}`);
+  });
 }
 
 /**
