@@ -1,260 +1,67 @@
-import { randomUUID } from "node:crypto";
-import { type UIMessage, validateUIMessages } from "ai";
-import { addDays } from "date-fns";
-import { and, asc, eq, isNull } from "drizzle-orm";
-import { after } from "next/server";
-import { getDb } from "@/db";
-import { conversations, messages } from "@/db/schema";
-import { streamedReply } from "@/lib/ai/assistant";
-import { hashToken } from "@/lib/crypto";
-import { TRANSCRIPT_RETENTION_DAYS } from "@/lib/schedule/constants";
+import { requestBodyTooLarge } from "@/lib/security/limits";
 import {
-  getSchoolForLandingAccess,
-  loadSchoolCatalog,
-} from "@/lib/schools/public";
+  chatRequestSchema,
+  chatTranscriptRequestSchema,
+} from "@/lib/validation";
 import {
-  MAX_CHAT_MESSAGES_PER_CONVERSATION,
-  MAX_USER_MESSAGE_CHARS,
-  requestBodyTooLarge,
-} from "@/lib/security/limits";
-import { startTurnTrace } from "@/lib/tracing/turn-trace";
+  loadWebTranscript,
+  startWebTurn,
+  type WebTurnResult,
+} from "@/lib/web-chat";
 
-function textFromMessage(message: UIMessage): string {
-  return message.parts
-    .map((part) => (part.type === "text" ? part.text : ""))
-    .join("")
-    .trim();
-}
+// Five minutes, safely below the ten-minute abandoned-generation threshold.
+export const maxDuration = 300;
+
+const refusals = {
+  not_found: { status: 404, error: "not_found" },
+  invalid_conversation: { status: 403, error: "invalid_conversation" },
+  generation_in_progress: { status: 409, error: "generation_in_progress" },
+  duplicate: { status: 409, error: "duplicate" },
+  message_limit: { status: 429, error: "limit" },
+  expired: { status: 410, error: "expired" },
+} satisfies Record<
+  Extract<WebTurnResult, { ok: false }>["reason"],
+  { status: number; error: string }
+>;
 
 export async function POST(request: Request) {
   if (requestBodyTooLarge(request.headers.get("content-length"))) {
     return Response.json({ error: "too_large" }, { status: 413 });
   }
-
-  const body = (await request.json()) as {
-    slug?: string;
-    resumeToken?: string;
-    preview?: boolean;
-    message?: UIMessage;
-  };
-  if (
-    !body.slug ||
-    !body.resumeToken ||
-    !body.message ||
-    body.message.role !== "user"
-  ) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
     return Response.json({ error: "invalid" }, { status: 400 });
   }
-  const userText = textFromMessage(body.message);
-  if (!userText || userText.length > MAX_USER_MESSAGE_CHARS) {
-    return Response.json({ error: "invalid_message" }, { status: 400 });
+  const parsed = chatRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    const invalidMessage = parsed.error.issues.some(
+      (issue) => issue.message === "invalid_message",
+    );
+    return Response.json(
+      { error: invalidMessage ? "invalid_message" : "invalid" },
+      { status: 400 },
+    );
   }
-
-  const school = await getSchoolForLandingAccess(body.slug, {
-    preview: Boolean(body.preview),
-  });
-  if (!school) return Response.json({ error: "not_found" }, { status: 404 });
-
-  const db = getDb();
-  const tokenHash = hashToken(body.resumeToken);
-  const now = new Date();
-  const purgeAt = addDays(now, TRANSCRIPT_RETENTION_DAYS);
-
-  let [conversation] = await db
-    .select()
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.schoolId, school.id),
-        eq(conversations.resumeTokenHash, tokenHash),
-      ),
-    )
-    .limit(1);
-
-  if (!conversation) {
-    const [created] = await db
-      .insert(conversations)
-      .values({
-        schoolId: school.id,
-        resumeTokenHash: tokenHash,
-        expiresAt: purgeAt,
-      })
-      .onConflictDoNothing({ target: conversations.resumeTokenHash })
-      .returning();
-    conversation = created;
-    if (!conversation) {
-      const [again] = await db
-        .select()
-        .from(conversations)
-        .where(eq(conversations.resumeTokenHash, tokenHash))
-        .limit(1);
-      if (!again || again.schoolId !== school.id) {
-        return Response.json(
-          { error: "invalid_conversation" },
-          { status: 403 },
-        );
-      }
-      conversation = again;
-    }
-  }
-
-  if (conversation.expiresAt <= now) {
-    return Response.json({ error: "expired" }, { status: 410 });
-  }
-
-  const claimed = await db
-    .update(conversations)
-    .set({ generatingAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(conversations.id, conversation.id),
-        isNull(conversations.generatingAt),
-      ),
-    )
-    .returning();
-  if (!claimed[0]) {
-    return Response.json({ error: "generation_in_progress" }, { status: 409 });
-  }
-
-  const releaseLock = async () => {
-    await db
-      .update(conversations)
-      .set({ generatingAt: null, updatedAt: new Date() })
-      .where(eq(conversations.id, conversation.id));
-  };
-
-  // Every way out of this handler releases the lock, unless the reply has
-  // started streaming: then its onFinish releases it once the reply is saved.
-  let replyOwnsLock = false;
-  try {
-    const stored = await db
-      .select()
-      .from(messages)
-      .where(eq(messages.conversationId, conversation.id))
-      .orderBy(asc(messages.createdAt));
-
-    if (stored.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) {
-      return Response.json({ error: "limit" }, { status: 429 });
-    }
-
-    if (stored.some((row) => row.messageId === body.message?.id)) {
-      return Response.json({ error: "duplicate" }, { status: 409 });
-    }
-
-    // The message is accepted, so it starts a turn. Its trace is exported
-    // after the response, once the turn has ended: a browser that disconnects
-    // early closes the response before the reply is saved.
-    const message = body.message;
-    const inboundMessageId = randomUUID();
-    const turn = startTurnTrace({
-      channel: "web",
-      conversationId: conversation.id,
-      schoolId: school.id,
-      inboundMessageId,
-      inboundText: userText,
-    });
-    try {
-      after(() => turn.exportWhenEnded());
-    } catch {
-      // after() throws outside a Next request scope, as in tests and scripts.
-      // There the export isn't awaited, because the turn only ends once the
-      // response has streamed. It never rejects.
-      void turn.exportWhenEnded();
-    }
-
-    const response = await turn.run(async () => {
-      const catalog = await loadSchoolCatalog(school.id);
-
-      const history = stored.map((row) => ({
-        id: row.messageId,
-        role: row.role as UIMessage["role"],
-        parts: row.parts as UIMessage["parts"],
-      }));
-      const uiMessages = await validateUIMessages({
-        messages: [...history, message],
-      });
-
-      await db.insert(messages).values({
-        id: inboundMessageId,
-        conversationId: conversation.id,
-        messageId: message.id,
-        role: "user",
-        parts: message.parts,
-        completion: "complete",
-        purgeAt,
-      });
-
-      return streamedReply({
-        school,
-        catalog,
-        messages: uiMessages,
-        now,
-        onFinish: async ({ reply, completion, provenance }) => {
-          const replyMessageId = randomUUID();
-          // Saving the reply is the last of the turn's work.
-          await turn.run(async () => {
-            try {
-              await db.insert(messages).values({
-                id: replyMessageId,
-                conversationId: conversation.id,
-                messageId: reply.id,
-                role: "assistant",
-                parts: reply.parts,
-                completion,
-                purgeAt,
-              });
-            } finally {
-              await releaseLock();
-            }
-          });
-          turn.end({
-            text: textFromMessage(reply),
-            messageId: replyMessageId,
-            completion,
-            provenance,
-          });
-        },
-      });
-    });
-    replyOwnsLock = true;
-    return response;
-  } finally {
-    if (!replyOwnsLock) await releaseLock();
-  }
+  const result = await startWebTurn(parsed.data);
+  if (result.ok) return result.response;
+  const { status, error } = refusals[result.reason];
+  return Response.json({ error }, { status });
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const slug = url.searchParams.get("slug");
-  const resumeToken = url.searchParams.get("resumeToken");
-  const preview = url.searchParams.get("preview") === "1";
-  if (!slug || !resumeToken) {
+  const params = new URL(request.url).searchParams;
+  const parsed = chatTranscriptRequestSchema.safeParse({
+    slug: params.get("slug"),
+    resumeToken: params.get("resumeToken"),
+    preview: params.get("preview") === "1",
+  });
+  if (!parsed.success) {
     return Response.json({ error: "invalid" }, { status: 400 });
   }
-  const school = await getSchoolForLandingAccess(slug, { preview });
-  if (!school) return Response.json({ error: "not_found" }, { status: 404 });
-  const db = getDb();
-  const [conversation] = await db
-    .select()
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.schoolId, school.id),
-        eq(conversations.resumeTokenHash, hashToken(resumeToken)),
-      ),
-    )
-    .limit(1);
-  if (!conversation) return Response.json({ messages: [] });
-  const rows = await db
-    .select()
-    .from(messages)
-    .where(eq(messages.conversationId, conversation.id))
-    .orderBy(asc(messages.createdAt));
-  return Response.json({
-    messages: rows.map((row) => ({
-      id: row.messageId,
-      role: row.role,
-      parts: row.parts,
-    })),
-  });
+  const result = await loadWebTranscript(parsed.data);
+  if (!result.ok)
+    return Response.json({ error: result.reason }, { status: 404 });
+  return Response.json({ messages: result.messages });
 }
