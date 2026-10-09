@@ -39,6 +39,14 @@ describe("loadLocalEnv", () => {
     expect(process.env.AI_GATEWAY_API_KEY).toBeUndefined();
   });
 
+  it("names the env file it loaded when DATABASE_URL is still missing", () => {
+    const envFile = writeEnvFile(["RESEND_FROM=onboarding@resend.dev"]);
+
+    expect(() => loadLocalEnv(envFile)).toThrow(
+      `DATABASE_URL is not set after loading ${envFile}.`,
+    );
+  });
+
   it("removes AI Gateway credentials exported in the shell", () => {
     const envFile = writeEnvFile(["DATABASE_URL=postgres://from-env-file"]);
     vi.stubEnv("VERCEL_OIDC_TOKEN", "from-shell");

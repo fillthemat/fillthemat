@@ -29,7 +29,7 @@ export function defaultLanguageModel(): LanguageModelV4 {
   return scriptedLocalModel;
 }
 
-const listedOfferings = z.object({
+const listedOfferingsSchema = z.object({
   offerings: z.array(z.object({ name: z.string() })),
 });
 
@@ -48,7 +48,7 @@ function scriptedStep(prompt: Prompt) {
   }
   const names = last.content.flatMap((part) => {
     if (part.type !== "tool-result" || part.output.type !== "json") return [];
-    const parsed = listedOfferings.safeParse(part.output.value);
+    const parsed = listedOfferingsSchema.safeParse(part.output.value);
     return parsed.success ? parsed.data.offerings.map(({ name }) => name) : [];
   });
   const text =
