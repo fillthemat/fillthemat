@@ -1,6 +1,5 @@
 import {
   convertToModelMessages,
-  gateway,
   type InferToolOutput,
   isStepCount,
   type LanguageModel,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/schedule/occurrences";
 import { parseSlotId } from "@/lib/schedule/slot-id";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
+import { defaultLanguageModel, gatewayLanguageModel } from "./language-model";
 import { buildBookingAgentInstructions } from "./system-prompt";
 
 export type AssistantSchool = Pick<
@@ -61,6 +61,7 @@ export type AssistantInput = {
   catalog: SchoolCatalog;
   messages: UIMessage[];
   now: Date;
+  /** Defaults to `defaultLanguageModel()`, chosen when the reply is made. */
   model?: LanguageModel;
 };
 
@@ -251,14 +252,9 @@ export type CompletedReply = {
   leadRequest: LeadRequest | null;
 };
 
-function gatewayModel() {
-  return gateway(
-    process.env.BOOKING_AGENT_MODEL || "anthropic/claude-sonnet-4.6",
-  );
-}
-
 /**
- * Runs the assistant over the conversation to completion (WhatsApp).
+ * Runs the assistant over the conversation to completion (WhatsApp) and
+ * returns its reply with any Booking Intent or Lead Request it gathered.
  */
 export async function completedReply({
   messages,
@@ -267,7 +263,7 @@ export async function completedReply({
 }: AssistantInput): Promise<CompletedReply> {
   const assistant = createAssistant({
     ...input,
-    model: model ?? gatewayModel(),
+    model: model ?? defaultLanguageModel(),
   });
   const result = await assistant.generate({
     messages: await convertToModelMessages(messages, {
@@ -317,6 +313,6 @@ export function createBookingAgent({
   return createAssistant({
     ...input,
     catalog: { offerings, windows, occurrences, faqs },
-    model: gatewayModel(),
+    model: gatewayLanguageModel(),
   });
 }

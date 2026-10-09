@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { UIMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
 import { type AssistantInput, completedReply } from "./assistant";
 
@@ -270,5 +270,37 @@ describe("the assistant's completed reply", () => {
         statedNeed: "Adult evening classes",
       },
     });
+  });
+});
+
+describe("the assistant's completed reply with no model passed", () => {
+  beforeEach(() => {
+    vi.stubEnv("VERCEL_OIDC_TOKEN", undefined);
+    vi.stubEnv("AI_GATEWAY_API_KEY", undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("uses the scripted local model outside production without a Gateway token, naming the active trial offerings", async () => {
+    const reply = await completedReply(input);
+
+    expect(reply).toEqual({
+      text: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
+      bookingIntent: null,
+      leadRequest: null,
+    });
+  });
+
+  it("replies with a fallback sentence when there are no active trial offerings", async () => {
+    const reply = await completedReply({
+      ...input,
+      catalog: { ...input.catalog, offerings: [adultMuayThai] },
+    });
+
+    expect(reply.text).toBe(
+      "Local scripted reply (no AI Gateway token). There are no active trial offerings.",
+    );
   });
 });
