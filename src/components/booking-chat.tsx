@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { APICallError, DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useState } from "react";
 import type { AssistantUIMessage } from "@/lib/ai/assistant";
 import { BookingFlow, type ProposedTrial } from "./booking-flow";
@@ -15,6 +15,15 @@ type Offering = {
   maximumAge: number | null;
   active: boolean;
 };
+
+function isMessageLimitRefusal(error: Error | undefined): boolean {
+  if (!APICallError.isInstance(error) || error.statusCode !== 429) return false;
+  try {
+    return JSON.parse(error.responseBody ?? "{}").error === "limit";
+  } catch {
+    return false;
+  }
+}
 
 // The trial offering and slot of the assistant's last Booking Intent, handed
 // to Book Trial.
@@ -80,7 +89,7 @@ export function BookingChat({
     [slug, preview],
   );
 
-  const { messages, sendMessage, status, setMessages } = useChat({
+  const { messages, sendMessage, status, setMessages, error } = useChat({
     transport,
   });
 
@@ -101,7 +110,10 @@ export function BookingChat({
     })();
   }, [resumeToken, slug, preview, setMessages]);
 
-  const proposedTrial = lastProposedTrial(messages);
+  const messageLimitReached = isMessageLimitRefusal(error);
+  const proposedTrial = messageLimitReached
+    ? null
+    : lastProposedTrial(messages);
   const showBook = bookRequested || proposedTrial !== null;
 
   return (
@@ -127,6 +139,15 @@ export function BookingChat({
             </div>
           ))}
           {status === "streaming" ? <p className="text-page-400">…</p> : null}
+          {messageLimitReached ? (
+            <p
+              role="status"
+              className="rounded-xl bg-page-50 p-3 text-page-600"
+            >
+              This conversation has reached its message limit. Your next message
+              starts a fresh conversation.
+            </p>
+          ) : null}
         </div>
         <form
           className="flex gap-2 border-t border-page-100 p-3"
@@ -138,6 +159,9 @@ export function BookingChat({
             ) as HTMLInputElement;
             const text = input.value.trim();
             if (!text) return;
+            // The server ended this conversation. Keep its notice visible until
+            // the next send, then show only the fresh conversation's messages.
+            if (messageLimitReached) setMessages([]);
             void sendMessage({ text });
             input.value = "";
           }}

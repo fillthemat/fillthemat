@@ -12,6 +12,7 @@ import { completedReply } from "@/lib/ai/assistant";
 import {
   appendMessage,
   claimGeneration,
+  endConversation,
   findOrCreateConversation,
   hasConversationMessage,
   loadTranscript,
@@ -306,6 +307,16 @@ async function planReply(
   ctx: InboundContext,
   now: Date,
 ): Promise<(() => Promise<TurnReply>) | null> {
+  const history = await loadTranscript(ctx.conversationId);
+  if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) {
+    await endConversation(ctx.conversationId, "message_limit", now);
+    await sendNotice(
+      ctx,
+      "This conversation has reached its message limit. Your next message starts a fresh conversation.",
+    );
+    return null;
+  }
+
   const buttonIntentId = parseConfirmBookingButton(ctx.inboundText);
   const pending = await getPendingBookingIntent(ctx.conversationId, now);
   if (
@@ -318,8 +329,6 @@ async function planReply(
     return () => handleConfirmation(ctx, intent);
   }
 
-  const history = await loadTranscript(ctx.conversationId);
-  if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) return null;
   // Daily-cap refusals leave the conversation open and its transcript intact.
   if (
     await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
