@@ -105,7 +105,6 @@ describe("chat refusal statuses", () => {
     ["generation_in_progress", 409, "generation_in_progress"],
     ["duplicate", 409, "duplicate"],
     ["message_limit", 429, "limit"],
-    ["expired", 410, "expired"],
   ] as const)("maps %s to %i", async (reason, status, error) => {
     vi.mocked(startWebTurn).mockResolvedValue({ ok: false, reason });
     const response = await post(JSON.stringify(validBody));

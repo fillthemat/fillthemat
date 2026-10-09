@@ -3,8 +3,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
+  attachConversationContact,
   type ConversationIdentity,
   claimGeneration,
+  endConversation,
   findConversation,
   findOrCreateConversation,
 } from ".";
@@ -32,6 +34,114 @@ afterAll(async () => {
 });
 
 describe("conversations", () => {
+  it.each(["ended", "past-deadline"] as const)(
+    "Book Trial does not attach a contact to a %s conversation",
+    async (state) => {
+      const resolved = await findOrCreateConversation({
+        schoolId: schoolIds[0],
+        identity: { channel: "web", resumeToken: randomUUID() },
+        now:
+          state === "past-deadline"
+            ? new Date("2026-01-01T00:00:00.000Z")
+            : undefined,
+      });
+      if (!resolved.ok) throw new Error("conversation refused");
+      if (state === "ended")
+        await endConversation(resolved.conversation.id, "message_limit");
+      const [contact] =
+        await sql`insert into app.contacts (school_id, name, phone) values (${schoolIds[0]}, 'Book Trial contact', ${randomUUID()}) returning id`;
+      expect(
+        await attachConversationContact({
+          schoolId: schoolIds[0],
+          conversationId: resolved.conversation.id,
+          contactId: contact.id,
+        }),
+      ).toBeUndefined();
+      const [kept] =
+        await sql`select contact_id from app.conversations where id = ${resolved.conversation.id}`;
+      expect(kept.contact_id).toBeNull();
+    },
+  );
+  it.each(["inactivity", "message_limit"] as const)(
+    "ending for %s is terminal and idempotent, and an ended web token still belongs to its school",
+    async (reason) => {
+      const identity: ConversationIdentity = {
+        channel: "web",
+        resumeToken: randomUUID(),
+      };
+      const input = { schoolId: schoolIds[0], identity };
+      const original = await findOrCreateConversation(input);
+      if (!original.ok) throw new Error("conversation refused");
+      expect(await endConversation(original.conversation.id, reason)).toBe(
+        true,
+      );
+      expect(await endConversation(original.conversation.id, reason)).toBe(
+        false,
+      );
+      expect(await findConversation(input)).toBeUndefined();
+      expect(await claimGeneration(original.conversation.id)).toBeUndefined();
+      expect(
+        await findOrCreateConversation({ schoolId: schoolIds[1], identity }),
+      ).toEqual({ ok: false, reason: "invalid_conversation" });
+      const replacement = await findOrCreateConversation(input);
+      if (!replacement.ok) throw new Error("conversation refused");
+      expect(replacement.conversation.id).not.toBe(original.conversation.id);
+    },
+  );
+  it.each(["web", "whatsapp"] as const)(
+    "find on %s hides a past-deadline conversation without creating another",
+    async (channel) => {
+      const identity: ConversationIdentity =
+        channel === "web"
+          ? { channel, resumeToken: randomUUID() }
+          : { channel, waId: randomUUID() };
+      const input = { schoolId: schoolIds[0], identity };
+      const original = await findOrCreateConversation({
+        ...input,
+        now: new Date("2026-01-01T12:00:00.000Z"),
+      });
+      expect(original.ok).toBe(true);
+      expect(
+        await findConversation({
+          ...input,
+          now: new Date("2026-01-31T12:00:00.000Z"),
+        }),
+      ).toBeUndefined();
+    },
+  );
+  it.each(["web", "whatsapp"] as const)(
+    "concurrent messages on %s replace an inactive conversation once and keep its record",
+    async (channel) => {
+      const identity: ConversationIdentity =
+        channel === "web"
+          ? { channel, resumeToken: randomUUID() }
+          : { channel, waId: randomUUID() };
+      const input = { schoolId: schoolIds[0], identity };
+      const original = await findOrCreateConversation({
+        ...input,
+        now: new Date("2026-01-01T12:00:00.000Z"),
+      });
+      if (!original.ok) throw new Error("conversation refused");
+      const now = new Date("2026-01-31T12:00:00.000Z");
+      const replacements = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          findOrCreateConversation({ ...input, now }),
+        ),
+      );
+      const ids = replacements.map((result) => {
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("conversation refused");
+        return result.conversation.id;
+      });
+      expect(new Set(ids).size).toBe(1);
+      expect(ids[0]).not.toBe(original.conversation.id);
+      expect((await findConversation({ ...input, now }))?.id).toBe(ids[0]);
+      const [kept] =
+        await sql`select ended_at, end_reason from app.conversations where id = ${original.conversation.id}`;
+      expect(kept).toEqual({ ended_at: now, end_reason: "inactivity" });
+    },
+  );
+
   it.each(["web", "whatsapp"] as const)(
     "concurrent first messages on %s resolve to one conversation",
     async (channel) => {

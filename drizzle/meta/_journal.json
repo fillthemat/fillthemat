@@ -50,6 +50,13 @@
       "when": 1789222334625,
       "tag": "0006_typical_greymalkin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791579432693,
+      "tag": "0007_conversation-lifecycle",
+      "breakpoints": true
     }
   ]
 }

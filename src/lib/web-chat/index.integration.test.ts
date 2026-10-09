@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
 import { hrTimeToMilliseconds } from "@opentelemetry/core";
 import { addDays } from "date-fns";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
@@ -77,7 +77,12 @@ async function conversationFor(resumeToken: string) {
   const [conversation] = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.resumeTokenHash, hashToken(resumeToken)))
+    .where(
+      and(
+        eq(conversations.resumeTokenHash, hashToken(resumeToken)),
+        isNull(conversations.endedAt),
+      ),
+    )
     .limit(1);
   return requireRow(conversation, "conversation");
 }
@@ -175,6 +180,28 @@ afterAll(async () => {
 });
 
 describe("a web chat turn with no AI Gateway token", () => {
+  it("slides the inactivity deadline on an accepted message, but not a duplicate refusal", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      expiresAt: addDays(new Date(), 1),
+    });
+    const before = new Date();
+    await (await sendMessage(resumeToken, "question-1", "Hi!")).text();
+    const accepted = await conversationFor(resumeToken);
+    expect(accepted.id).toBe(conversationId);
+    expect(accepted.expiresAt.getTime()).toBeGreaterThanOrEqual(
+      addDays(before, 30).getTime(),
+    );
+    expect(accepted.expiresAt.getTime()).toBeLessThanOrEqual(
+      addDays(new Date(), 30).getTime(),
+    );
+    expect(await startMessage(resumeToken, "question-1", "Hi!")).toEqual({
+      ok: false,
+      reason: "duplicate",
+    });
+    expect((await conversationFor(resumeToken)).expiresAt).toEqual(
+      accepted.expiresAt,
+    );
+  });
   it("loads the saved transcript for this school and token, or an empty list for an unknown token", async () => {
     const resumeToken = randomUUID();
     await (await sendMessage(resumeToken, "question-1", "Hi!")).text();
@@ -669,18 +696,35 @@ describe("a rejected web chat message", () => {
     expect(await exportedTraces()).toEqual([]);
   });
 
-  it("refuses once the conversation has expired, saves nothing, and is not traced", async () => {
+  it("answers in a new conversation after inactivity and keeps the ended conversation's transcript", async () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1"],
       expiresAt: new Date(Date.now() - 60_000),
     });
 
-    const result = await startMessage(resumeToken, "question-2", "Hello?");
-
-    expect(result).toEqual({ ok: false, reason: "expired" });
+    expect(
+      await loadWebTranscript({ slug, preview: false, resumeToken }),
+    ).toEqual({ ok: true, messages: [] });
+    await (await sendMessage(resumeToken, "question-2", "Hello?")).text();
+    const current = await conversationFor(resumeToken);
+    expect(current.id).not.toBe(conversationId);
+    expect(current.generatingAt).toBeNull();
     expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
-    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
-    expect(await exportedTraces()).toEqual([]);
+    const [ended] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
+    expect(ended?.endedAt).toBeInstanceOf(Date);
+    expect(ended?.endReason).toBe("inactivity");
+    expect(await savedMessages(current.id)).toHaveLength(2);
+    const transcript = await loadWebTranscript({
+      slug,
+      preview: false,
+      resumeToken,
+    });
+    if (!transcript.ok) throw new Error(transcript.reason);
+    expect(transcript.messages.map(({ id }) => id)).toContain("question-2");
+    expect(transcript.messages.map(({ id }) => id)).not.toContain("question-1");
   });
 });
 

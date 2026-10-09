@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
 import {
@@ -77,6 +77,7 @@ async function conversationForWa(id: string) {
       and(
         eq(conversations.schoolId, schoolId),
         eq(conversations.waIdHash, hashWaId(id)),
+        isNull(conversations.endedAt),
       ),
     )
     .limit(1);
@@ -252,6 +253,43 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     expect(conversation.generatingAt).toBeNull();
   });
 
+  it("starts a new conversation after inactivity and keeps the old transcript", async () => {
+    const id = "16505550062";
+    expect(
+      (await POST(post(inboundFor(id, `wamid.inactive-a.${suffix}`, "Hello"))))
+        .status,
+    ).toBe(200);
+    await runWhatsAppWorkerOnce(randomUUID());
+    const original = requireRow(await conversationForWa(id), "conversation");
+    const originalMessages = await conversationMessages(original.id);
+    await db
+      .update(conversations)
+      .set({ expiresAt: addDays(new Date(), -1) })
+      .where(eq(conversations.id, original.id));
+    expect(
+      (
+        await POST(
+          post(inboundFor(id, `wamid.inactive-b.${suffix}`, "Hello again")),
+        )
+      ).status,
+    ).toBe(200);
+    await runWhatsAppWorkerOnce(randomUUID());
+    const current = requireRow(
+      await conversationForWa(id),
+      "current conversation",
+    );
+    expect(current.id).not.toBe(original.id);
+    expect(current.generatingAt).toBeNull();
+    expect(await conversationMessages(current.id)).toHaveLength(2);
+    expect(await conversationMessages(original.id)).toEqual(originalMessages);
+    const [ended] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, original.id));
+    expect(ended?.endedAt).toBeInstanceOf(Date);
+    expect(ended?.endReason).toBe("inactivity");
+  });
+
   it("reschedules while generatingAt is held, then completes on release", async () => {
     const id = "16505552222";
     expect(
@@ -393,7 +431,9 @@ describe("conversation invariants survive enqueue-then-ack", () => {
         ),
       );
     expect(deliveries).toHaveLength(2);
-    expect(deliveries.every((delivery) => delivery.state === "sent")).toBe(true);
+    expect(deliveries.every((delivery) => delivery.state === "sent")).toBe(
+      true,
+    );
   });
 });
 

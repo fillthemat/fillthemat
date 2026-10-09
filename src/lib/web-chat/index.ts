@@ -31,8 +31,7 @@ export type WebTurnResult =
         | "invalid_conversation"
         | "generation_in_progress"
         | "duplicate"
-        | "message_limit"
-        | "expired";
+        | "message_limit";
     };
 
 export type WebTranscriptResult =
@@ -82,9 +81,6 @@ export async function startWebTurn({
   });
   if (!resolved.ok) return resolved;
   const { conversation } = resolved;
-  // Preserved until the lifecycle ticket replaces past-deadline conversations.
-  if (conversation.expiresAt <= now) return { ok: false, reason: "expired" };
-
   const lock = await claimGeneration(conversation.id, { now });
   if (!lock) return { ok: false, reason: "generation_in_progress" };
 
