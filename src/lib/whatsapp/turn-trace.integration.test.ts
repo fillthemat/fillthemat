@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
@@ -9,6 +10,7 @@ import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
+  everythingExported,
   exportedSpans,
   exportedTraces,
   isRoot,
@@ -33,9 +35,21 @@ function wamidFrom(waId: string) {
   return `wamid.${Buffer.from(id).toString("base64")}`;
 }
 
-// A text from `waId` through the webhook, then the worker it would wake.
 async function sendText(waId: string, text: string, wamid = wamidFrom(waId)) {
-  await POST(post(textInboundPayload({ phoneNumberId, waId, wamid, text })));
+  await send(wamid, textInboundPayload({ phoneNumberId, waId, wamid, text }));
+}
+
+// The message `wamid` in `payload` through the webhook, then the worker the
+// webhook would wake.
+async function send(wamid: string, payload: unknown) {
+  await POST(post(payload));
+  // The database stamps when the message's job is due by its own clock, which
+  // can run a few ms ahead of this one's: the worker would skip the job.
+  const [job] = await db
+    .select({ dueAt: whatsappJobs.nextAttemptAt })
+    .from(whatsappJobs)
+    .where(eq(whatsappJobs.dedupeKey, wamid));
+  await sleep(Math.max(0, (job?.dueAt.getTime() ?? 0) + 1 - Date.now()));
   await runWhatsAppWorkerOnce(randomUUID());
 }
 
@@ -155,5 +169,22 @@ describe("a WhatsApp assistant turn's trace", () => {
     ).toEqual([conversation.id]);
     // Nothing was left waiting to be exported.
     expect(await exportedSpans()).toHaveLength(exportedByWorker.length);
+  });
+
+  it("never exports the sender's phone number, its hash, or the message's wamid", async () => {
+    const waId = "16505550105";
+    const wamid = wamidFrom(waId);
+
+    await sendText(waId, "What can my son try?", wamid);
+
+    const spans = await exportedSpans();
+    expect(spans.filter(isRoot)).toHaveLength(1);
+    const identifiers = [waId, hashWaId(waId), wamid];
+    const leaks = spans.flatMap((span) =>
+      identifiers
+        .filter((identifier) => everythingExported(span).includes(identifier))
+        .map((identifier) => `${span.name}: ${identifier}`),
+    );
+    expect(leaks).toEqual([]);
   });
 });
