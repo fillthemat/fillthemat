@@ -2,7 +2,15 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { addDays } from "date-fns";
 import { and, eq, inArray } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
 import {
@@ -120,6 +128,26 @@ async function startConversation(waId: string) {
     })
     .returning({ id: conversations.id });
   return requireRow(conversation, "conversation").id;
+}
+
+// Runs `work` while saving the conversation's inbound messages fails.
+async function whileSavingInboundMessagesFails(
+  conversationId: string,
+  work: () => Promise<void>,
+) {
+  const name = `test_inbound_save_${randomUUID().replaceAll("-", "")}`;
+  await sql.unsafe(
+    `create function public.${name}() returns trigger language plpgsql as $$ begin raise exception 'disk full'; end $$`,
+  );
+  await sql.unsafe(
+    `create trigger ${name} before insert on app.messages for each row when (new.conversation_id = '${conversationId}' and new.role = 'user') execute function public.${name}()`,
+  );
+  try {
+    await work();
+  } finally {
+    await sql.unsafe(`drop trigger ${name} on app.messages`);
+    await sql.unsafe(`drop function public.${name}()`);
+  }
 }
 
 // A conversation with `waId` whose Booking Intent awaits confirmation.
@@ -472,6 +500,54 @@ describe("an inbound WhatsApp message that gets no reply", () => {
       expect.objectContaining({
         sessionId: conversationId,
         input: "Hello?",
+        output: scriptedReply,
+      }),
+    ]);
+  });
+});
+
+describe("a WhatsApp turn whose attempt fails", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("is exported as an error with the assistant's spans under it, and its retry is traced as a turn of its own", async () => {
+    // The worker logs the failed job.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const waId = "16505550131";
+    const conversationId = await startConversation(waId);
+    const wamid = wamidFrom(waId);
+
+    await whileSavingInboundMessagesFails(conversationId, () =>
+      sendText(waId, "What can my son try?", wamid),
+    );
+
+    const exportedByWorker = spansExportedSoFar();
+    const failedTurn = exportedByWorker.find(isRoot);
+    expect(failedTurn?.attributes).toMatchObject({
+      "session.id": conversationId,
+      "langfuse.observation.level": "ERROR",
+      "langfuse.observation.status_message":
+        expect.stringContaining("disk full"),
+    });
+    const assistantRun = exportedByWorker.find(
+      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
+    );
+    expect(assistantRun?.parentSpanContext?.spanId).toBe(
+      failedTurn?.spanContext().spanId,
+    );
+
+    await db
+      .update(whatsappJobs)
+      .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+      .where(eq(whatsappJobs.dedupeKey, wamid));
+    await runWhatsAppWorkerOnce(randomUUID());
+
+    expect(await exportedTraces()).toEqual([
+      expect.objectContaining({ sessionId: conversationId, level: "ERROR" }),
+      expect.objectContaining({
+        sessionId: conversationId,
+        input: "What can my son try?",
         output: scriptedReply,
       }),
     ]);
