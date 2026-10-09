@@ -55,6 +55,12 @@ export function isRoot(span: ReadableSpan) {
   return !span.parentSpanContext;
 }
 
+/** Everything a span sends to Langfuse about itself, as one string. */
+export function everythingExported(span: ReadableSpan): string {
+  const { name, attributes, events, status, links } = span;
+  return JSON.stringify({ name, attributes, events, status, links });
+}
+
 /**
  * The traces exported during the current test, read the way Langfuse reads
  * them: trace-level fields come from the trace's root span.

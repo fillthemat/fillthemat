@@ -30,6 +30,7 @@ import {
   requireRow,
 } from "@/test/integration-env";
 import {
+  everythingExported,
   exportedSpans,
   exportedTraces,
   failSpanExports,
@@ -44,6 +45,9 @@ const sql = authSql();
 const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
 const slug = `chat-${suffix}`;
+// The assistant sees these in its instructions and in a tool result.
+const schoolPhone = "+1 512 555 0142";
+const coachEmail = "coach@webchat.example";
 let schoolId = "";
 let kidsBjjId = "";
 
@@ -170,6 +174,7 @@ beforeAll(async () => {
       name: "Web Chat School",
       slug,
       timezone: "America/New_York",
+      phone: schoolPhone,
       notificationEmail: `chat-${suffix}@local.test`,
       approvedAt: new Date(),
       publishedAt: new Date(),
@@ -180,7 +185,13 @@ beforeAll(async () => {
   const [kidsBjj] = await db
     .insert(trialOfferings)
     .values([
-      { schoolId, name: "Kids BJJ", minimumAge: 5, maximumAge: 12 },
+      {
+        schoolId,
+        name: "Kids BJJ",
+        description: `Questions? Email ${coachEmail}`,
+        minimumAge: 5,
+        maximumAge: 12,
+      },
       { schoolId, name: "Adult Muay Thai", active: false },
     ])
     .returning({ id: trialOfferings.id });
@@ -397,6 +408,49 @@ describe("a web chat turn's trace", () => {
     ]);
     expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
     expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
+  });
+
+  it("masks email addresses and phone numbers in every exported span, but not names or ages", async () => {
+    const resumeToken = randomUUID();
+
+    await (
+      await sendMessage(
+        resumeToken,
+        "question-1",
+        "My daughter Ana is 8. Email ana.parent@example.com or call +44 7700 900123.\n(512) 555-0199 is our home number.",
+      )
+    ).text();
+
+    const [turnTrace] = await exportedTraces();
+    expect(turnTrace?.input).toBe(
+      "My daughter Ana is 8. Email [email] or call [phone].\n[phone] is our home number.",
+    );
+    const spans = await exportedSpans();
+    const contactDetails = [
+      "ana.parent@example.com",
+      "+44 7700 900123",
+      "(512) 555-0199",
+      schoolPhone,
+      coachEmail,
+    ];
+    const leaks = spans.flatMap((span) =>
+      contactDetails
+        .filter((detail) => everythingExported(span).includes(detail))
+        .map((detail) => `${span.name}: ${detail}`),
+    );
+    expect(leaks).toEqual([]);
+    const listing = spans.find(
+      ({ name }) => name === "execute_tool list_trial_offerings",
+    );
+    expect(listing?.attributes["gen_ai.tool.call.result"]).toContain(
+      "Questions? Email [email]",
+    );
+    const assistantRun = spans.find(
+      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
+    );
+    expect(assistantRun?.attributes["gen_ai.system_instructions"]).toContain(
+      "[phone]",
+    );
   });
 });
 
