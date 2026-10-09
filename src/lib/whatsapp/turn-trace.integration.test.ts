@@ -362,8 +362,13 @@ describe("a WhatsApp turn answered without the assistant", () => {
     expect((await exportedSpans()).map(({ name }) => name)).toEqual(["turn"]);
   });
 
-  it("is one trace for a daily message limit notice, with the notice as output, no reply message and no model spans", async () => {
+  it("saves nothing at the daily cap and answers normally in the same conversation the next day", async () => {
     const waId = "16505550112";
+    await sendText(waId, "What can my son try?");
+    const original = await conversationWith(waId);
+    const transcript = await savedMessages(original);
+    const turns = await exportedTraces();
+    expect(transcript).toHaveLength(2);
     await db.insert(whatsappDeliveries).values(
       Array.from(
         { length: MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY },
@@ -378,22 +383,69 @@ describe("a WhatsApp turn answered without the assistant", () => {
       ),
     );
 
-    await sendText(waId, "Are you still there?");
+    const wamid = wamidFrom(waId);
+    await sendText(waId, "Are you still there?", wamid);
 
     const conversation = await conversationWith(waId);
-    const [question] = await savedMessages(conversation);
-    expect(await exportedTraces()).toEqual([
-      expect.objectContaining({
-        sessionId: conversation.id,
-        userId: schoolId,
-        tags: ["whatsapp"],
-        input: "Are you still there?",
-        output:
-          "You've reached today's message limit. Please try again tomorrow.",
-        metadata: { inboundMessageId: question?.id },
-      }),
-    ]);
-    expect((await exportedSpans()).map(({ name }) => name)).toEqual(["turn"]);
+    expect(conversation.id).toBe(original.id);
+    expect(await savedMessages(conversation)).toEqual(transcript);
+    expect(conversation.generatingAt).toBeNull();
+    expect(conversation.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    const [notice] = await db
+      .select({
+        body: whatsappDeliveries.body,
+        state: whatsappDeliveries.state,
+      })
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, waId),
+          eq(
+            whatsappDeliveries.providerIdempotencyKey,
+            `wa-notice/${waId}/${wamid}`,
+          ),
+        ),
+      );
+    expect(notice).toEqual({
+      body: "You've reached today's message limit. Please try again tomorrow.",
+      state: "sent",
+    });
+    expect(await exportedTraces()).toEqual(turns);
+
+    // Advance only the worker's wall clock; timers and the shared DB remain real.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.now() + 25 * 60 * 60 * 1000));
+      await sendText(waId, "Thanks, what can my daughter try?");
+      const nextDay = await conversationWith(waId);
+      expect(nextDay.id).toBe(original.id);
+      expect(nextDay.generatingAt).toBeNull();
+      const saved = await savedMessages(nextDay);
+      expect(saved).toHaveLength(4);
+      expect(saved.filter(({ role }) => role === "user").map(textOf)).toEqual([
+        "What can my son try?",
+        "Thanks, what can my daughter try?",
+      ]);
+      expect(
+        saved.filter(({ role }) => role === "assistant").map(textOf),
+      ).toEqual([scriptedReply, scriptedReply]);
+      expect(await exportedTraces()).toHaveLength(2);
+      const sentReplies = await db
+        .select({ body: whatsappDeliveries.body })
+        .from(whatsappDeliveries)
+        .where(
+          and(
+            eq(whatsappDeliveries.schoolId, schoolId),
+            eq(whatsappDeliveries.recipientWaId, waId),
+            eq(whatsappDeliveries.body, scriptedReply),
+            eq(whatsappDeliveries.state, "sent"),
+          ),
+        );
+      expect(sentReplies).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is one trace for a notice that the Booking Intent being confirmed needs the participant's age", async () => {

@@ -344,6 +344,57 @@ describe("conversation invariants survive enqueue-then-ack", () => {
       MAX_CHAT_MESSAGES_PER_CONVERSATION,
     );
   });
+
+  it("answers the next inbound message after an abandoned generation lock", async () => {
+    const id = "16505554444";
+    expect(
+      (await POST(post(inboundFor(id, `wamid.abandoned-a.${suffix}`)))).status,
+    ).toBe(200);
+    await runWhatsAppWorkerOnce(randomUUID());
+    const conversation = requireRow(
+      await conversationForWa(id),
+      "conversation",
+    );
+    const before = await conversationMessages(conversation.id);
+
+    // A crashed function left its claim behind eleven minutes ago.
+    await db
+      .update(conversations)
+      .set({ generatingAt: new Date(Date.now() - 11 * 60 * 1000) })
+      .where(eq(conversations.id, conversation.id));
+    const wamid = `wamid.abandoned-b.${suffix}`;
+    expect(
+      (await POST(post(inboundFor(id, wamid, "Can I try a class?")))).status,
+    ).toBe(200);
+    await runWhatsAppWorkerOnce(randomUUID());
+
+    const after = await conversationMessages(conversation.id);
+    expect(after.filter((row) => row.role === "user")).toHaveLength(
+      before.filter((row) => row.role === "user").length + 1,
+    );
+    expect(after.filter((row) => row.role === "assistant")).toHaveLength(
+      before.filter((row) => row.role === "assistant").length + 1,
+    );
+    expect(
+      requireRow(await conversationForWa(id), "conversation").generatingAt,
+    ).toBeNull();
+    const [job] = await db
+      .select()
+      .from(whatsappJobs)
+      .where(eq(whatsappJobs.dedupeKey, wamid));
+    expect(job?.state).toBe("done");
+    const deliveries = await db
+      .select()
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, id),
+        ),
+      );
+    expect(deliveries).toHaveLength(2);
+    expect(deliveries.every((delivery) => delivery.state === "sent")).toBe(true);
+  });
 });
 
 describe("GET /api/webhooks/whatsapp", () => {

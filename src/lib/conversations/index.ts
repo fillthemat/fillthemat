@@ -1,6 +1,6 @@
 import { type UIMessage, validateUIMessages } from "ai";
 import { addDays } from "date-fns";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { type Database, getDb } from "@/db";
 import { type Conversation, conversations, messages } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
@@ -97,13 +97,17 @@ export async function findOrCreateConversation(
 
 export type GenerationLock = { release: () => Promise<void> };
 
-/** Fail fast by default; WhatsApp can wait up to three seconds for a claim. */
+// Longer than a live function can run, so only abandoned turns are recovered.
+const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Fail fast by default; WhatsApp can wait. Claims older than ten minutes recover. */
 export async function claimGeneration(
   conversationId: string,
   { wait = false, now = new Date() }: { wait?: boolean; now?: Date } = {},
 ): Promise<GenerationLock | undefined> {
   const db = getDb();
   const attempts = wait ? 120 : 1;
+  const abandonedBefore = new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS);
   for (let attempt = 0; attempt < attempts; attempt++) {
     const [claimed] = await db
       .update(conversations)
@@ -111,7 +115,10 @@ export async function claimGeneration(
       .where(
         and(
           eq(conversations.id, conversationId),
-          isNull(conversations.generatingAt),
+          or(
+            isNull(conversations.generatingAt),
+            lt(conversations.generatingAt, abandonedBefore),
+          ),
         ),
       )
       .returning({ id: conversations.id });
