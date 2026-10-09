@@ -24,32 +24,38 @@ type Slot = {
   remaining: number;
 };
 
+/**
+ * A trial offering and slot the assistant proposed. Book Trial starts with
+ * them selected.
+ */
+export type ProposedTrial = {
+  offeringId: string;
+  slotId: string;
+  offeringName: string;
+  whenLabel: string;
+};
+
 export function BookingFlow({
   slug,
   schoolName,
   location,
   offerings,
-  prepared,
+  proposedTrial,
   preview = false,
 }: {
   slug: string;
   schoolName: string;
   location: string | null;
   offerings: Offering[];
-  prepared?: {
-    offeringId: string;
-    slotId: string;
-    offeringName: string;
-    whenLabel: string;
-  } | null;
+  proposedTrial?: ProposedTrial | null;
   preview?: boolean;
 }) {
-  const [offeringId, setOfferingId] = useState(prepared?.offeringId ?? "");
+  const [offeringId, setOfferingId] = useState(proposedTrial?.offeringId ?? "");
   const [age, setAge] = useState("");
   const [participantName, setParticipantName] = useState("");
   const [slots, setSlots] = useState<Slot[]>([]);
   const [noMatch, setNoMatch] = useState(false);
-  const [slotId, setSlotId] = useState(prepared?.slotId ?? "");
+  const [slotId, setSlotId] = useState(proposedTrial?.slotId ?? "");
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
@@ -109,7 +115,7 @@ export function BookingFlow({
       slotId,
       whenLabel: slot
         ? `${slot.localDateLabel} at ${slot.localTimeLabel}`
-        : (prepared?.whenLabel ?? ""),
+        : (proposedTrial?.whenLabel ?? ""),
       location,
       participantName,
       participantAge: Number(age),

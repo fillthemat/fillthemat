@@ -1,4 +1,8 @@
 import {
+  GATEWAY_TOKEN_ENV_VARS,
+  hasGatewayToken,
+} from "../src/lib/ai/gateway-token";
+import {
   missingRequiredKeys,
   parseSupabaseStatusEnv,
   readEnvFile,
@@ -78,11 +82,11 @@ function main() {
     console.log(`ok  app ${env.NEXT_PUBLIC_SITE_URL}`);
   }
 
-  if (env.VERCEL_OIDC_TOKEN || env.AI_GATEWAY_API_KEY)
+  if (hasGatewayToken(env))
     console.log("ok  AI Gateway token present (real assistant model)");
   else
     console.log(
-      "…   VERCEL_OIDC_TOKEN / AI_GATEWAY_API_KEY missing (assistant uses its scripted local model)",
+      `…   ${GATEWAY_TOKEN_ENV_VARS.join(" / ")} missing (assistant uses its scripted local model)`,
     );
 
   if (env.RESEND_API_KEY) console.log("ok  RESEND_API_KEY present");

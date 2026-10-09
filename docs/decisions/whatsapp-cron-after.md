@@ -51,9 +51,8 @@ without paying for Vercel Pro (sketch provided in §Q1).
   `SELECT … FOR UPDATE SKIP LOCKED`, `state IN (pending, failed)`,
   `next_attempt_at <= now()`.
 - `src/lib/whatsapp/worker.ts` — `runWhatsAppWorkerOnce(runId)` →
-  `drainWhatsAppJobs` (agent loop via `runBookingAgentToCompletion` /
-  `agent.generate()`, now the assistant's `completedReply`, then inline send)
-  + `drainDueWhatsAppDeliveries` (retry/backoff).
+  `drainWhatsAppJobs` (the assistant's `completedReply`, then inline send) +
+  `drainDueWhatsAppDeliveries` (retry/backoff).
 - `src/app/api/cron/whatsapp/route.ts` — `cronSecretMatches` → `runWhatsAppWorkerOnce`.
 - `vercel.ts` — adds `{ path: "/api/cron/whatsapp", schedule: "* * * * *" }`.
 - `src/app/api/webhooks/whatsapp/route.ts` — enqueue-then-ack (D12): parse,

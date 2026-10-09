@@ -13,22 +13,11 @@ import {
   vi,
 } from "vitest";
 import { getDb } from "@/db";
-import {
-  conversations,
-  messages,
-  schools,
-  trialOfferings,
-  users,
-} from "@/db/schema";
+import { conversations, messages } from "@/db/schema";
 import { hashToken } from "@/lib/crypto";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
-import {
-  authSql,
-  deleteAuthUser,
-  insertAuthUser,
-  loadLocalEnv,
-  requireRow,
-} from "@/test/integration-env";
+import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
+import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
   everythingExported,
   exportedSpans,
@@ -161,41 +150,24 @@ async function savedMessages(conversationId: string) {
 }
 
 beforeAll(async () => {
-  await insertAuthUser(sql, ownerId, `chat-${suffix}@local.test`);
-  await db.insert(users).values({
-    id: ownerId,
-    email: `chat-${suffix}@local.test`,
-    name: "Web Chat Owner",
-  });
-  const [school] = await db
-    .insert(schools)
-    .values({
-      ownerUserId: ownerId,
-      name: "Web Chat School",
-      slug,
-      timezone: "America/New_York",
-      phone: schoolPhone,
-      notificationEmail: `chat-${suffix}@local.test`,
-      approvedAt: new Date(),
-      publishedAt: new Date(),
-    })
-    .returning({ id: schools.id });
-  if (!school) throw new Error("failed to seed school");
-  schoolId = school.id;
-  const [kidsBjj] = await db
-    .insert(trialOfferings)
-    .values([
+  const seeded = await seedSchool(sql, {
+    ownerId,
+    name: "Web Chat School",
+    slug,
+    phone: schoolPhone,
+    publishedAt: new Date(),
+    offerings: [
       {
-        schoolId,
         name: "Kids BJJ",
         description: `Questions? Email ${coachEmail}`,
         minimumAge: 5,
         maximumAge: 12,
       },
-      { schoolId, name: "Adult Muay Thai", active: false },
-    ])
-    .returning({ id: trialOfferings.id });
-  kidsBjjId = requireRow(kidsBjj, "Kids BJJ offering").id;
+      { name: "Adult Muay Thai", active: false },
+    ],
+  });
+  schoolId = seeded.schoolId;
+  kidsBjjId = requireRow(seeded.offeringIds[0], "Kids BJJ offering");
 });
 
 afterEach(() => {
@@ -203,8 +175,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  await db.delete(users).where(eq(users.id, ownerId));
-  await deleteAuthUser(sql, ownerId);
+  await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
 

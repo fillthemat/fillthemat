@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -15,11 +15,9 @@ import { hashWaId } from "@/lib/crypto";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 import {
   WHATSAPP_MAX_BODY_BYTES,
-  WHATSAPP_STUB_APP_SECRET,
   WHATSAPP_STUB_VERIFY_TOKEN,
 } from "@/lib/whatsapp/config";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
-import textInbound from "@/test/fixtures/whatsapp/text-inbound.json";
 import {
   authSql,
   deleteAuthUser,
@@ -27,6 +25,7 @@ import {
   loadLocalEnv,
   requireRow,
 } from "@/test/integration-env";
+import { post, sign, textInboundPayload } from "@/test/whatsapp-webhook";
 import { GET, POST } from "./route";
 
 loadLocalEnv();
@@ -40,53 +39,13 @@ const slug = `wa-${suffix}`;
 const waId = "16505551234";
 let schoolId = "";
 
-function sign(body: string, secret = WHATSAPP_STUB_APP_SECRET): string {
-  return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
-}
-
-type MetaPayload = {
-  entry: [
-    {
-      changes: [
-        {
-          value: {
-            metadata: { phone_number_id: string };
-            contacts: [{ wa_id: string; profile: { name: string } }];
-            messages: [
-              {
-                from: string;
-                id: string;
-                type: string;
-                text: { body: string };
-              },
-            ];
-          };
-        },
-      ];
-    },
-  ];
-};
-
-function inboundPayload(): MetaPayload {
-  const payload = structuredClone(textInbound as unknown as MetaPayload);
-  payload.entry[0].changes[0].value.metadata.phone_number_id = phoneNumberId;
-  payload.entry[0].changes[0].value.contacts[0].wa_id = waId;
-  payload.entry[0].changes[0].value.messages[0].from = waId;
+function inboundPayload() {
   // wamids are globally unique in production; use a per-run id so the global
   // `whatsapp_jobs.dedupe_key` uniqueness never collides across test runs.
-  payload.entry[0].changes[0].value.messages[0].id = `wamid.p4.${suffix}`;
-  return payload;
-}
-
-function post(payload: unknown, secret = WHATSAPP_STUB_APP_SECRET): Request {
-  const body = JSON.stringify(payload);
-  return new Request("http://127.0.0.1:3000/api/webhooks/whatsapp", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-hub-signature-256": sign(body, secret),
-    },
-    body,
+  return textInboundPayload({
+    phoneNumberId,
+    waId,
+    wamid: `wamid.p4.${suffix}`,
   });
 }
 
@@ -259,15 +218,8 @@ describe("worker + status flow", () => {
 });
 
 describe("conversation invariants survive enqueue-then-ack", () => {
-  function inboundFor(wa: string, wamid: string, body?: string): MetaPayload {
-    const payload = inboundPayload();
-    payload.entry[0].changes[0].value.contacts[0].wa_id = wa;
-    payload.entry[0].changes[0].value.messages[0].from = wa;
-    payload.entry[0].changes[0].value.messages[0].id = wamid;
-    if (body !== undefined) {
-      payload.entry[0].changes[0].value.messages[0].text.body = body;
-    }
-    return payload;
+  function inboundFor(wa: string, wamid: string, body?: string) {
+    return textInboundPayload({ phoneNumberId, waId: wa, wamid, text: body });
   }
 
   async function conversationMessages(conversationId: string) {

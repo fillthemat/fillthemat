@@ -1,14 +1,14 @@
 import { isStepCount, streamText, tool } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { GATEWAY_TOKEN_ENV_VARS } from "./gateway-token";
 import { defaultLanguageModel } from "./language-model";
 
 // These tests never call a Gateway model: without a token, the Gateway would
 // try to mint one from the Vercel CLI login and make a paid call.
 describe("the assistant's default language model", () => {
   beforeEach(() => {
-    vi.stubEnv("VERCEL_OIDC_TOKEN", undefined);
-    vi.stubEnv("AI_GATEWAY_API_KEY", undefined);
+    for (const name of GATEWAY_TOKEN_ENV_VARS) vi.stubEnv(name, undefined);
     vi.stubEnv("BOOKING_AGENT_MODEL", undefined);
   });
 

@@ -241,8 +241,7 @@ outbound queue, template fallback for the 24h window, status webhook.
 
 **Concrete changes**
 - Server-side agent driver: load history → `validateUIMessages([...history, inbound])` →
-  `createBookingAgent(...)` run **to completion** (consume the stream / non-SSE variant of
-  `createAgentUIStreamResponse` — see D3; now the assistant's `completedReply`) → extract text parts →
+  the assistant's `completedReply(...)`, run **to completion** (see D3) → extract text parts →
   enqueue reply.
 - `whatsapp_deliveries` claim/send worker: inline-on-create attempt + cron `FOR UPDATE SKIP LOCKED` reuse
   (D4): if `windowExpiresAt > now` send free-form text; else send template message (D5 — template library).
