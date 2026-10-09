@@ -74,8 +74,8 @@ function createAssistant({
   school,
   catalog: { offerings, windows, occurrences, faqs },
   now,
-  model,
-}: Omit<AssistantInput, "messages" | "model"> & { model: LanguageModel }) {
+  model = defaultLanguageModel(),
+}: Omit<AssistantInput, "messages">) {
   return new ToolLoopAgent({
     model,
     instructions: buildBookingAgentInstructions({
@@ -268,13 +268,9 @@ export type CompletedReply = {
  */
 export async function completedReply({
   messages,
-  model,
   ...input
 }: AssistantInput): Promise<CompletedReply> {
-  const assistant = createAssistant({
-    ...input,
-    model: model ?? defaultLanguageModel(),
-  });
+  const assistant = createAssistant(input);
   const result = await assistant.generate({
     messages: await convertToModelMessages(messages, {
       tools: assistant.tools,
@@ -340,16 +336,12 @@ function replyCompletion({
  */
 export async function streamedReply({
   messages,
-  model,
   onFinish,
   ...input
 }: AssistantInput & {
   onFinish: (finish: ReplyFinish) => Promise<void> | void;
 }): Promise<Response> {
-  const assistant = createAssistant({
-    ...input,
-    model: model ?? defaultLanguageModel(),
-  });
+  const assistant = createAssistant(input);
   return createAgentUIStreamResponse({
     agent: assistant,
     uiMessages: messages,
