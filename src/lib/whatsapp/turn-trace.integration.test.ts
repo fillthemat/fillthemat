@@ -1,11 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
+import { addDays } from "date-fns";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
-import { conversations, messages, whatsappJobs } from "@/db/schema";
-import { hashWaId } from "@/lib/crypto";
+import {
+  conversations,
+  messages,
+  trialWindows,
+  whatsappDeliveries,
+  whatsappJobs,
+} from "@/db/schema";
+import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
+import { listOpenSlots } from "@/lib/schedule/occurrences";
+import { MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY } from "@/lib/security/limits";
+import { confirmBookingButtonId } from "@/lib/whatsapp/confirmation";
+import { upsertPendingBookingIntent } from "@/lib/whatsapp/intents";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
@@ -16,7 +27,11 @@ import {
   isRoot,
   spansExportedSoFar,
 } from "@/test/tracing";
-import { post, textInboundPayload } from "@/test/whatsapp-webhook";
+import {
+  buttonReplyPayload,
+  post,
+  textInboundPayload,
+} from "@/test/whatsapp-webhook";
 
 loadLocalEnv();
 
@@ -28,6 +43,7 @@ const phoneNumberId = `499${Date.now().toString().slice(-9)}`;
 const scriptedReply =
   "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.";
 let schoolId = "";
+let kidsBjjId = "";
 
 // Like Meta's message ids, this one encodes the sender's phone number.
 function wamidFrom(waId: string) {
@@ -37,6 +53,14 @@ function wamidFrom(waId: string) {
 
 async function sendText(waId: string, text: string, wamid = wamidFrom(waId)) {
   await send(wamid, textInboundPayload({ phoneNumberId, waId, wamid, text }));
+}
+
+async function pressButton(waId: string, buttonId: string) {
+  const wamid = wamidFrom(waId);
+  await send(
+    wamid,
+    buttonReplyPayload({ phoneNumberId, waId, wamid, buttonId }),
+  );
 }
 
 // The message `wamid` in `payload` through the webhook, then the worker the
@@ -74,6 +98,47 @@ async function savedMessages({ id }: { id: string }) {
     .where(eq(messages.conversationId, id));
 }
 
+// The text of a message saved as a single text part.
+function textOf(message: { parts: unknown } | undefined) {
+  const [part] = (message?.parts ?? []) as Array<{ text?: string }>;
+  return part?.text;
+}
+
+// A conversation with `waId` whose Booking Intent awaits confirmation.
+async function proposedBooking(
+  waId: string,
+  participant: { participantName: string; participantAge: number | null },
+) {
+  const [conversation] = await db
+    .insert(conversations)
+    .values({
+      schoolId,
+      resumeTokenHash: hashToken(randomToken()),
+      waIdHash: hashWaId(waId),
+      expiresAt: addDays(new Date(), 30),
+    })
+    .returning({ id: conversations.id });
+  const conversationId = requireRow(conversation, "conversation").id;
+  const [slot] = listOpenSlots({
+    offeringId: kidsBjjId,
+    timezone: "America/New_York",
+    windows: await db
+      .select()
+      .from(trialWindows)
+      .where(eq(trialWindows.trialOfferingId, kidsBjjId)),
+    occurrences: [],
+    now: new Date(),
+  });
+  const intent = await upsertPendingBookingIntent({
+    schoolId,
+    conversationId,
+    offeringId: kidsBjjId,
+    slotId: requireRow(slot, "open slot").slotId,
+    ...participant,
+  });
+  return { conversationId, intentId: intent.id };
+}
+
 beforeAll(async () => {
   const seeded = await seedSchool(sql, {
     ownerId,
@@ -84,6 +149,17 @@ beforeAll(async () => {
     offerings: [{ name: "Kids BJJ", minimumAge: 5, maximumAge: 12 }],
   });
   schoolId = seeded.schoolId;
+  kidsBjjId = requireRow(seeded.offeringIds[0], "Kids BJJ offering");
+  // Mondays at 18:00.
+  await db.insert(trialWindows).values({
+    schoolId,
+    trialOfferingId: kidsBjjId,
+    dayOfWeek: 1,
+    startMinute: 18 * 60,
+    durationMinutes: 60,
+    capacity: 8,
+    active: true,
+  });
 });
 
 afterAll(async () => {
@@ -186,5 +262,109 @@ describe("a WhatsApp assistant turn's trace", () => {
         .map((identifier) => `${span.name}: ${identifier}`),
     );
     expect(leaks).toEqual([]);
+  });
+});
+
+describe("a WhatsApp turn answered without the assistant", () => {
+  it("is one trace for a booking confirmation, with the saved confirmation as output and no model spans", async () => {
+    const waId = "16505550111";
+    const { conversationId, intentId } = await proposedBooking(waId, {
+      participantName: "Alex",
+      participantAge: 8,
+    });
+
+    await pressButton(waId, confirmBookingButtonId(intentId));
+
+    const saved = await savedMessages({ id: conversationId });
+    const confirmation = saved.find(({ role }) => role === "assistant");
+    expect(textOf(confirmation)).toMatch(/^Booked! Alex's trial for Kids BJJ/);
+    expect(await exportedTraces()).toEqual([
+      expect.objectContaining({
+        sessionId: conversationId,
+        userId: schoolId,
+        tags: ["whatsapp"],
+        input: confirmBookingButtonId(intentId),
+        output: textOf(confirmation),
+        metadata: {
+          inboundMessageId: saved.find(({ role }) => role === "user")?.id,
+          replyMessageId: confirmation?.id,
+        },
+      }),
+    ]);
+    expect((await exportedSpans()).map(({ name }) => name)).toEqual(["turn"]);
+  });
+
+  it("is one trace for a daily message limit notice, with the notice as output, no reply message and no model spans", async () => {
+    const waId = "16505550112";
+    await db.insert(whatsappDeliveries).values(
+      Array.from(
+        { length: MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY },
+        (_, index) => ({
+          schoolId,
+          recipientWaId: waId,
+          phoneNumberId,
+          providerIdempotencyKey: `earlier/${suffix}/${index}`,
+          body: `Earlier reply ${index + 1}`,
+          state: "sent" as const,
+        }),
+      ),
+    );
+
+    await sendText(waId, "Are you still there?");
+
+    const conversation = await conversationWith(waId);
+    const [question] = await savedMessages(conversation);
+    expect(await exportedTraces()).toEqual([
+      expect.objectContaining({
+        sessionId: conversation.id,
+        userId: schoolId,
+        tags: ["whatsapp"],
+        input: "Are you still there?",
+        output:
+          "You've reached today's message limit. Please try again tomorrow.",
+        metadata: { inboundMessageId: question?.id },
+      }),
+    ]);
+    expect((await exportedSpans()).map(({ name }) => name)).toEqual(["turn"]);
+  });
+
+  it("is one trace for a notice that a confirmed booking needs the participant's age", async () => {
+    const waId = "16505550113";
+    const { conversationId, intentId } = await proposedBooking(waId, {
+      participantName: "Alex",
+      participantAge: null,
+    });
+
+    await pressButton(waId, confirmBookingButtonId(intentId));
+
+    const [question] = await savedMessages({ id: conversationId });
+    expect(await exportedTraces()).toEqual([
+      expect.objectContaining({
+        sessionId: conversationId,
+        input: confirmBookingButtonId(intentId),
+        output:
+          "I still need the participant's age to complete the booking. Could you tell me their age in years?",
+        metadata: { inboundMessageId: question?.id },
+      }),
+    ]);
+  });
+
+  it("is one trace for a notice that the booking option being confirmed has expired", async () => {
+    const waId = "16505550114";
+    const expiredIntentButton = confirmBookingButtonId(randomUUID());
+
+    await pressButton(waId, expiredIntentButton);
+
+    const conversation = await conversationWith(waId);
+    const [question] = await savedMessages(conversation);
+    expect(await exportedTraces()).toEqual([
+      expect.objectContaining({
+        sessionId: conversation.id,
+        input: expiredIntentButton,
+        output:
+          "That booking option has expired or was replaced. Please ask for available times again.",
+        metadata: { inboundMessageId: question?.id },
+      }),
+    ]);
   });
 });

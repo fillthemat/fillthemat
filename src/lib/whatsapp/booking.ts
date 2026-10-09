@@ -14,11 +14,18 @@ import {
 import { persistAssistantMessage } from "./inbound";
 import { markBookingIntentConfirmed } from "./intents";
 
-export type ConfirmWhatsAppBookingResult =
+/**
+ * What the person was sent: the booking confirmation, saved as a message, or
+ * a notice, which isn't saved.
+ */
+export type BookingReply = { text: string; messageId?: string };
+
+export type ConfirmWhatsAppBookingResult = (
   | { status: "booked"; bookingId: string; idempotent: boolean }
   | { status: "rate_limited" }
   | { status: "incomplete" }
-  | { status: "book_failed"; code: string };
+  | { status: "book_failed"; code: string }
+) & { reply: BookingReply };
 
 async function sendNotice({
   schoolId,
@@ -36,7 +43,7 @@ async function sendNotice({
   runId: string;
   windowExpiresAt: Date;
   idempotencyKey: string;
-}): Promise<void> {
+}): Promise<BookingReply> {
   const deliveryId = await enqueueWhatsAppDelivery({
     schoolId,
     recipientWaId: waId,
@@ -46,6 +53,7 @@ async function sendNotice({
     windowExpiresAt,
   });
   if (deliveryId) await attemptWhatsAppDeliveriesNow([deliveryId], runId);
+  return { text };
 }
 
 /**
@@ -89,13 +97,12 @@ export async function confirmWhatsAppBooking({
     .from(schools)
     .where(eq(schools.id, schoolId))
     .limit(1);
-  if (!school) {
-    return { status: "book_failed", code: "school_missing" };
-  }
+  // The school was deleted mid-turn, and its conversation with it.
+  if (!school) throw new Error("school_missing");
 
   // 429-equivalent: per-wa_id daily booking cap (Phase 5 abuse controls).
   if (await whatsappBookingQuotaExceeded(schoolId, waId, now)) {
-    await sendNotice({
+    const reply = await sendNotice({
       schoolId,
       waId,
       phoneNumberId,
@@ -104,13 +111,13 @@ export async function confirmWhatsAppBooking({
       idempotencyKey: `wa-notice/${waId}/${wamid}`,
       text: "You've reached the daily booking limit for today. Please try again tomorrow.",
     });
-    return { status: "rate_limited" };
+    return { status: "rate_limited", reply };
   }
 
   // A booking needs a concrete participant age. If the agent captured a bare
   // prepare_booking without one, ask again rather than guessing.
   if (intent.participantAge == null) {
-    await sendNotice({
+    const reply = await sendNotice({
       schoolId,
       waId,
       phoneNumberId,
@@ -119,7 +126,7 @@ export async function confirmWhatsAppBooking({
       idempotencyKey: `wa-notice/${waId}/${wamid}`,
       text: "I still need the participant's age to complete the booking. Could you tell me their age in years?",
     });
-    return { status: "incomplete" };
+    return { status: "incomplete", reply };
   }
 
   const participantName =
@@ -141,7 +148,7 @@ export async function confirmWhatsAppBooking({
         : result.code === "ineligible"
           ? "That participant doesn't meet the offering's age range."
           : "That time is no longer open — please pick another time.";
-    await sendNotice({
+    const reply = await sendNotice({
       schoolId,
       waId,
       phoneNumberId,
@@ -150,7 +157,7 @@ export async function confirmWhatsAppBooking({
       idempotencyKey: `wa-notice/${waId}/${wamid}`,
       text: message,
     });
-    return { status: "book_failed", code: result.code };
+    return { status: "book_failed", code: result.code, reply };
   }
 
   await markBookingIntentConfirmed(intent.id);
@@ -164,7 +171,7 @@ export async function confirmWhatsAppBooking({
   const transcript =
     `Booked! ${booking.participantNameSnapshot}'s trial for ${booking.offeringNameSnapshot} is ${when}. ` +
     `${school.name} will see you there.`;
-  await persistAssistantMessage({
+  const transcriptMessageId = await persistAssistantMessage({
     conversationId,
     messageId: generateId(),
     parts: [{ type: "text", text: transcript }],
@@ -198,5 +205,6 @@ export async function confirmWhatsAppBooking({
     status: "booked",
     bookingId: booking.id,
     idempotent: result.idempotent,
+    reply: { text: transcript, messageId: transcriptMessageId },
   };
 }
