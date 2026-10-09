@@ -1,11 +1,16 @@
 import {
+  consumeStream,
   convertToModelMessages,
+  createAgentUIStreamResponse,
+  generateId,
+  type InferAgentUIMessage,
   type InferToolOutput,
   isStepCount,
   type LanguageModel,
   ToolLoopAgent,
   tool,
   type UIMessage,
+  type UIMessageStreamOnEndCallback,
 } from "ai";
 import { z } from "zod";
 import type { Faq, School, TrialOffering } from "@/db/schema";
@@ -224,6 +229,11 @@ function createAssistant({
   });
 }
 
+/** A web chat message whose tool parts are typed by the assistant's tools. */
+export type AssistantUIMessage = InferAgentUIMessage<
+  ReturnType<typeof createAssistant>
+>;
+
 type AssistantTools = ReturnType<typeof createAssistant>["tools"];
 type PreparedBooking = Extract<
   InferToolOutput<AssistantTools["prepare_booking"]>,
@@ -296,6 +306,70 @@ export async function completedReply({
         }
       : null,
   };
+}
+
+/** How a streamed reply ended, as saved with the reply message. */
+export type ReplyCompletion = "complete" | "aborted" | "error";
+
+export type ReplyFinish = {
+  reply: AssistantUIMessage;
+  completion: ReplyCompletion;
+};
+
+type StreamEnd = Parameters<
+  UIMessageStreamOnEndCallback<AssistantUIMessage>
+>[0];
+
+// A model error part mid-stream still reports a completed outcome, with an
+// error finish reason. A stream that ends without an outcome was cut short.
+function replyCompletion({
+  outcome,
+  isAborted,
+  finishReason,
+}: StreamEnd): ReplyCompletion {
+  if (outcome.status === "failed" || finishReason === "error") return "error";
+  return outcome.status === "completed" && !isAborted ? "complete" : "aborted";
+}
+
+/**
+ * Streams the assistant's reply over the conversation (web chat) as a UI
+ * message stream response. The reply keeps generating after the browser
+ * disconnects, and `onFinish` is called exactly once with the final reply.
+ * If this function rejects, the reply never started and `onFinish` is never
+ * called.
+ */
+export async function streamedReply({
+  messages,
+  model,
+  onFinish,
+  ...input
+}: AssistantInput & {
+  onFinish: (finish: ReplyFinish) => Promise<void> | void;
+}): Promise<Response> {
+  const assistant = createAssistant({
+    ...input,
+    model: model ?? defaultLanguageModel(),
+  });
+  return createAgentUIStreamResponse({
+    agent: assistant,
+    uiMessages: messages,
+    generateMessageId: generateId,
+    // Reading a copy of the stream to the end keeps the reply generating, and
+    // `onEnd` coming, after the browser disconnects.
+    consumeSseStream: consumeStream,
+    onEnd: async (end: StreamEnd) => {
+      // The reply has already reached the browser; a failing callback must not
+      // break its stream or surface as an unhandled rejection from the drain.
+      try {
+        await onFinish({
+          reply: end.responseMessage,
+          completion: replyCompletion(end),
+        });
+      } catch (error) {
+        console.error("assistant: streamed reply onFinish failed", error);
+      }
+    },
+  });
 }
 
 /**
