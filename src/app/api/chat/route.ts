@@ -1,9 +1,10 @@
 import { type UIMessage, validateUIMessages } from "ai";
 import { addDays } from "date-fns";
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { after } from "next/server";
 import { getDb } from "@/db";
 import { conversations, messages } from "@/db/schema";
-import { streamedReply } from "@/lib/ai/assistant";
+import { PLATFORM_INSTRUCTIONS_HASH, streamedReply } from "@/lib/ai/assistant";
 import { hashToken } from "@/lib/crypto";
 import { TRANSCRIPT_RETENTION_DAYS } from "@/lib/schedule/constants";
 import {
@@ -15,6 +16,7 @@ import {
   MAX_USER_MESSAGE_CHARS,
   requestBodyTooLarge,
 } from "@/lib/security/limits";
+import { startTurnTrace } from "@/lib/tracing/turn-trace";
 
 function textFromMessage(message: UIMessage): string {
   return message.parts
@@ -138,45 +140,76 @@ export async function POST(request: Request) {
       return Response.json({ error: "duplicate" }, { status: 409 });
     }
 
-    const catalog = await loadSchoolCatalog(school.id);
-
-    const history = stored.map((row) => ({
-      id: row.messageId,
-      role: row.role as UIMessage["role"],
-      parts: row.parts as UIMessage["parts"],
-    }));
-    const uiMessages = await validateUIMessages({
-      messages: [...history, body.message],
-    });
-
-    await db.insert(messages).values({
+    // The message is accepted, so it starts a turn. Its trace is exported
+    // after the response, once the turn has ended: a browser that disconnects
+    // early closes the response before the reply is saved.
+    const message = body.message;
+    const turn = startTurnTrace({
+      channel: "web",
       conversationId: conversation.id,
-      messageId: body.message.id,
-      role: "user",
-      parts: body.message.parts,
-      completion: "complete",
-      purgeAt,
+      schoolId: school.id,
+      inboundMessageId: message.id,
+      inboundText: userText,
     });
+    try {
+      after(() => turn.exportWhenEnded());
+    } catch {
+      // after() needs a Next request scope, which tests and scripts lack.
+      void turn.exportWhenEnded();
+    }
 
-    const response = await streamedReply({
-      school,
-      catalog,
-      messages: uiMessages,
-      now,
-      onFinish: async ({ reply, completion }) => {
-        try {
-          await db.insert(messages).values({
-            conversationId: conversation.id,
-            messageId: reply.id,
-            role: "assistant",
-            parts: reply.parts,
-            completion,
-            purgeAt,
+    const response = await turn.run(async () => {
+      const catalog = await loadSchoolCatalog(school.id);
+
+      const history = stored.map((row) => ({
+        id: row.messageId,
+        role: row.role as UIMessage["role"],
+        parts: row.parts as UIMessage["parts"],
+      }));
+      const uiMessages = await validateUIMessages({
+        messages: [...history, message],
+      });
+
+      await db.insert(messages).values({
+        conversationId: conversation.id,
+        messageId: message.id,
+        role: "user",
+        parts: message.parts,
+        completion: "complete",
+        purgeAt,
+      });
+
+      return streamedReply({
+        school,
+        catalog,
+        messages: uiMessages,
+        now,
+        onFinish: async ({ reply, completion, modelId }) => {
+          // Saving the reply is the last of the turn's work.
+          await turn.run(async () => {
+            try {
+              await db.insert(messages).values({
+                conversationId: conversation.id,
+                messageId: reply.id,
+                role: "assistant",
+                parts: reply.parts,
+                completion,
+                purgeAt,
+              });
+            } finally {
+              await releaseLock();
+            }
           });
-        } finally {
-          await releaseLock();
-        }
-      },
+          turn.end({
+            replyMessageId: reply.id,
+            replyText: textFromMessage(reply),
+            assistant: {
+              modelId,
+              platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
+            },
+          });
+        },
+      });
     });
     replyOwnsLock = true;
     return response;
