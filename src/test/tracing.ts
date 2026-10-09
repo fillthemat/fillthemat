@@ -99,12 +99,13 @@ export async function exportedTraces() {
   });
 }
 
-let langfuseOutage: Array<{ mockRestore(): void }> = [];
+// Undoes what a test did to Langfuse, once the test ends.
+let undoAfterTest: Array<() => void> = [];
 
 /** Makes exporting spans fail for the rest of the test, as if Langfuse were down. */
 export function failSpanExports() {
   const unreachable = new Error("Langfuse is unreachable");
-  langfuseOutage = [
+  const spies = [
     vi
       .spyOn(tracing.exporter, "export")
       .mockImplementation((_spans, done) =>
@@ -112,6 +113,30 @@ export function failSpanExports() {
       ),
     vi.spyOn(tracing.exporter, "forceFlush").mockRejectedValue(unreachable),
   ];
+  undoAfterTest.push(() => {
+    for (const spy of spies) spy.mockRestore();
+  });
+}
+
+/**
+ * Holds every span export until `release` is called, as if Langfuse were
+ * slow to answer. `started` resolves once the first export has started.
+ */
+export function holdSpanExports() {
+  const started = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const exportSpans = tracing.exporter.export.bind(tracing.exporter);
+  const spy = vi
+    .spyOn(tracing.exporter, "export")
+    .mockImplementation((spans, done) => {
+      started.resolve();
+      void released.promise.then(() => exportSpans(spans, done));
+    });
+  undoAfterTest.push(() => {
+    released.resolve();
+    spy.mockRestore();
+  });
+  return { started: started.promise, release: () => released.resolve() };
 }
 
 beforeEach(async () => {
@@ -120,6 +145,6 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  for (const spy of langfuseOutage) spy.mockRestore();
-  langfuseOutage = [];
+  for (const undo of undoAfterTest) undo();
+  undoAfterTest = [];
 });

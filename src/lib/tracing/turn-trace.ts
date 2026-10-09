@@ -131,7 +131,7 @@ export function startTurnTrace({
       if (!endedInTime) {
         console.warn("tracing: exporting a turn that has not ended");
       }
-      await exportEndedSpans();
+      await exportEndedTurns();
     },
   };
   return turn;
@@ -153,9 +153,12 @@ type FlushableTracerProvider = {
   forceFlush?: (options?: { timeoutMillis?: number }) => Promise<void>;
 };
 
-// Exports every span that has ended so far, through whichever tracer provider
-// is registered. Without one (no Langfuse keys) there is nothing to export.
-async function exportEndedSpans(): Promise<void> {
+/**
+ * Exports the traces of every turn that has ended so far. Never rejects: a
+ * failed export is only logged. Without Langfuse keys there is nothing to
+ * export.
+ */
+export async function exportEndedTurns(): Promise<void> {
   // The registered provider sits behind the API's proxy. It's duck-typed
   // because the SDK and the API may come from different package copies.
   const proxy = trace.getTracerProvider() as { getDelegate?: () => unknown };

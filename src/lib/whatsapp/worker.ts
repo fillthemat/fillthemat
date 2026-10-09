@@ -17,9 +17,9 @@ import {
   whatsappOutboundQuotaExceeded,
 } from "@/lib/security/limits";
 import {
+  exportEndedTurns,
   startTurnTrace,
   type TurnReply,
-  type TurnTrace,
 } from "@/lib/tracing/turn-trace";
 import { confirmWhatsAppBooking } from "./booking";
 import {
@@ -356,7 +356,6 @@ export async function processWhatsAppJob(
 ): Promise<ProcessJobResult> {
   const message = job.payload as InboundWhatsAppMessage;
   let conversationId: string | null = null;
-  let turn: TurnTrace | undefined;
   try {
     const resolved = await resolveInboundConversation(message, new Date());
     if (!resolved.resolved) {
@@ -397,8 +396,9 @@ export async function processWhatsAppJob(
       const sendReply = await planReply(ctx, now);
       if (sendReply) {
         // A message that gets a reply is a turn. Its trace starts only once
-        // that's known, because a started trace can't be dropped.
-        turn = startTurnTrace({
+        // that's known, because a started trace can't be dropped. It's
+        // exported when the worker run ends.
+        const turn = startTurnTrace({
           channel: "whatsapp",
           conversationId,
           schoolId: resolved.schoolId,
@@ -422,11 +422,6 @@ export async function processWhatsAppJob(
     await failJob(job.id, job.attempts, message);
     console.error("whatsapp: job failed", job.id, message);
     return "failed";
-  } finally {
-    // Before the worker finishes, so the trace isn't lost when its invocation
-    // ends, and after the lock is released, so exporting never holds up the
-    // conversation's next message. A failed export is only logged.
-    await turn?.exportWhenEnded();
   }
 }
 
@@ -455,9 +450,16 @@ export async function drainWhatsAppJobs(
  * re-picking-up here.
  */
 export async function runWhatsAppWorkerOnce(runId: string) {
-  await recoverStuckWhatsAppJobs();
-  await recoverStuckWhatsAppDeliveries();
-  const jobs = await drainWhatsAppJobs(runId);
-  const deliveries = await drainDueWhatsAppDeliveries(runId);
-  return { jobs, deliveries };
+  try {
+    await recoverStuckWhatsAppJobs();
+    await recoverStuckWhatsAppDeliveries();
+    const jobs = await drainWhatsAppJobs(runId);
+    const deliveries = await drainDueWhatsAppDeliveries(runId);
+    return { jobs, deliveries };
+  } finally {
+    // Once, after every reply in the run, so a slow or unreachable Langfuse
+    // never delays a reply and costs the run one export at most. Awaited, so
+    // the traces aren't lost when the invocation ends.
+    await exportEndedTurns();
+  }
 }
