@@ -313,7 +313,20 @@ describe("the assistant's completed reply", () => {
       text: "Kids BJJ trains on Wednesdays.",
       bookingIntent: null,
       leadRequest: null,
+      modelId: "mock-model-id",
     });
+  });
+
+  it("returns the id of the model that wrote the reply", async () => {
+    const reply = await completedReply({
+      ...input,
+      model: new MockLanguageModelV4({
+        modelId: "anthropic/claude-sonnet-4.6",
+        doGenerate: [textStep("Kids BJJ trains on Wednesdays.")],
+      }),
+    });
+
+    expect(reply.modelId).toBe("anthropic/claude-sonnet-4.6");
   });
 
   it("returns a Booking Intent with the participant when it prepares a booking for an open slot", async () => {
@@ -339,6 +352,7 @@ describe("the assistant's completed reply", () => {
         participantAge: 8,
       },
       leadRequest: null,
+      modelId: "mock-model-id",
     });
   });
 
@@ -384,6 +398,7 @@ describe("the assistant's completed reply", () => {
         text: "Sorry, I can't hold that time. Shall we look at others?",
         bookingIntent: null,
         leadRequest: null,
+        modelId: "mock-model-id",
       });
     },
   );
@@ -429,6 +444,7 @@ describe("the assistant's completed reply", () => {
         trialOfferingId: null,
         statedNeed: "Adult evening classes",
       },
+      modelId: "mock-model-id",
     });
   });
 });
@@ -449,6 +465,7 @@ describe("the assistant's completed reply with no model passed", () => {
       text: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
       bookingIntent: null,
       leadRequest: null,
+      modelId: "scripted-local",
     });
   });
 
