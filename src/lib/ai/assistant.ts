@@ -1,7 +1,8 @@
 import {
   consumeStream,
   convertToModelMessages,
-  createAgentUIStreamResponse,
+  createAgentUIStream,
+  createUIMessageStreamResponse,
   generateId,
   type InferAgentUIMessage,
   type InferToolOutput,
@@ -10,6 +11,7 @@ import {
   ToolLoopAgent,
   tool,
   type UIMessage,
+  type UIMessageChunk,
   type UIMessageStreamOnEndCallback,
 } from "ai";
 import { z } from "zod";
@@ -309,8 +311,9 @@ function replyCompletion({
  * Streams the assistant's reply over the conversation (web chat) as a UI
  * message stream response. The reply keeps generating after the browser
  * disconnects, and `onFinish` is called exactly once with the final reply.
- * If this function rejects, the reply never started and `onFinish` is never
- * called.
+ * If `onFinish` throws, the error is logged and the stream ends with an error
+ * chunk. If this function rejects, the reply never started and `onFinish` is
+ * never called.
  */
 export async function streamedReply({
   messages,
@@ -320,24 +323,42 @@ export async function streamedReply({
   onFinish: (finish: ReplyFinish) => Promise<void> | void;
 }): Promise<Response> {
   const assistant = createAssistant(input);
-  return createAgentUIStreamResponse({
+  let finishFailed = false;
+  const stream = await createAgentUIStream({
     agent: assistant,
     uiMessages: messages,
     generateMessageId: generateId,
-    // Reading a copy of the stream to the end keeps the reply generating, and
-    // `onEnd` coming, after the browser disconnects.
-    consumeSseStream: consumeStream,
     onEnd: async (end: StreamEnd) => {
-      // The reply has already reached the browser: log a failing callback
-      // rather than break the end of its stream.
       try {
         await onFinish({
           reply: end.responseMessage,
           completion: replyCompletion(end),
         });
       } catch (error) {
+        // Rethrowing would cut the response off mid-stream, which looks like
+        // a dropped connection rather than a failed reply.
         console.error("assistant: streamed reply onFinish failed", error);
+        finishFailed = true;
       }
     },
+  });
+  return createUIMessageStreamResponse({
+    // The agent's stream only closes once `onEnd` has settled, so
+    // `finishFailed` is final by the time this flushes.
+    stream: stream.pipeThrough(
+      new TransformStream<UIMessageChunk, UIMessageChunk>({
+        flush(controller) {
+          if (finishFailed) {
+            controller.enqueue({
+              type: "error",
+              errorText: "An error occurred.",
+            });
+          }
+        },
+      }),
+    ),
+    // Reading a copy of the stream to the end keeps the reply generating, and
+    // `onEnd` coming, after the browser disconnects.
+    consumeSseStream: consumeStream,
   });
 }

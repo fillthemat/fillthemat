@@ -96,6 +96,14 @@ function streamingModel(steps: ModelStep[], { chunkDelayInMs = 0 } = {}) {
   });
 }
 
+// The UI message chunks the browser reads from a streamed reply, in order.
+function chunksOf(body: string): unknown[] {
+  return body
+    .split("\n\n")
+    .filter((event) => event.startsWith("data: {"))
+    .map((event) => JSON.parse(event.slice("data: ".length)));
+}
+
 function textOf(message: AssistantUIMessage) {
   return message.parts
     .map((part) => (part.type === "text" ? part.text : ""))
@@ -577,12 +585,13 @@ describe("the assistant's streamed reply", () => {
     },
   );
 
-  it("still ends the response, and rejects nothing unhandled, when the finish callback throws", async () => {
+  it("ends the response with an error, calling back once and rejecting nothing unhandled, when the finish callback throws", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const unhandled: unknown[] = [];
     const recordUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on("unhandledRejection", recordUnhandled);
     try {
+      let finishCalls = 0;
       const response = await streamedReply({
         ...input,
         model: streamingModel([
@@ -590,14 +599,20 @@ describe("the assistant's streamed reply", () => {
           textStep("We offer Kids BJJ."),
         ]),
         onFinish: () => {
+          finishCalls += 1;
           throw new Error("Database unavailable");
         },
       });
 
-      const body = await response.text();
+      const chunks = chunksOf(await response.text());
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(body).toMatch(/data: \[DONE\]\n\n$/);
+      // The browser learns the reply failed, but not why.
+      expect(chunks.at(-1)).toEqual({
+        type: "error",
+        errorText: "An error occurred.",
+      });
+      expect(finishCalls).toBe(1);
       expect(unhandled).toEqual([]);
       expect(logged).toHaveBeenCalled();
     } finally {
