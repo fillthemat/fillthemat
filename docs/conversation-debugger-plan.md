@@ -54,7 +54,7 @@ The current Langfuse integration guide has a dedicated SDK 7 path using `@langfu
 | `src/lib/ai/system-prompt.ts` | Platform prompt plus school settings and FAQs |
 | `src/lib/tracing/turn-trace.ts` | One trace per turn (session = conversation, user = school, channel tag, root input/output), exported once the turn ends |
 | `src/lib/tracing/span-processor.ts` | Langfuse span processor that masks email addresses and phone numbers in every exported span |
-| `src/instrumentation-node.ts` | Registers the span processor and the AI SDK's Langfuse integration only when Langfuse keys are set |
+| `src/instrumentation-node.ts` | Calls `registerTracing` (`src/lib/tracing/register.ts`), which registers the span processor and the AI SDK's Langfuse integration only when Langfuse keys are set |
 | `src/components/booking-chat.tsx` | Chat transport, transcript rendering, client status; debug controls belong here or in a small extracted component |
 | `src/components/browser-token.ts` | Current per-school browser resume-token storage |
 | `src/app/s/[slug]/page.tsx` | Landing/preview page; derive debug capability server-side |

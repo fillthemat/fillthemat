@@ -1,24 +1,19 @@
-import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
-import { context, trace } from "@opentelemetry/api";
-import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { ExportResultCode } from "@opentelemetry/core";
 import {
-  BasicTracerProvider,
   InMemorySpanExporter,
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
-import { registerTelemetry } from "ai";
 import { afterEach, beforeEach, vi } from "vitest";
-import { createTraceSpanProcessor } from "@/lib/tracing/span-processor";
+import { registerTracing } from "@/lib/tracing/register";
 
-// Integration tests trace the way production does when Langfuse keys are set:
-// the production span processor and the AI SDK's Langfuse integration. Spans
-// are exported into memory instead of to Langfuse. Installed once per test
-// process, because the AI SDK integration stays bound to the first provider.
+// Integration tests trace the way production does when Langfuse keys are set,
+// through the same registration, but spans are exported into memory instead
+// of to Langfuse. Installed once per test process, because the AI SDK
+// integration stays bound to the first provider.
 
 type TestTracing = {
   exporter: InMemorySpanExporter;
-  provider: BasicTracerProvider;
+  provider: NonNullable<ReturnType<typeof registerTracing>>;
 };
 
 const INSTALLED = Symbol.for("fillthemat.testTracing");
@@ -28,14 +23,14 @@ const registry = globalThis as typeof globalThis & {
 
 function install(): TestTracing {
   const exporter = new InMemorySpanExporter();
-  const provider = new BasicTracerProvider({
-    spanProcessors: [createTraceSpanProcessor({ exporter })],
+  const provider = registerTracing({
+    env: {
+      LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+      LANGFUSE_SECRET_KEY: "sk-lf-test",
+    },
+    exporter,
   });
-  context.setGlobalContextManager(
-    new AsyncLocalStorageContextManager().enable(),
-  );
-  trace.setGlobalTracerProvider(provider);
-  registerTelemetry(new LangfuseVercelAiSdkIntegration());
+  if (!provider) throw new Error("tracing: the test harness wasn't registered");
   return { exporter, provider };
 }
 
