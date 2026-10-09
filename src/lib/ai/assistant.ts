@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   consumeStream,
   convertToModelMessages,
@@ -27,8 +28,15 @@ import { MAX_AGENT_STEPS } from "@/lib/security/limits";
 import { defaultLanguageModel } from "./language-model";
 import {
   buildBookingAgentInstructions,
+  PLATFORM_INSTRUCTIONS,
   type SchoolPromptInput,
 } from "./system-prompt";
+
+/** A short hash of the platform instructions every reply follows. */
+export const PLATFORM_INSTRUCTIONS_HASH = createHash("sha256")
+  .update(PLATFORM_INSTRUCTIONS)
+  .digest("hex")
+  .slice(0, 12);
 
 /** The school's id plus the details its instructions show the model. */
 export type AssistantSchool = Pick<School, "id"> &
@@ -68,7 +76,7 @@ function createAssistant({
   now,
   model = defaultLanguageModel(),
 }: Omit<AssistantInput, "messages">) {
-  return new ToolLoopAgent({
+  const assistant = new ToolLoopAgent({
     model,
     // The builder reads only its own fields, so the rest of a School row
     // never reaches the instructions.
@@ -207,14 +215,18 @@ function createAssistant({
       }),
     },
   });
+  return {
+    assistant,
+    modelId: typeof model === "string" ? model : model.modelId,
+  };
 }
 
-/** A web chat message whose tool parts are typed by the assistant's tools. */
-export type AssistantUIMessage = InferAgentUIMessage<
-  ReturnType<typeof createAssistant>
->;
+type Assistant = ReturnType<typeof createAssistant>["assistant"];
 
-type AssistantTools = ReturnType<typeof createAssistant>["tools"];
+/** A web chat message whose tool parts are typed by the assistant's tools. */
+export type AssistantUIMessage = InferAgentUIMessage<Assistant>;
+
+type AssistantTools = Assistant["tools"];
 type PrepareBookingOk = Extract<
   InferToolOutput<AssistantTools["prepare_booking"]>,
   { ok: true }
@@ -250,7 +262,7 @@ export async function completedReply({
   messages,
   ...input
 }: AssistantInput): Promise<CompletedReply> {
-  const assistant = createAssistant(input);
+  const { assistant } = createAssistant(input);
   const result = await assistant.generate({
     messages: await convertToModelMessages(messages, {
       tools: assistant.tools,
@@ -290,6 +302,8 @@ export type ReplyCompletion = "complete" | "aborted" | "error";
 export type ReplyFinish = {
   reply: AssistantUIMessage;
   completion: ReplyCompletion;
+  /** The language model that wrote the reply. */
+  modelId: string;
 };
 
 type StreamEnd = Parameters<
@@ -322,7 +336,7 @@ export async function streamedReply({
 }: AssistantInput & {
   onFinish: (finish: ReplyFinish) => Promise<void> | void;
 }): Promise<Response> {
-  const assistant = createAssistant(input);
+  const { assistant, modelId } = createAssistant(input);
   let finishFailed = false;
   const stream = await createAgentUIStream({
     agent: assistant,
@@ -333,6 +347,7 @@ export async function streamedReply({
         await onFinish({
           reply: end.responseMessage,
           completion: replyCompletion(end),
+          modelId,
         });
       } catch (error) {
         // Rethrowing would cut the response off mid-stream, which looks like

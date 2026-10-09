@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.integration.test.ts"],
+    setupFiles: ["./src/test/tracing.ts"],
     fileParallelism: false,
     testTimeout: 30_000,
   },

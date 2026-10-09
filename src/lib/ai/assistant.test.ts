@@ -64,8 +64,12 @@ function scriptedModel(...steps: ModelStep[]) {
 }
 
 // The same scripted steps, streamed one per model call, text word by word.
-function streamingModel(steps: ModelStep[], { chunkDelayInMs = 0 } = {}) {
+function streamingModel(
+  steps: ModelStep[],
+  { chunkDelayInMs = 0, modelId = "mock-model-id" } = {},
+) {
   return new MockLanguageModelV4({
+    modelId,
     doStream: steps.map((step) => ({
       stream: simulateReadableStream<ModelStreamPart>({
         chunkDelayInMs,
@@ -508,6 +512,29 @@ describe("the assistant's streamed reply", () => {
         text: "We offer Kids BJJ.",
         state: "done",
       }),
+    ]);
+  });
+
+  it("calls back with the id of the model that wrote the reply", async () => {
+    const finishes: ReplyFinish[] = [];
+    const response = await streamedReply({
+      ...input,
+      model: streamingModel(
+        [
+          toolCallStep("list_trial_offerings", {}),
+          textStep("We offer Kids BJJ."),
+        ],
+        { modelId: "anthropic/claude-sonnet-4.6" },
+      ),
+      onFinish: (finish) => {
+        finishes.push(finish);
+      },
+    });
+
+    await response.text();
+
+    expect(finishes.map(({ modelId }) => modelId)).toEqual([
+      "anthropic/claude-sonnet-4.6",
     ]);
   });
 
