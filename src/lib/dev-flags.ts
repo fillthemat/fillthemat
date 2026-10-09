@@ -13,12 +13,6 @@ export function isLocalEmailNoop(): boolean {
   return process.env.NODE_ENV !== "production" && !process.env.RESEND_API_KEY;
 }
 
-export function isLocalAiStub(): boolean {
-  return (
-    process.env.NODE_ENV !== "production" && !process.env.VERCEL_OIDC_TOKEN
-  );
-}
-
 export function isLocalWhatsAppNoop(): boolean {
   return (
     process.env.NODE_ENV !== "production" &&

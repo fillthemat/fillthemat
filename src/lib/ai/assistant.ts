@@ -22,7 +22,7 @@ import {
 } from "@/lib/schedule/occurrences";
 import { parseSlotId } from "@/lib/schedule/slot-id";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
-import { defaultLanguageModel, gatewayLanguageModel } from "./language-model";
+import { defaultLanguageModel } from "./language-model";
 import { buildBookingAgentInstructions } from "./system-prompt";
 
 export type AssistantSchool = Pick<
@@ -369,24 +369,5 @@ export async function streamedReply({
         console.error("assistant: streamed reply onFinish failed", error);
       }
     },
-  });
-}
-
-/**
- * @deprecated Transitional (#49): only the web chat route still builds the
- * agent itself, behind its own local-stub branch. #50 moves the route onto the
- * assistant's streamed reply and deletes this export.
- */
-export function createBookingAgent({
-  offerings,
-  windows,
-  occurrences,
-  faqs,
-  ...input
-}: Pick<AssistantInput, "school" | "now"> & SchoolCatalog) {
-  return createAssistant({
-    ...input,
-    catalog: { offerings, windows, occurrences, faqs },
-    model: gatewayLanguageModel(),
   });
 }
