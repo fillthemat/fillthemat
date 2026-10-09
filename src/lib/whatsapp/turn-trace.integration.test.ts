@@ -157,7 +157,7 @@ async function startConversation(waId: string) {
 }
 
 // A conversation with `waId` whose Booking Intent awaits confirmation.
-async function proposedBooking(
+async function proposeBookingIntent(
   waId: string,
   participant: { participantName: string; participantAge: number | null },
 ) {
@@ -336,7 +336,7 @@ describe("a WhatsApp worker run with several messages to answer", () => {
 describe("a WhatsApp turn answered without the assistant", () => {
   it("is one trace for a booking confirmation, with the saved confirmation as output and no model spans", async () => {
     const waId = "16505550111";
-    const { conversationId, intentId } = await proposedBooking(waId, {
+    const { conversationId, intentId } = await proposeBookingIntent(waId, {
       participantName: "Alex",
       participantAge: 8,
     });
@@ -396,9 +396,9 @@ describe("a WhatsApp turn answered without the assistant", () => {
     expect((await exportedSpans()).map(({ name }) => name)).toEqual(["turn"]);
   });
 
-  it("is one trace for a notice that a confirmed booking needs the participant's age", async () => {
+  it("is one trace for a notice that the Booking Intent being confirmed needs the participant's age", async () => {
     const waId = "16505550113";
-    const { conversationId, intentId } = await proposedBooking(waId, {
+    const { conversationId, intentId } = await proposeBookingIntent(waId, {
       participantName: "Alex",
       participantAge: null,
     });
@@ -417,7 +417,7 @@ describe("a WhatsApp turn answered without the assistant", () => {
     ]);
   });
 
-  it("is one trace for a notice that the booking option being confirmed has expired", async () => {
+  it("is one trace for a notice that the Booking Intent being confirmed has expired", async () => {
     const waId = "16505550114";
     const expiredIntentButton = confirmBookingButtonId(randomUUID());
 
@@ -535,12 +535,12 @@ describe("an inbound WhatsApp message that gets no reply", () => {
   });
 });
 
-describe("a WhatsApp turn whose attempt fails", () => {
+describe("a failed attempt at a WhatsApp turn", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("is exported as an error with the assistant's spans under it, and its retry is traced as a turn of its own", async () => {
+  it("is exported as an error with the assistant's spans under it, and the retry is traced separately", async () => {
     // The worker logs the failed job.
     vi.spyOn(console, "error").mockImplementation(() => {});
     const waId = "16505550131";
@@ -558,8 +558,8 @@ describe("a WhatsApp turn whose attempt fails", () => {
     );
 
     const exportedByWorker = spansExportedSoFar();
-    const failedTurn = exportedByWorker.find(isRoot);
-    expect(failedTurn?.attributes).toMatchObject({
+    const failedAttempt = exportedByWorker.find(isRoot);
+    expect(failedAttempt?.attributes).toMatchObject({
       "session.id": conversationId,
       "langfuse.observation.level": "ERROR",
       "langfuse.observation.status_message":
@@ -567,7 +567,7 @@ describe("a WhatsApp turn whose attempt fails", () => {
     });
     const assistantRun = exportedByWorker.find(isAssistantRun);
     expect(assistantRun?.parentSpanContext?.spanId).toBe(
-      failedTurn?.spanContext().spanId,
+      failedAttempt?.spanContext().spanId,
     );
 
     await db

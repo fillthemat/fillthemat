@@ -308,7 +308,7 @@ async function handleAssistantTurn(
  *
  * Deterministic confirmation path (addendum "Deterministic confirmation"): a
  * `confirm_booking:<id>` reply button, or an exact affirmative while a pending
- * intent exists, goes straight to `bookSlot` instead of the agent.
+ * intent exists, goes straight to `bookSlot` instead of the assistant.
  */
 async function planReply(
   ctx: InboundContext,
