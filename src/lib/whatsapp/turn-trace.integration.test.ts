@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { addDays } from "date-fns";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
@@ -14,7 +14,10 @@ import {
 } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
-import { MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY } from "@/lib/security/limits";
+import {
+  MAX_CHAT_MESSAGES_PER_CONVERSATION,
+  MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY,
+} from "@/lib/security/limits";
 import { confirmBookingButtonId } from "@/lib/whatsapp/confirmation";
 import { upsertPendingBookingIntent } from "@/lib/whatsapp/intents";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
@@ -40,6 +43,7 @@ const sql = authSql();
 const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
 const phoneNumberId = `499${Date.now().toString().slice(-9)}`;
+const unusedPhoneNumberId = `599${Date.now().toString().slice(-9)}`;
 const scriptedReply =
   "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.";
 let schoolId = "";
@@ -104,11 +108,8 @@ function textOf(message: { parts: unknown } | undefined) {
   return part?.text;
 }
 
-// A conversation with `waId` whose Booking Intent awaits confirmation.
-async function proposedBooking(
-  waId: string,
-  participant: { participantName: string; participantAge: number | null },
-) {
+// The conversation `waId`'s messages will be routed into.
+async function startConversation(waId: string) {
   const [conversation] = await db
     .insert(conversations)
     .values({
@@ -118,7 +119,15 @@ async function proposedBooking(
       expiresAt: addDays(new Date(), 30),
     })
     .returning({ id: conversations.id });
-  const conversationId = requireRow(conversation, "conversation").id;
+  return requireRow(conversation, "conversation").id;
+}
+
+// A conversation with `waId` whose Booking Intent awaits confirmation.
+async function proposedBooking(
+  waId: string,
+  participant: { participantName: string; participantAge: number | null },
+) {
+  const conversationId = await startConversation(waId);
   const [slot] = listOpenSlots({
     offeringId: kidsBjjId,
     timezone: "America/New_York",
@@ -165,7 +174,9 @@ beforeAll(async () => {
 afterAll(async () => {
   await db
     .delete(whatsappJobs)
-    .where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
+    .where(
+      inArray(whatsappJobs.phoneNumberId, [phoneNumberId, unusedPhoneNumberId]),
+    );
   await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
@@ -364,6 +375,104 @@ describe("a WhatsApp turn answered without the assistant", () => {
         output:
           "That booking option has expired or was replaced. Please ask for available times again.",
         metadata: { inboundMessageId: question?.id },
+      }),
+    ]);
+  });
+});
+
+describe("an inbound WhatsApp message that gets no reply", () => {
+  it("is not traced when it was already answered and its job runs again", async () => {
+    const waId = "16505550121";
+    const wamid = wamidFrom(waId);
+    await sendText(waId, "What can my son try?", wamid);
+    const answered = await exportedTraces();
+
+    await db
+      .update(whatsappJobs)
+      .set({ state: "pending", nextAttemptAt: new Date(Date.now() - 1000) })
+      .where(eq(whatsappJobs.dedupeKey, wamid));
+    await runWhatsAppWorkerOnce(randomUUID());
+
+    expect(answered).toHaveLength(1);
+    expect(await exportedTraces()).toEqual(answered);
+  });
+
+  it("is not traced when it carries no text", async () => {
+    const waId = "16505550122";
+    const wamid = wamidFrom(waId);
+
+    await send(
+      wamid,
+      textInboundPayload({ phoneNumberId, waId, wamid, text: " " }),
+    );
+
+    expect(await exportedTraces()).toEqual([]);
+  });
+
+  it("is not traced when it was sent to a number no school uses", async () => {
+    const waId = "16505550123";
+    const wamid = wamidFrom(waId);
+
+    await send(
+      wamid,
+      textInboundPayload({
+        phoneNumberId: unusedPhoneNumberId,
+        waId,
+        wamid,
+        text: "Hello?",
+      }),
+    );
+
+    expect(await exportedTraces()).toEqual([]);
+  });
+
+  it("is not traced when its conversation has reached the message limit", async () => {
+    const waId = "16505550124";
+    const conversationId = await startConversation(waId);
+    await db.insert(messages).values(
+      Array.from(
+        { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
+        (_, index) => ({
+          conversationId,
+          messageId: `earlier-${index}`,
+          role: index % 2 === 0 ? "user" : "assistant",
+          parts: [{ type: "text", text: `Message ${index + 1}` }],
+          purgeAt: addDays(new Date(), 30),
+        }),
+      ),
+    );
+
+    await sendText(waId, "One more question?");
+
+    expect(await exportedTraces()).toEqual([]);
+  });
+
+  it("is traced once, when it's answered, if it arrived while another message was being answered", async () => {
+    const waId = "16505550125";
+    const conversationId = await startConversation(waId);
+    const holdLock = (generatingAt: Date | null) =>
+      db
+        .update(conversations)
+        .set({ generatingAt })
+        .where(eq(conversations.id, conversationId));
+    const wamid = wamidFrom(waId);
+
+    await holdLock(new Date());
+    await sendText(waId, "Hello?", wamid);
+    const whileLocked = await exportedTraces();
+    await holdLock(null);
+    await db
+      .update(whatsappJobs)
+      .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+      .where(eq(whatsappJobs.dedupeKey, wamid));
+    await runWhatsAppWorkerOnce(randomUUID());
+
+    expect(whileLocked).toEqual([]);
+    expect(await exportedTraces()).toEqual([
+      expect.objectContaining({
+        sessionId: conversationId,
+        input: "Hello?",
+        output: scriptedReply,
       }),
     ]);
   });
