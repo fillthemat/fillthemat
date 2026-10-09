@@ -1,8 +1,9 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useState } from "react";
+import type { AssistantUIMessage } from "@/lib/ai/assistant";
 import { BookingFlow } from "./booking-flow";
 import { readConversationToken } from "./browser-token";
 
@@ -14,6 +15,34 @@ type Offering = {
   maximumAge: number | null;
   active: boolean;
 };
+
+// The last Booking Intent the assistant proposed, handed to Book Trial.
+function lastBookingIntent(messages: AssistantUIMessage[]) {
+  let intent: {
+    offeringId: string;
+    slotId: string;
+    offeringName: string;
+    whenLabel: string;
+  } | null = null;
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (
+        part.type === "tool-prepare_booking" &&
+        part.state === "output-available" &&
+        part.output.ok
+      ) {
+        const { offering, slot } = part.output;
+        intent = {
+          offeringId: offering.id,
+          slotId: slot.slotId,
+          offeringName: offering.name,
+          whenLabel: `${slot.localDateLabel} at ${slot.localTimeLabel}`,
+        };
+      }
+    }
+  }
+  return intent;
+}
 
 export function BookingChat({
   slug,
@@ -31,13 +60,7 @@ export function BookingChat({
   preview?: boolean;
 }) {
   const [resumeToken, setResumeToken] = useState<string | null>(null);
-  const [prepared, setPrepared] = useState<{
-    offeringId: string;
-    slotId: string;
-    offeringName: string;
-    whenLabel: string;
-  } | null>(null);
-  const [showBook, setShowBook] = useState(false);
+  const [bookRequested, setBookRequested] = useState(false);
 
   useEffect(() => {
     setResumeToken(readConversationToken(slug));
@@ -45,7 +68,7 @@ export function BookingChat({
 
   const transport = useMemo(
     () =>
-      new DefaultChatTransport({
+      new DefaultChatTransport<AssistantUIMessage>({
         api: "/api/chat",
         prepareSendMessagesRequest: ({ messages }) => ({
           body: {
@@ -70,7 +93,9 @@ export function BookingChat({
         `/api/chat?slug=${encodeURIComponent(slug)}&resumeToken=${encodeURIComponent(resumeToken)}${preview ? "&preview=1" : ""}`,
       );
       if (!response.ok) return;
-      const payload = (await response.json()) as { messages: UIMessage[] };
+      const payload = (await response.json()) as {
+        messages: AssistantUIMessage[];
+      };
       // History is reloaded from the server on refresh via GET; useChat starts empty
       // and the first send continues the server-canonical transcript.
       setMessages(payload.messages);
@@ -78,37 +103,8 @@ export function BookingChat({
     })();
   }, [resumeToken, slug, preview, setMessages]);
 
-  useEffect(() => {
-    for (const message of messages) {
-      for (const part of message.parts) {
-        if (
-          part.type === "tool-prepare_booking" &&
-          "state" in part &&
-          part.state === "output-available" &&
-          "output" in part
-        ) {
-          const output = part.output as {
-            ok?: boolean;
-            offering?: { id: string; name: string };
-            slot?: {
-              slotId: string;
-              localDateLabel: string;
-              localTimeLabel: string;
-            };
-          };
-          if (output.ok && output.offering && output.slot) {
-            setPrepared({
-              offeringId: output.offering.id,
-              slotId: output.slot.slotId,
-              offeringName: output.offering.name,
-              whenLabel: `${output.slot.localDateLabel} at ${output.slot.localTimeLabel}`,
-            });
-            setShowBook(true);
-          }
-        }
-      }
-    }
-  }, [messages]);
+  const bookingIntent = lastBookingIntent(messages);
+  const showBook = bookRequested || bookingIntent !== null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -163,7 +159,7 @@ export function BookingChat({
       </div>
       <button
         type="button"
-        onClick={() => setShowBook(true)}
+        onClick={() => setBookRequested(true)}
         className="h-12 rounded-full bg-page-950 text-white"
       >
         Book Trial
@@ -174,7 +170,7 @@ export function BookingChat({
           schoolName={schoolName}
           location={location}
           offerings={offerings}
-          prepared={prepared}
+          prepared={bookingIntent}
           preview={preview}
         />
       ) : null}
