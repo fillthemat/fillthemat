@@ -174,17 +174,6 @@ async function handleAssistantTurn(
   history: UIMessage[],
   now: Date,
 ): Promise<TurnReply> {
-  // 429-equivalent: per-wa_id daily outbound cap (Phase 5 abuse controls).
-  if (
-    await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
-  ) {
-    await saveInboundMessage(ctx);
-    return sendNotice(
-      ctx,
-      "You've reached today's message limit. Please try again tomorrow.",
-    );
-  }
-
   const inboundUIMessage: UIMessage = {
     id: ctx.message.wamid,
     role: "user",
@@ -306,8 +295,8 @@ async function handleAssistantTurn(
 
 /**
  * Decides how to answer the inbound message before answering it, and returns
- * the turn that sends the reply. Returns null when the message gets no reply:
- * the conversation has reached its message limit and it isn't a confirmation.
+ * the turn that sends the reply. Returns null for a refusal, which saves no
+ * messages and is not traced as a Turn, even when a notice is sent.
  *
  * Deterministic confirmation path (addendum "Deterministic confirmation"): a
  * `confirm_booking:<id>` reply button, or an exact affirmative while a pending
@@ -331,6 +320,16 @@ async function planReply(
 
   const history = await loadTranscript(ctx.conversationId);
   if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) return null;
+  // Daily-cap refusals leave the conversation open and its transcript intact.
+  if (
+    await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
+  ) {
+    await sendNotice(
+      ctx,
+      "You've reached today's message limit. Please try again tomorrow.",
+    );
+    return null;
+  }
   return () => handleAssistantTurn(ctx, history, now);
 }
 
@@ -391,8 +390,8 @@ export async function processWhatsAppJob(
 
       const sendReply = await planReply(ctx, now);
       if (sendReply) {
-        // A message that gets a reply is a turn. Its trace starts only once
-        // that's known, because a started trace can't be dropped. It's
+        // Only an accepted message and its reply are a Turn. Its trace starts
+        // once that's known, because a started trace can't be dropped. It's
         // exported when the worker run ends.
         const turn = startTurnTrace({
           channel: "whatsapp",
