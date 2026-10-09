@@ -4,7 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useState } from "react";
 import type { AssistantUIMessage } from "@/lib/ai/assistant";
-import { BookingFlow } from "./booking-flow";
+import { BookingFlow, type ProposedTrial } from "./booking-flow";
 import { readConversationToken } from "./browser-token";
 
 type Offering = {
@@ -16,14 +16,12 @@ type Offering = {
   active: boolean;
 };
 
-// The last Booking Intent the assistant proposed, handed to Book Trial.
-function lastBookingIntent(messages: AssistantUIMessage[]) {
-  let intent: {
-    offeringId: string;
-    slotId: string;
-    offeringName: string;
-    whenLabel: string;
-  } | null = null;
+// The trial offering and slot of the assistant's last Booking Intent, handed
+// to Book Trial.
+function lastProposedTrial(
+  messages: AssistantUIMessage[],
+): ProposedTrial | null {
+  let proposedTrial: ProposedTrial | null = null;
   for (const message of messages) {
     for (const part of message.parts) {
       if (
@@ -32,7 +30,7 @@ function lastBookingIntent(messages: AssistantUIMessage[]) {
         part.output.ok
       ) {
         const { offering, slot } = part.output;
-        intent = {
+        proposedTrial = {
           offeringId: offering.id,
           slotId: slot.slotId,
           offeringName: offering.name,
@@ -41,7 +39,7 @@ function lastBookingIntent(messages: AssistantUIMessage[]) {
       }
     }
   }
-  return intent;
+  return proposedTrial;
 }
 
 export function BookingChat({
@@ -103,8 +101,8 @@ export function BookingChat({
     })();
   }, [resumeToken, slug, preview, setMessages]);
 
-  const bookingIntent = lastBookingIntent(messages);
-  const showBook = bookRequested || bookingIntent !== null;
+  const proposedTrial = lastProposedTrial(messages);
+  const showBook = bookRequested || proposedTrial !== null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -170,7 +168,7 @@ export function BookingChat({
           schoolName={schoolName}
           location={location}
           offerings={offerings}
-          prepared={bookingIntent}
+          proposedTrial={proposedTrial}
           preview={preview}
         />
       ) : null}

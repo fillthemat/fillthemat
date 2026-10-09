@@ -10,6 +10,8 @@ import {
   type ReplyFinish,
   streamedReply,
 } from "./assistant";
+import { GATEWAY_TOKEN_ENV_VARS } from "./gateway-token";
+import { PLATFORM_INSTRUCTIONS } from "./system-prompt";
 
 type ModelStep = Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>>;
 type ModelStreamPart =
@@ -61,16 +63,19 @@ function scriptedModel(...steps: ModelStep[]) {
   return new MockLanguageModelV4({ doGenerate: steps });
 }
 
-// Step 1 lists the trial offerings. Step 2, once that tool result is back,
-// streams the reply word by word.
-function streamingModel(reply: string, { chunkDelayInMs = 0 } = {}) {
+// The same scripted steps, streamed one per model call, text word by word.
+function streamingModel(steps: ModelStep[], { chunkDelayInMs = 0 } = {}) {
   return new MockLanguageModelV4({
-    doStream: async ({ prompt }) => {
-      const chunks: ModelStreamPart[] =
-        prompt.at(-1)?.role === "tool"
-          ? [
+    doStream: steps.map((step) => ({
+      stream: simulateReadableStream<ModelStreamPart>({
+        chunkDelayInMs,
+        chunks: [
+          ...step.content.flatMap((part): ModelStreamPart[] => {
+            if (part.type === "tool-call") return [part];
+            if (part.type !== "text") return [];
+            return [
               { type: "text-start", id: "reply" },
-              ...reply.split(/(?<= )/).map(
+              ...part.text.split(/(?<= )/).map(
                 (delta): ModelStreamPart => ({
                   type: "text-delta",
                   id: "reply",
@@ -78,28 +83,25 @@ function streamingModel(reply: string, { chunkDelayInMs = 0 } = {}) {
                 }),
               ),
               { type: "text-end", id: "reply" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: undefined },
-                usage,
-              },
-            ]
-          : [
-              {
-                type: "tool-call",
-                toolCallId: randomUUID(),
-                toolName: "list_trial_offerings",
-                input: "{}",
-              },
-              {
-                type: "finish",
-                finishReason: { unified: "tool-calls", raw: undefined },
-                usage,
-              },
             ];
-      return { stream: simulateReadableStream({ chunks, chunkDelayInMs }) };
-    },
+          }),
+          {
+            type: "finish",
+            finishReason: step.finishReason,
+            usage: step.usage,
+          },
+        ],
+      }),
+    })),
   });
+}
+
+// The UI message chunks the browser reads from a streamed reply, in order.
+function chunksOf(body: string): unknown[] {
+  return body
+    .split("\n\n")
+    .filter((event) => event.startsWith("data: {"))
+    .map((event) => JSON.parse(event.slice("data: ".length)));
 }
 
 function textOf(message: AssistantUIMessage) {
@@ -200,6 +202,101 @@ const input: AssistantInput = {
   messages,
   now,
 };
+
+describe("the assistant's instructions", () => {
+  it("are the platform instructions, then the school's details and FAQs as delimited tenant data", async () => {
+    // A whole School row: the columns the instructions don't use stay out.
+    const schoolRow = {
+      ...school,
+      address: "12 Main St",
+      phone: "+1 512 555 0100",
+      website: "https://tigerdojo.test",
+      parkingNotes: "Park behind the building.",
+      accessNotes: "Step-free entrance on Oak St.",
+      trialGuidance: "Arrive 10 minutes early.",
+      pricing: "$120 a month.",
+      welcomeMessage: "Welcome to Tiger Dojo!",
+      agentInstructions: "Keep answers short.",
+      slug: "tiger-dojo",
+      notificationEmail: "owner@tigerdojo.test",
+    };
+    const model = scriptedModel(textStep("Hi! How can I help?"));
+
+    await completedReply({
+      ...input,
+      school: schoolRow,
+      catalog: {
+        ...input.catalog,
+        faqs: [
+          { question: "Do I need a gi?", answer: "No, sportswear is fine." },
+          { question: "Is parking free?", answer: "Yes." },
+        ],
+      },
+      model,
+    });
+
+    expect(model.doGenerateCalls[0]?.prompt[0]).toEqual({
+      role: "system",
+      content: `${PLATFORM_INSTRUCTIONS}
+
+<school_name>
+Tiger Dojo
+</school_name>
+
+<timezone>
+America/New_York
+</timezone>
+
+<city>
+Austin
+</city>
+
+<address>
+12 Main St
+</address>
+
+<phone>
++1 512 555 0100
+</phone>
+
+<website>
+https://tigerdojo.test
+</website>
+
+<parking_notes>
+Park behind the building.
+</parking_notes>
+
+<access_notes>
+Step-free entrance on Oak St.
+</access_notes>
+
+<trial_guidance>
+Arrive 10 minutes early.
+</trial_guidance>
+
+<pricing>
+$120 a month.
+</pricing>
+
+<welcome_message>
+Welcome to Tiger Dojo!
+</welcome_message>
+
+<faqs>
+Q1: Do I need a gi?
+A1: No, sportswear is fine.
+
+Q2: Is parking free?
+A2: Yes.
+</faqs>
+
+<owner_instructions>
+Keep answers short.
+</owner_instructions>`,
+    });
+  });
+});
 
 describe("the assistant's completed reply", () => {
   it("returns only the reply text for a plain text answer", async () => {
@@ -334,8 +431,7 @@ describe("the assistant's completed reply", () => {
 
 describe("the assistant's completed reply with no model passed", () => {
   beforeEach(() => {
-    vi.stubEnv("VERCEL_OIDC_TOKEN", undefined);
-    vi.stubEnv("AI_GATEWAY_API_KEY", undefined);
+    for (const name of GATEWAY_TOKEN_ENV_VARS) vi.stubEnv(name, undefined);
   });
 
   afterEach(() => {
@@ -383,7 +479,10 @@ describe("the assistant's streamed reply", () => {
     const finishes: ReplyFinish[] = [];
     const response = await streamedReply({
       ...input,
-      model: streamingModel("We offer Kids BJJ."),
+      model: streamingModel([
+        toolCallStep("list_trial_offerings", {}),
+        textStep("We offer Kids BJJ."),
+      ]),
       onFinish: (finish) => {
         finishes.push(finish);
       },
@@ -417,9 +516,13 @@ describe("the assistant's streamed reply", () => {
     const firstFinish = Promise.withResolvers<void>();
     const response = await streamedReply({
       ...input,
-      model: streamingModel("We offer Kids BJJ on Wednesdays at 6 PM.", {
-        chunkDelayInMs: 5,
-      }),
+      model: streamingModel(
+        [
+          toolCallStep("list_trial_offerings", {}),
+          textStep("We offer Kids BJJ on Wednesdays at 6 PM."),
+        ],
+        { chunkDelayInMs: 5 },
+      ),
       onFinish: (finish) => {
         finishes.push(finish);
         firstFinish.resolve();
@@ -482,24 +585,34 @@ describe("the assistant's streamed reply", () => {
     },
   );
 
-  it("still ends the response, and rejects nothing unhandled, when the finish callback throws", async () => {
+  it("ends the response with an error, calling back once and rejecting nothing unhandled, when the finish callback throws", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const unhandled: unknown[] = [];
     const recordUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on("unhandledRejection", recordUnhandled);
     try {
+      let finishCalls = 0;
       const response = await streamedReply({
         ...input,
-        model: streamingModel("We offer Kids BJJ."),
+        model: streamingModel([
+          toolCallStep("list_trial_offerings", {}),
+          textStep("We offer Kids BJJ."),
+        ]),
         onFinish: () => {
+          finishCalls += 1;
           throw new Error("Database unavailable");
         },
       });
 
-      const body = await response.text();
+      const chunks = chunksOf(await response.text());
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(body).toMatch(/data: \[DONE\]\n\n$/);
+      // The browser learns the reply failed, but not why.
+      expect(chunks.at(-1)).toEqual({
+        type: "error",
+        errorText: "An error occurred.",
+      });
+      expect(finishCalls).toBe(1);
       expect(unhandled).toEqual([]);
       expect(logged).toHaveBeenCalled();
     } finally {

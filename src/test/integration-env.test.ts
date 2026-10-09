@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GATEWAY_TOKEN_ENV_VARS } from "@/lib/ai/gateway-token";
 import { loadLocalEnv } from "./integration-env";
 
 describe("loadLocalEnv", () => {
@@ -16,8 +17,7 @@ describe("loadLocalEnv", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "fillthemat-env-"));
     vi.stubEnv("DATABASE_URL", undefined);
-    vi.stubEnv("VERCEL_OIDC_TOKEN", undefined);
-    vi.stubEnv("AI_GATEWAY_API_KEY", undefined);
+    for (const name of GATEWAY_TOKEN_ENV_VARS) vi.stubEnv(name, undefined);
   });
 
   afterEach(() => {
@@ -37,6 +37,14 @@ describe("loadLocalEnv", () => {
     expect(process.env.DATABASE_URL).toBe("postgres://from-env-file");
     expect(process.env.VERCEL_OIDC_TOKEN).toBeUndefined();
     expect(process.env.AI_GATEWAY_API_KEY).toBeUndefined();
+  });
+
+  it("names the env file it loaded when DATABASE_URL is still missing", () => {
+    const envFile = writeEnvFile(["RESEND_FROM=onboarding@resend.dev"]);
+
+    expect(() => loadLocalEnv(envFile)).toThrow(
+      `DATABASE_URL is not set after loading ${envFile}.`,
+    );
   });
 
   it("removes AI Gateway credentials exported in the shell", () => {

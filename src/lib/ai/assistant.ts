@@ -1,7 +1,8 @@
 import {
   consumeStream,
   convertToModelMessages,
-  createAgentUIStreamResponse,
+  createAgentUIStream,
+  createUIMessageStreamResponse,
   generateId,
   type InferAgentUIMessage,
   type InferToolOutput,
@@ -10,6 +11,7 @@ import {
   ToolLoopAgent,
   tool,
   type UIMessage,
+  type UIMessageChunk,
   type UIMessageStreamOnEndCallback,
 } from "ai";
 import { z } from "zod";
@@ -23,24 +25,14 @@ import {
 import { parseSlotId } from "@/lib/schedule/slot-id";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
 import { defaultLanguageModel } from "./language-model";
-import { buildBookingAgentInstructions } from "./system-prompt";
+import {
+  buildBookingAgentInstructions,
+  type SchoolPromptInput,
+} from "./system-prompt";
 
-export type AssistantSchool = Pick<
-  School,
-  | "id"
-  | "name"
-  | "timezone"
-  | "city"
-  | "address"
-  | "phone"
-  | "website"
-  | "parkingNotes"
-  | "accessNotes"
-  | "trialGuidance"
-  | "pricing"
-  | "welcomeMessage"
-  | "agentInstructions"
->;
+/** The school's id plus the details its instructions show the model. */
+export type AssistantSchool = Pick<School, "id"> &
+  Omit<SchoolPromptInput, "faqs">;
 
 export type SchoolCatalog = {
   offerings: Array<
@@ -74,25 +66,13 @@ function createAssistant({
   school,
   catalog: { offerings, windows, occurrences, faqs },
   now,
-  model,
-}: Omit<AssistantInput, "messages" | "model"> & { model: LanguageModel }) {
+  model = defaultLanguageModel(),
+}: Omit<AssistantInput, "messages">) {
   return new ToolLoopAgent({
     model,
-    instructions: buildBookingAgentInstructions({
-      name: school.name,
-      timezone: school.timezone,
-      city: school.city,
-      address: school.address,
-      phone: school.phone,
-      website: school.website,
-      parkingNotes: school.parkingNotes,
-      accessNotes: school.accessNotes,
-      trialGuidance: school.trialGuidance,
-      pricing: school.pricing,
-      welcomeMessage: school.welcomeMessage,
-      agentInstructions: school.agentInstructions,
-      faqs,
-    }),
+    // The builder reads only its own fields, so the rest of a School row
+    // never reaches the instructions.
+    instructions: buildBookingAgentInstructions({ ...school, faqs }),
     stopWhen: isStepCount(MAX_AGENT_STEPS),
     providerOptions: {
       gateway: {
@@ -235,25 +215,25 @@ export type AssistantUIMessage = InferAgentUIMessage<
 >;
 
 type AssistantTools = ReturnType<typeof createAssistant>["tools"];
-type PreparedBooking = Extract<
+type PrepareBookingOk = Extract<
   InferToolOutput<AssistantTools["prepare_booking"]>,
   { ok: true }
 >;
 
 export type BookingIntent = {
-  trialOfferingId: PreparedBooking["offering"]["id"];
-  slotId: PreparedBooking["slot"]["slotId"];
-  participantName: PreparedBooking["participantName"];
-  participantAge: PreparedBooking["participantAge"];
+  trialOfferingId: PrepareBookingOk["offering"]["id"];
+  slotId: PrepareBookingOk["slot"]["slotId"];
+  participantName: PrepareBookingOk["participantName"];
+  participantAge: PrepareBookingOk["participantAge"];
 };
 
-type CapturedLead = InferToolOutput<AssistantTools["capture_lead"]>;
+type CaptureLeadOutput = InferToolOutput<AssistantTools["capture_lead"]>;
 
 export type LeadRequest = {
-  participantName: CapturedLead["participantName"];
-  participantAge: CapturedLead["participantAge"];
-  trialOfferingId: CapturedLead["offeringId"];
-  statedNeed: CapturedLead["statedNeed"];
+  participantName: CaptureLeadOutput["participantName"];
+  participantAge: CaptureLeadOutput["participantAge"];
+  trialOfferingId: CaptureLeadOutput["offeringId"];
+  statedNeed: CaptureLeadOutput["statedNeed"];
 };
 
 export type CompletedReply = {
@@ -268,41 +248,37 @@ export type CompletedReply = {
  */
 export async function completedReply({
   messages,
-  model,
   ...input
 }: AssistantInput): Promise<CompletedReply> {
-  const assistant = createAssistant({
-    ...input,
-    model: model ?? defaultLanguageModel(),
-  });
+  const assistant = createAssistant(input);
   const result = await assistant.generate({
     messages: await convertToModelMessages(messages, {
       tools: assistant.tools,
     }),
   });
   // The last result wins: a failed attempt after a successful one cancels it.
-  const prepared = result.staticToolResults.findLast(
+  const lastPrepareBooking = result.staticToolResults.findLast(
     (toolResult) => toolResult.toolName === "prepare_booking",
   );
-  const lead = result.staticToolResults.findLast(
+  const lastCaptureLead = result.staticToolResults.findLast(
     (toolResult) => toolResult.toolName === "capture_lead",
   );
   return {
     text: result.text.trim(),
-    bookingIntent: prepared?.output.ok
+    bookingIntent: lastPrepareBooking?.output.ok
       ? {
-          trialOfferingId: prepared.output.offering.id,
-          slotId: prepared.output.slot.slotId,
-          participantName: prepared.output.participantName,
-          participantAge: prepared.output.participantAge,
+          trialOfferingId: lastPrepareBooking.output.offering.id,
+          slotId: lastPrepareBooking.output.slot.slotId,
+          participantName: lastPrepareBooking.output.participantName,
+          participantAge: lastPrepareBooking.output.participantAge,
         }
       : null,
-    leadRequest: lead
+    leadRequest: lastCaptureLead
       ? {
-          participantName: lead.output.participantName,
-          participantAge: lead.output.participantAge,
-          trialOfferingId: lead.output.offeringId,
-          statedNeed: lead.output.statedNeed,
+          participantName: lastCaptureLead.output.participantName,
+          participantAge: lastCaptureLead.output.participantAge,
+          trialOfferingId: lastCaptureLead.output.offeringId,
+          statedNeed: lastCaptureLead.output.statedNeed,
         }
       : null,
   };
@@ -335,39 +311,54 @@ function replyCompletion({
  * Streams the assistant's reply over the conversation (web chat) as a UI
  * message stream response. The reply keeps generating after the browser
  * disconnects, and `onFinish` is called exactly once with the final reply.
- * If this function rejects, the reply never started and `onFinish` is never
- * called.
+ * If `onFinish` throws, the error is logged and the stream ends with an error
+ * chunk. If this function rejects, the reply never started and `onFinish` is
+ * never called.
  */
 export async function streamedReply({
   messages,
-  model,
   onFinish,
   ...input
 }: AssistantInput & {
   onFinish: (finish: ReplyFinish) => Promise<void> | void;
 }): Promise<Response> {
-  const assistant = createAssistant({
-    ...input,
-    model: model ?? defaultLanguageModel(),
-  });
-  return createAgentUIStreamResponse({
+  const assistant = createAssistant(input);
+  let finishFailed = false;
+  const stream = await createAgentUIStream({
     agent: assistant,
     uiMessages: messages,
     generateMessageId: generateId,
-    // Reading a copy of the stream to the end keeps the reply generating, and
-    // `onEnd` coming, after the browser disconnects.
-    consumeSseStream: consumeStream,
     onEnd: async (end: StreamEnd) => {
-      // The reply has already reached the browser: log a failing callback
-      // rather than break the end of its stream.
       try {
         await onFinish({
           reply: end.responseMessage,
           completion: replyCompletion(end),
         });
       } catch (error) {
+        // Rethrowing would cut the response off mid-stream, which looks like
+        // a dropped connection rather than a failed reply.
         console.error("assistant: streamed reply onFinish failed", error);
+        finishFailed = true;
       }
     },
+  });
+  return createUIMessageStreamResponse({
+    // The agent's stream only closes once `onEnd` has settled, so
+    // `finishFailed` is final by the time this flushes.
+    stream: stream.pipeThrough(
+      new TransformStream<UIMessageChunk, UIMessageChunk>({
+        flush(controller) {
+          if (finishFailed) {
+            controller.enqueue({
+              type: "error",
+              errorText: "An error occurred.",
+            });
+          }
+        },
+      }),
+    ),
+    // Reading a copy of the stream to the end keeps the reply generating, and
+    // `onEnd` coming, after the browser disconnects.
+    consumeSseStream: consumeStream,
   });
 }
