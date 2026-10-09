@@ -23,24 +23,14 @@ import {
 import { parseSlotId } from "@/lib/schedule/slot-id";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
 import { defaultLanguageModel } from "./language-model";
-import { buildBookingAgentInstructions } from "./system-prompt";
+import {
+  buildBookingAgentInstructions,
+  type SchoolPromptInput,
+} from "./system-prompt";
 
-export type AssistantSchool = Pick<
-  School,
-  | "id"
-  | "name"
-  | "timezone"
-  | "city"
-  | "address"
-  | "phone"
-  | "website"
-  | "parkingNotes"
-  | "accessNotes"
-  | "trialGuidance"
-  | "pricing"
-  | "welcomeMessage"
-  | "agentInstructions"
->;
+/** The school's id plus the details its instructions show the model. */
+export type AssistantSchool = Pick<School, "id"> &
+  Omit<SchoolPromptInput, "faqs">;
 
 export type SchoolCatalog = {
   offerings: Array<
@@ -78,21 +68,9 @@ function createAssistant({
 }: Omit<AssistantInput, "messages">) {
   return new ToolLoopAgent({
     model,
-    instructions: buildBookingAgentInstructions({
-      name: school.name,
-      timezone: school.timezone,
-      city: school.city,
-      address: school.address,
-      phone: school.phone,
-      website: school.website,
-      parkingNotes: school.parkingNotes,
-      accessNotes: school.accessNotes,
-      trialGuidance: school.trialGuidance,
-      pricing: school.pricing,
-      welcomeMessage: school.welcomeMessage,
-      agentInstructions: school.agentInstructions,
-      faqs,
-    }),
+    // The builder reads only its own fields, so the rest of a School row
+    // never reaches the instructions.
+    instructions: buildBookingAgentInstructions({ ...school, faqs }),
     stopWhen: isStepCount(MAX_AGENT_STEPS),
     providerOptions: {
       gateway: {
