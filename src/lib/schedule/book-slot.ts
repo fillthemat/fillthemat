@@ -4,7 +4,6 @@ import {
   type Booking,
   bookings,
   contacts,
-  conversations,
   emailDeliveries,
   funnelEvents,
   landingSessions,
@@ -15,6 +14,10 @@ import {
   trialOfferings,
   trialWindows,
 } from "@/db/schema";
+import {
+  attachConversationContact,
+  findConversation,
+} from "@/lib/conversations";
 import { hashToken, normalizeEmail, normalizePersonName } from "@/lib/crypto";
 import { bookingIcsUid } from "@/lib/email/ics";
 import { FUNNEL_EVENTS, privacySafeMetadata } from "@/lib/funnel";
@@ -298,39 +301,24 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
 
       let conversationId: string | undefined = input.conversationId;
       if (!conversationId && input.conversationResumeToken) {
-        const [conversation] = await tx
-          .select()
-          .from(conversations)
-          .where(
-            and(
-              eq(conversations.schoolId, input.school.id),
-              eq(
-                conversations.resumeTokenHash,
-                hashToken(input.conversationResumeToken),
-              ),
-            ),
-          )
-          .limit(1);
+        const conversation = await findConversation(
+          {
+            schoolId: input.school.id,
+            identity: {
+              channel: "web",
+              resumeToken: input.conversationResumeToken,
+            },
+            now,
+          },
+          tx,
+        );
         conversationId = conversation?.id;
       }
       if (conversationId) {
-        const [conversation] = await tx
-          .select()
-          .from(conversations)
-          .where(
-            and(
-              eq(conversations.schoolId, input.school.id),
-              eq(conversations.id, conversationId),
-            ),
-          )
-          .limit(1);
-        if (conversation && !conversation.contactId) {
-          await tx
-            .update(conversations)
-            .set({ contactId: contact.id, updatedAt: new Date() })
-            .where(eq(conversations.id, conversation.id));
-        }
-        conversationId = conversation?.id ?? undefined;
+        conversationId = await attachConversationContact(
+          { schoolId: input.school.id, conversationId, contactId: contact.id },
+          tx,
+        );
       }
 
       const locationParts = [
