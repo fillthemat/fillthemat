@@ -4,9 +4,7 @@ import {
   startObservation,
 } from "@langfuse/tracing";
 import { context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
-
-/** The medium a conversation happens over. */
-export type Channel = "web" | "whatsapp";
+import type { Channel } from "@/lib/channel";
 
 export type TurnTraceStart = {
   channel: Channel;
