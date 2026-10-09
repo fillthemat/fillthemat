@@ -156,7 +156,9 @@ export async function POST(request: Request) {
     try {
       after(() => turn.exportWhenEnded());
     } catch {
-      // after() needs a Next request scope, which tests and scripts lack.
+      // after() throws outside a Next request scope, as in tests and scripts.
+      // There the export isn't awaited, because the turn only ends once the
+      // response has streamed. It never rejects.
       void turn.exportWhenEnded();
     }
 

@@ -171,8 +171,11 @@ type FlushableTracerProvider = {
  * export.
  */
 export async function exportEndedTurns(): Promise<void> {
-  // The registered provider sits behind the API's proxy. It's duck-typed
-  // because the SDK and the API may come from different package copies.
+  // Flushes through the global tracer provider, not a module-level reference
+  // to what registerTracing made: Next bundles instrumentation and routes
+  // separately, so such a reference isn't reliably shared. The provider sits
+  // behind the API's proxy, and is duck-typed because the SDK and the API may
+  // come from different package copies.
   const proxy = trace.getTracerProvider() as { getDelegate?: () => unknown };
   const provider = (proxy.getDelegate?.() ?? proxy) as FlushableTracerProvider;
   if (typeof provider.forceFlush !== "function") return;
