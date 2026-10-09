@@ -357,7 +357,7 @@ describe("a web chat turn's trace", () => {
     );
   });
 
-  it("records the saved message ids, the model, and a short hash of the platform instructions", async () => {
+  it("records the saved message ids, how the reply ended, the model, and a short hash of the platform instructions", async () => {
     const resumeToken = randomUUID();
 
     await (
@@ -370,6 +370,7 @@ describe("a web chat turn's trace", () => {
     expect(turnTrace?.metadata).toEqual({
       inboundMessageId: question?.messageId,
       replyMessageId: reply?.messageId,
+      completion: "complete",
       modelId: "scripted-local",
       platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
     });

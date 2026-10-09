@@ -20,6 +20,8 @@ export type TurnReply = {
   /** Absent when the reply was sent but not saved as a message. */
   replyMessageId?: string;
   replyText: string;
+  /** How the saved reply ended, where it can end short of complete. */
+  completion?: "complete" | "aborted" | "error";
   /** What the reply came from, when the assistant wrote it. */
   assistant?: { modelId: string; platformInstructionsHash: string };
 };
@@ -42,6 +44,17 @@ export type TurnTrace = {
 };
 
 const TRACE_NAME = "turn";
+
+// A reply saved short of complete flags its turn, so a failure never looks
+// like a clean turn.
+const LEVEL_BY_COMPLETION = {
+  complete: undefined,
+  aborted: "WARNING",
+  error: "ERROR",
+} as const satisfies Record<
+  NonNullable<TurnReply["completion"]>,
+  LangfuseSpanAttributes["level"]
+>;
 
 // Long enough for a full assistant turn, and well under the platform's
 // default function duration, so a turn that never ends still has its finished
@@ -106,11 +119,13 @@ export function startTurnTrace({
         }
       });
     },
-    end({ replyMessageId, replyText, assistant }) {
+    end({ replyMessageId, replyText, completion, assistant }) {
       endRoot({
         output: replyText,
+        level: completion && LEVEL_BY_COMPLETION[completion],
         metadata: {
           replyMessageId,
+          completion,
           modelId: assistant?.modelId,
           platformInstructionsHash: assistant?.platformInstructionsHash,
         },

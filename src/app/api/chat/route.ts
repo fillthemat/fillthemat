@@ -203,6 +203,7 @@ export async function POST(request: Request) {
           turn.end({
             replyMessageId: reply.id,
             replyText: textFromMessage(reply),
+            completion,
             assistant: {
               modelId,
               platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
