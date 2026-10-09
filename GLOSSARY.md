@@ -21,7 +21,7 @@ The person attending a school's trial class. A participant may be different from
 An enquiry about a trial that the school can follow up on, associated with a contact. A lead is distinct from a booking.
 
 **Conversation**:
-An exchange of messages between a school's assistant and someone interested in a trial, over one channel. It ends after 30 days without a new message or when it reaches its message limit, An ended conversation is kept but never resumed: the next message starts a new one.
+An exchange of messages between a school's assistant and someone interested in a trial, over one channel. It ends after 30 days without a new message or when it reaches its message limit. An ended conversation is kept but never resumed: the next message starts a new one.
 
 **Assistant**:
 The AI that talks with people interested in a trial on a school's behalf. It answers and prepares, but never creates a booking or a lead itself.
