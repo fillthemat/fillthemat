@@ -3,7 +3,7 @@ import { addHours } from "date-fns";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools, type WhatsAppJob } from "@/db/schema";
-import { runBookingAgentToCompletion } from "@/lib/ai/run-agent";
+import { completedReply } from "@/lib/ai/assistant";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { loadSchoolCatalog } from "@/lib/schools/public";
@@ -159,11 +159,14 @@ async function enqueueAndSendTextReplies(
 }
 
 /**
- * Agent turn: run the agent to completion, then persist messages and either
- * (a) refresh the pending booking intent + send the interactive confirmation,
- * (b) write a lead (platform), or (c) send the plain text reply.
+ * Assistant turn: get the assistant's completed reply, then persist messages
+ * and either (a) refresh the pending booking intent + send the interactive
+ * confirmation, (b) write a lead (platform), or (c) send the plain text reply.
  */
-async function handleAgentTurn(ctx: InboundContext, now: Date): Promise<void> {
+async function handleAssistantTurn(
+  ctx: InboundContext,
+  now: Date,
+): Promise<void> {
   const history = await loadValidatedConversationMessages(ctx.conversationId);
   if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) return;
 
@@ -202,13 +205,10 @@ async function handleAgentTurn(ctx: InboundContext, now: Date): Promise<void> {
     .limit(1);
   if (!school) throw new Error("school_missing");
 
-  const run = await runBookingAgentToCompletion({
+  const reply = await completedReply({
     school,
-    offerings: catalog.offerings,
-    windows: catalog.windows,
-    occurrences: catalog.occurrences,
-    faqs: catalog.faqs,
-    uiMessages,
+    catalog,
+    messages: uiMessages,
     now,
   });
 
@@ -222,20 +222,20 @@ async function handleAgentTurn(ctx: InboundContext, now: Date): Promise<void> {
   const windowExpiresAt = addHours(now, 24);
 
   // Booking intent: platform persists/refreshes the pending intent and asks for
-  // confirmation via reply buttons. The agent still never writes the booking.
-  if (run.prepareBooking) {
+  // confirmation via reply buttons. The assistant never writes the booking.
+  if (reply.bookingIntent) {
     const intent = await upsertPendingBookingIntent({
       schoolId: ctx.schoolId,
       conversationId: ctx.conversationId,
-      offeringId: run.prepareBooking.offeringId,
-      slotId: run.prepareBooking.slotId,
-      participantName: run.prepareBooking.participantName,
-      participantAge: run.prepareBooking.participantAge,
+      offeringId: reply.bookingIntent.trialOfferingId,
+      slotId: reply.bookingIntent.slotId,
+      participantName: reply.bookingIntent.participantName,
+      participantAge: reply.bookingIntent.participantAge,
       now,
     });
 
     const body =
-      run.text ||
+      reply.text ||
       "I found a time that works. Use the buttons below to confirm.";
     await persistAssistantMessage({
       conversationId: ctx.conversationId,
@@ -263,24 +263,27 @@ async function handleAgentTurn(ctx: InboundContext, now: Date): Promise<void> {
   }
 
   // Lead: platform writes it (shared create-lead). Owner delivery stays email.
-  if (run.lead) {
+  if (reply.leadRequest) {
     const lead = await createLead({
       school,
       contact: {
-        name: run.lead.participantName ?? ctx.message.profileName ?? "Guest",
+        name:
+          reply.leadRequest.participantName ??
+          ctx.message.profileName ??
+          "Guest",
         email: null,
         phone: ctx.message.waId,
       },
       source: { channel: "whatsapp", waId: ctx.message.waId },
-      participantName: run.lead.participantName,
-      participantAge: run.lead.participantAge,
-      offeringId: run.lead.offeringId,
-      statedNeed: run.lead.statedNeed,
+      participantName: reply.leadRequest.participantName,
+      participantAge: reply.leadRequest.participantAge,
+      offeringId: reply.leadRequest.trialOfferingId,
+      statedNeed: reply.leadRequest.statedNeed,
     });
     await attemptPendingForLead(lead.id);
 
     const replyText =
-      run.text ||
+      reply.text ||
       "Thanks — I've passed your details along and the school will contact you to find a time.";
     await persistAssistantMessage({
       conversationId: ctx.conversationId,
@@ -293,7 +296,7 @@ async function handleAgentTurn(ctx: InboundContext, now: Date): Promise<void> {
   }
 
   // Plain text reply.
-  const replyText = run.text;
+  const replyText = reply.text;
   await persistAssistantMessage({
     conversationId: ctx.conversationId,
     messageId: generateId(),
@@ -352,7 +355,7 @@ export async function processWhatsAppJob(
 
       const confirmed = await handleConfirmation(ctx, now);
       if (!confirmed) {
-        await handleAgentTurn(ctx, now);
+        await handleAssistantTurn(ctx, now);
       }
 
       await markJobDone(job.id, resolved.schoolId);
