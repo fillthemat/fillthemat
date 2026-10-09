@@ -23,7 +23,7 @@ export async function seedSchool(
     ...school
   }: Pick<
     typeof schools.$inferInsert,
-    "name" | "slug" | "publishedAt" | "whatsappPhoneNumberId"
+    "name" | "slug" | "phone" | "publishedAt" | "whatsappPhoneNumberId"
   > & {
     ownerId: string;
     offerings: Array<Omit<typeof trialOfferings.$inferInsert, "schoolId">>;

@@ -64,8 +64,12 @@ function scriptedModel(...steps: ModelStep[]) {
 }
 
 // The same scripted steps, streamed one per model call, text word by word.
-function streamingModel(steps: ModelStep[], { chunkDelayInMs = 0 } = {}) {
+function streamingModel(
+  steps: ModelStep[],
+  { chunkDelayInMs = 0, modelId = "mock-model-id" } = {},
+) {
   return new MockLanguageModelV4({
+    modelId,
     doStream: steps.map((step) => ({
       stream: simulateReadableStream<ModelStreamPart>({
         chunkDelayInMs,
@@ -108,6 +112,14 @@ function textOf(message: AssistantUIMessage) {
   return message.parts
     .map((part) => (part.type === "text" ? part.text : ""))
     .join("");
+}
+
+// What a reply written by `modelId` came from.
+function writtenBy(modelId: string) {
+  return {
+    modelId,
+    platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+  };
 }
 
 function toolOutputSentBackToModel(model: MockLanguageModelV4) {
@@ -309,6 +321,22 @@ describe("the assistant's completed reply", () => {
       text: "Kids BJJ trains on Wednesdays.",
       bookingIntent: null,
       leadRequest: null,
+      provenance: writtenBy("mock-model-id"),
+    });
+  });
+
+  it("returns the id of the model that wrote the reply and a short hash of the platform instructions it followed", async () => {
+    const reply = await completedReply({
+      ...input,
+      model: new MockLanguageModelV4({
+        modelId: "anthropic/claude-sonnet-4.6",
+        doGenerate: [textStep("Kids BJJ trains on Wednesdays.")],
+      }),
+    });
+
+    expect(reply.provenance).toEqual({
+      modelId: "anthropic/claude-sonnet-4.6",
+      platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
     });
   });
 
@@ -335,6 +363,7 @@ describe("the assistant's completed reply", () => {
         participantAge: 8,
       },
       leadRequest: null,
+      provenance: writtenBy("mock-model-id"),
     });
   });
 
@@ -380,6 +409,7 @@ describe("the assistant's completed reply", () => {
         text: "Sorry, I can't hold that time. Shall we look at others?",
         bookingIntent: null,
         leadRequest: null,
+        provenance: writtenBy("mock-model-id"),
       });
     },
   );
@@ -425,6 +455,7 @@ describe("the assistant's completed reply", () => {
         trialOfferingId: null,
         statedNeed: "Adult evening classes",
       },
+      provenance: writtenBy("mock-model-id"),
     });
   });
 });
@@ -445,6 +476,7 @@ describe("the assistant's completed reply with no model passed", () => {
       text: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
       bookingIntent: null,
       leadRequest: null,
+      provenance: writtenBy("scripted-local"),
     });
   });
 
@@ -508,6 +540,32 @@ describe("the assistant's streamed reply", () => {
         text: "We offer Kids BJJ.",
         state: "done",
       }),
+    ]);
+  });
+
+  it("calls back with the id of the model that wrote the reply and a short hash of the platform instructions it followed", async () => {
+    const finishes: ReplyFinish[] = [];
+    const response = await streamedReply({
+      ...input,
+      model: streamingModel(
+        [
+          toolCallStep("list_trial_offerings", {}),
+          textStep("We offer Kids BJJ."),
+        ],
+        { modelId: "anthropic/claude-sonnet-4.6" },
+      ),
+      onFinish: (finish) => {
+        finishes.push(finish);
+      },
+    });
+
+    await response.text();
+
+    expect(finishes.map(({ provenance }) => provenance)).toEqual([
+      {
+        modelId: "anthropic/claude-sonnet-4.6",
+        platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      },
     ]);
   });
 

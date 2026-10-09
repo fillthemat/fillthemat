@@ -1,6 +1,6 @@
 # Conversation debugger — implementation handoff
 
-Status: **planned; not implemented**.
+Status: **partly implemented**. Turn tracing has shipped: every web chat and WhatsApp turn is one Langfuse trace, with contact details masked (`src/lib/tracing/`). The debug gate, operator entry point, annotations, and runbook are not implemented.
 
 > **Superseded in part by [ADR-0001](adr/0001-trace-every-production-turn.md):** every production turn on every channel is traced (with contact masking). The opt-in/allowlist/synthetic-only rules in "Privacy and authorization contract" and the "disable telemetry for WhatsApp" rule no longer apply.
 
@@ -47,10 +47,14 @@ The current Langfuse integration guide has a dedicated SDK 7 path using `@langfu
 
 | File | Responsibility / change seam |
 | --- | --- |
-| `src/app/api/chat/route.ts` | Access check, resume-token lookup, conversation lock, canonical history, stream, assistant persistence |
-| `src/lib/ai/booking-agent.ts` | Model/Gateway configuration, `ToolLoopAgent`, four tools, eight-step cap |
+| `src/app/api/chat/route.ts` | Access check, resume-token lookup, conversation lock, canonical history, turn trace, stream, assistant persistence |
+| `src/lib/whatsapp/worker.ts` | WhatsApp inbound jobs: conversation lock, confirmations, assistant replies and notices; a turn trace for each message that gets a reply, all exported once at the end of the worker run |
+| `src/lib/ai/assistant.ts` | The assistant: `ToolLoopAgent`, four tools, eight-step cap; streamed reply (web chat) and completed reply (WhatsApp) |
+| `src/lib/ai/language-model.ts` | Model choice: the Gateway model, or a scripted local model without a Gateway token |
 | `src/lib/ai/system-prompt.ts` | Platform prompt plus school settings and FAQs |
-| `src/lib/ai/run-agent.ts` | Non-streaming runner used by WhatsApp; must stay untraced by default |
+| `src/lib/tracing/turn-trace.ts` | One trace per turn (session = conversation, user = school, channel tag, root input/output), exported once the turn ends |
+| `src/lib/tracing/span-processor.ts` | Langfuse span processor that masks email addresses and phone numbers in every exported span |
+| `src/instrumentation-node.ts` | Calls `registerTracing` (`src/lib/tracing/register.ts`), which registers the span processor and the AI SDK's Langfuse integration only when Langfuse keys are set |
 | `src/components/booking-chat.tsx` | Chat transport, transcript rendering, client status; debug controls belong here or in a small extracted component |
 | `src/components/browser-token.ts` | Current per-school browser resume-token storage |
 | `src/app/s/[slug]/page.tsx` | Landing/preview page; derive debug capability server-side |
@@ -63,7 +67,7 @@ Important facts:
 - `preview=1` is a product flag, not a Vercel deployment environment or an authorization grant. Published schools can be accessed without an owner login even when this flag is set.
 - Web conversations currently have nullable, unpopulated landing-session/contact links; do not use those to authorize debugging.
 - Canonical message `parts` contain tool activity but not a complete historical execution trace.
-- The route drains SSE using `consumeSseStream` and saves the assistant via stream `onEnd`. Preserve those behaviors.
+- The assistant's streamed reply (`streamedReply`) drains SSE using `consumeSseStream`, and the route saves the reply in its `onFinish` callback. Preserve those behaviors.
 - A return of the streaming `Response` is not the end of the turn.
 - There are in-progress transcript hydration edits. Coordinate rather than reverting them or independently implementing a competing fix.
 
@@ -87,7 +91,7 @@ Use stable observation names, IDs, and a documented metadata version. Exact attr
 Langfuse session: conversation_id
   booking-chat.turn (one request attempt)
     context.load (catalog/history timing; no full DB dumps)
-    booking-agent
+    assistant (the AI SDK's invoke_agent span)
       model step 1 (generation)
       list_trial_offerings (tool, linked by toolCallId/step index)
       model step 2 (generation)
@@ -131,7 +135,7 @@ Technical success must remain separate from an operator annotation such as `prom
 ### Phase 1 — compatibility spike and optional tracing foundation
 
 - Add minimal, compatible, pinned dependencies and commit the Bun lockfile. Prefer the documented SDK 7 Langfuse integration over generic legacy snippets; do not add an unused model-provider package or change AI Gateway.
-- Add `src/instrumentation.ts` and a server-only module under `src/lib/observability/` for initialization, configuration, masking, trace context, and bounded flushing. Adapt exact files to verified APIs.
+- Initialization, masking, trace context, and bounded flushing already exist: `src/instrumentation-node.ts` and `src/lib/tracing/`. Extend those rather than adding a parallel module.
 - Keep one tracer provider per runtime and avoid duplicate registration on hot reload. Never keep a current request/conversation ID in mutable global state.
 - Use a no-op implementation when disabled or unconfigured. An exporter/network failure must not break chat or persistence.
 - Prove a deterministic two-step tool loop yields distinct generation/tool observations under one root and retains async context during streaming. Prove a concurrent second conversation cannot inherit the first conversation's metadata.
@@ -141,7 +145,7 @@ Exit: captured test spans demonstrate correct hierarchy and safe disabled behavi
 
 ### Phase 2 — request/agent instrumentation and lifecycle
 
-- Add the debug gate/context verification and identities in `/api/chat`; pass an explicit tracing context to `createBookingAgent`. Non-debug callers default to tracing disabled.
+- Add the debug gate/context verification and identities in `/api/chat`, on the turn trace (`src/lib/tracing/turn-trace.ts`); the assistant does no tracing of its own. Non-debug turns are traced too (ADR-0001).
 - Capture accepted turns plus authorized rejected attempts (duplicate, expired, generation-in-progress, limits) with distinguishable outcomes. Never duplicate a canonical message for tracing.
 - Integrate effective prompt/settings versions, model generations, tools, and actual stop-predicate evidence. Use SDK lifecycle hooks only where automatic integration lacks required fields.
 - Keep the root observation alive through asynchronous streaming and assistant persistence; use one idempotent finalizer across completion/error/abort paths. Close spans and preserve/release conversation locks according to existing semantics, independently of exporter success.

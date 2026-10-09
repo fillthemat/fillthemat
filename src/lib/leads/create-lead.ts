@@ -8,6 +8,7 @@ import {
   leads,
   type School,
 } from "@/db/schema";
+import type { Channel } from "@/lib/channel";
 import { hashToken, hashWaId, normalizeEmail } from "@/lib/crypto";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
 
@@ -17,9 +18,15 @@ export type CreateLeadContact = {
   phone: string;
 };
 
-export type CreateLeadSource =
-  | { channel: "web"; landingSessionToken: string | undefined }
-  | { channel: "whatsapp"; waId: string };
+type LeadSourceDetails = {
+  web: { landingSessionToken: string | undefined };
+  whatsapp: { waId: string };
+};
+
+/** Where a lead came from: its channel, and that channel's details. */
+export type CreateLeadSource = {
+  [C in Channel]: { channel: C } & LeadSourceDetails[C];
+}[Channel];
 
 export type CreateLeadInput = {
   school: School;

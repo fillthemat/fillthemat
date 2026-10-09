@@ -1,0 +1,165 @@
+import { ExportResultCode } from "@opentelemetry/core";
+import {
+  InMemorySpanExporter,
+  type ReadableSpan,
+} from "@opentelemetry/sdk-trace-base";
+import { afterEach, beforeEach, vi } from "vitest";
+import { registerTracing } from "@/lib/tracing/register";
+
+// Integration tests trace the way production does when Langfuse keys are set,
+// through the same registration, but spans are exported into memory instead
+// of to Langfuse. Installed once per test process, because the AI SDK
+// integration stays bound to the first provider.
+
+type TestTracing = {
+  exporter: InMemorySpanExporter;
+  provider: NonNullable<ReturnType<typeof registerTracing>>;
+};
+
+const INSTALLED = Symbol.for("fillthemat.testTracing");
+const registry = globalThis as typeof globalThis & {
+  [INSTALLED]?: TestTracing;
+};
+
+function install(): TestTracing {
+  const exporter = new InMemorySpanExporter();
+  const provider = registerTracing({
+    env: {
+      LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+      LANGFUSE_SECRET_KEY: "sk-lf-test",
+    },
+    exporter,
+  });
+  if (!provider) throw new Error("tracing: the test harness wasn't registered");
+  return { exporter, provider };
+}
+
+registry[INSTALLED] ??= install();
+const tracing: TestTracing = registry[INSTALLED];
+
+/** Every span exported during the current test, once in-flight exports finish. */
+export async function exportedSpans(): Promise<ReadableSpan[]> {
+  await tracing.provider.forceFlush();
+  return tracing.exporter.getFinishedSpans();
+}
+
+/**
+ * The spans exported so far during the current test. Unlike `exportedSpans`,
+ * this leaves spans that are still waiting in a batch unexported.
+ */
+export function spansExportedSoFar(): ReadableSpan[] {
+  return [...tracing.exporter.getFinishedSpans()];
+}
+
+const OBSERVATION_METADATA = "langfuse.observation.metadata.";
+
+/** The span every other span in its trace descends from. */
+export function isRoot(span: ReadableSpan) {
+  return !span.parentSpanContext;
+}
+
+/** The span of one assistant run: its model calls and tool calls nest under it. */
+export function isAssistantRun(span: ReadableSpan) {
+  return span.attributes["gen_ai.operation.name"] === "invoke_agent";
+}
+
+/** Everything a span sends to Langfuse about itself, as one string. */
+function everythingExported(span: ReadableSpan): string {
+  const { name, attributes, events, status, links } = span;
+  return JSON.stringify({ name, attributes, events, status, links });
+}
+
+/** Each of `values` that any of `spans` sends to Langfuse, by span name. */
+export function leaks(spans: ReadableSpan[], values: string[]): string[] {
+  return spans.flatMap((span) => {
+    const exported = everythingExported(span);
+    return values
+      .filter((value) => exported.includes(value))
+      .map((value) => `${span.name}: ${value}`);
+  });
+}
+
+/**
+ * The traces exported during the current test, read the way Langfuse reads
+ * them: trace-level fields come from the trace's root span.
+ */
+export async function exportedTraces() {
+  const spans = await exportedSpans();
+  const traceIds = [
+    ...new Set(spans.map((span) => span.spanContext().traceId)),
+  ];
+  return traceIds.map((traceId) => {
+    const root = spans.find(
+      (span) => span.spanContext().traceId === traceId && isRoot(span),
+    );
+    const attributes = root?.attributes ?? {};
+    return {
+      sessionId: attributes["session.id"],
+      userId: attributes["user.id"],
+      tags: attributes["langfuse.trace.tags"],
+      name: attributes["langfuse.trace.name"],
+      input: attributes["langfuse.observation.input"],
+      output: attributes["langfuse.observation.output"],
+      level: attributes["langfuse.observation.level"],
+      statusMessage: attributes["langfuse.observation.status_message"],
+      metadata: Object.fromEntries(
+        Object.entries(attributes)
+          .filter(([key]) => key.startsWith(OBSERVATION_METADATA))
+          .map(([key, value]) => [
+            key.slice(OBSERVATION_METADATA.length),
+            value,
+          ]),
+      ),
+    };
+  });
+}
+
+// Undoes what a test did to Langfuse, once the test ends.
+let undoAfterTest: Array<() => void> = [];
+
+/** Makes exporting spans fail for the rest of the test, as if Langfuse were down. */
+export function failSpanExports() {
+  const unreachable = new Error("Langfuse is unreachable");
+  const spies = [
+    vi
+      .spyOn(tracing.exporter, "export")
+      .mockImplementation((_spans, done) =>
+        done({ code: ExportResultCode.FAILED, error: unreachable }),
+      ),
+    vi.spyOn(tracing.exporter, "forceFlush").mockRejectedValue(unreachable),
+  ];
+  undoAfterTest.push(() => {
+    for (const spy of spies) spy.mockRestore();
+  });
+}
+
+/**
+ * Holds every span export until `release` is called, as if Langfuse were
+ * slow to answer. `started` resolves once the first export has started.
+ */
+export function holdSpanExports() {
+  const started = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const exportSpans = tracing.exporter.export.bind(tracing.exporter);
+  const spy = vi
+    .spyOn(tracing.exporter, "export")
+    .mockImplementation((spans, done) => {
+      started.resolve();
+      void released.promise.then(() => exportSpans(spans, done));
+    });
+  undoAfterTest.push(() => {
+    released.resolve();
+    spy.mockRestore();
+  });
+  return { started: started.promise, release: () => released.resolve() };
+}
+
+beforeEach(async () => {
+  await tracing.provider.forceFlush().catch(() => {});
+  tracing.exporter.reset();
+});
+
+afterEach(() => {
+  for (const undo of undoAfterTest) undo();
+  undoAfterTest = [];
+});
