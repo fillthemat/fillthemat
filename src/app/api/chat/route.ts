@@ -206,8 +206,8 @@ export async function POST(request: Request) {
             }
           });
           turn.end({
-            replyMessageId,
-            replyText: textFromMessage(reply),
+            text: textFromMessage(reply),
+            messageId: replyMessageId,
             completion,
             provenance,
           });

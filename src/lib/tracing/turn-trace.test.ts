@@ -19,7 +19,7 @@ describe("a turn whose reply was saved short of complete", () => {
         inboundText: "What can my son try?",
       });
 
-      turn.end({ replyText: "We offer", replyMessageId, completion });
+      turn.end({ text: "We offer", messageId: replyMessageId, completion });
 
       expect(await exportedTraces()).toEqual([
         expect.objectContaining({

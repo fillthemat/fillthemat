@@ -103,7 +103,7 @@ async function sendNotice(
     windowExpiresAt: addHours(new Date(), 24),
   });
   if (deliveryId) await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
-  return { replyText: text };
+  return { text };
 }
 
 /**
@@ -137,7 +137,7 @@ async function handleConfirmation(
   });
 
   await saveInboundMessage(ctx);
-  return { replyMessageId: reply.messageId, replyText: reply.text };
+  return reply;
 }
 
 async function enqueueAndSendTextReplies(
@@ -253,7 +253,7 @@ async function handleAssistantTurn(
     if (deliveryId) {
       await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
     }
-    return { replyMessageId, replyText: body, provenance };
+    return { text: body, messageId: replyMessageId, provenance };
   }
 
   // Lead: platform writes it (shared create-lead). Owner delivery stays email.
@@ -286,7 +286,7 @@ async function handleAssistantTurn(
       purgeAt: ctx.purgeAt,
     });
     await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${lead.id}`);
-    return { replyMessageId, replyText, provenance };
+    return { text: replyText, messageId: replyMessageId, provenance };
   }
 
   // Plain text reply.
@@ -298,7 +298,7 @@ async function handleAssistantTurn(
     purgeAt: ctx.purgeAt,
   });
   await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${generateId()}`);
-  return { replyMessageId, replyText, provenance };
+  return { text: replyText, messageId: replyMessageId, provenance };
 }
 
 /**

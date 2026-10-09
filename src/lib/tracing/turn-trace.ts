@@ -18,12 +18,12 @@ export type TurnTraceStart = {
 };
 
 export type TurnReply = {
+  text: string;
   /**
    * The id of the reply's saved row. Absent when the reply was sent but not
    * saved as a message.
    */
-  replyMessageId?: string;
-  replyText: string;
+  messageId?: string;
   /** How the saved reply ended, where it can end short of complete. */
   completion?: "complete" | "aborted" | "error";
   /** What the reply came from, when the assistant wrote it. */
@@ -122,12 +122,12 @@ export function startTurnTrace({
         }
       });
     },
-    end({ replyMessageId, replyText, completion, provenance }) {
+    end({ text, messageId, completion, provenance }) {
       endRoot({
-        output: replyText,
+        output: text,
         level: completion && LEVEL_BY_COMPLETION[completion],
         metadata: {
-          replyMessageId,
+          replyMessageId: messageId,
           completion,
           modelId: provenance?.modelId,
           platformInstructionsHash: provenance?.platformInstructionsHash,
