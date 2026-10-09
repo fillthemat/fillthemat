@@ -63,8 +63,12 @@ function scriptedModel(...steps: ModelStep[]) {
 
 // Step 1 lists the trial offerings. Step 2, once that tool result is back,
 // streams the reply word by word.
-function streamingModel(reply: string, { chunkDelayInMs = 0 } = {}) {
+function streamingModel(
+  reply: string,
+  { chunkDelayInMs = 0, modelId = "mock-model-id" } = {},
+) {
   return new MockLanguageModelV4({
+    modelId,
     doStream: async ({ prompt }) => {
       const chunks: ModelStreamPart[] =
         prompt.at(-1)?.role === "tool"
@@ -409,6 +413,25 @@ describe("the assistant's streamed reply", () => {
         text: "We offer Kids BJJ.",
         state: "done",
       }),
+    ]);
+  });
+
+  it("calls back with the id of the model that wrote the reply", async () => {
+    const finishes: ReplyFinish[] = [];
+    const response = await streamedReply({
+      ...input,
+      model: streamingModel("We offer Kids BJJ.", {
+        modelId: "anthropic/claude-sonnet-4.6",
+      }),
+      onFinish: (finish) => {
+        finishes.push(finish);
+      },
+    });
+
+    await response.text();
+
+    expect(finishes.map(({ modelId }) => modelId)).toEqual([
+      "anthropic/claude-sonnet-4.6",
     ]);
   });
 

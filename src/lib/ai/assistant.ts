@@ -314,6 +314,8 @@ export type ReplyCompletion = "complete" | "aborted" | "error";
 export type ReplyFinish = {
   reply: AssistantUIMessage;
   completion: ReplyCompletion;
+  /** The language model that wrote the reply. */
+  modelId: string;
 };
 
 type StreamEnd = Parameters<
@@ -346,10 +348,8 @@ export async function streamedReply({
 }: AssistantInput & {
   onFinish: (finish: ReplyFinish) => Promise<void> | void;
 }): Promise<Response> {
-  const assistant = createAssistant({
-    ...input,
-    model: model ?? defaultLanguageModel(),
-  });
+  const languageModel = model ?? defaultLanguageModel();
+  const assistant = createAssistant({ ...input, model: languageModel });
   return createAgentUIStreamResponse({
     agent: assistant,
     uiMessages: messages,
@@ -364,6 +364,10 @@ export async function streamedReply({
         await onFinish({
           reply: end.responseMessage,
           completion: replyCompletion(end),
+          modelId:
+            typeof languageModel === "string"
+              ? languageModel
+              : languageModel.modelId,
         });
       } catch (error) {
         console.error("assistant: streamed reply onFinish failed", error);
