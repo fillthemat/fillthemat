@@ -9,6 +9,13 @@ import {
   type WhatsAppJob,
 } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
+import {
+  appendMessage,
+  claimGeneration,
+  findOrCreateConversation,
+  hasConversationMessage,
+  loadTranscript,
+} from "@/lib/conversations";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { loadSchoolCatalog } from "@/lib/schools/public";
@@ -34,14 +41,7 @@ import {
   enqueueWhatsAppDelivery,
   recoverStuckWhatsAppDeliveries,
 } from "./deliveries";
-import {
-  claimGenerating,
-  messageExists,
-  persistAssistantMessage,
-  persistUserMessage,
-  releaseGenerating,
-  resolveInboundConversation,
-} from "./inbound";
+import { resolveInboundSchool } from "./inbound";
 import {
   getPendingBookingIntent,
   getPendingBookingIntentById,
@@ -54,7 +54,6 @@ import {
   recoverStuckWhatsAppJobs,
   rescheduleJob,
 } from "./jobs";
-import { loadValidatedConversationMessages } from "./messages";
 import type { InboundWhatsAppMessage } from "./parse";
 import { splitWhatsAppText } from "./text";
 
@@ -80,11 +79,12 @@ type InboundContext = JobContext & {
 };
 
 async function saveInboundMessage(ctx: InboundContext): Promise<void> {
-  await persistUserMessage({
+  await appendMessage({
     id: ctx.inboundMessageId,
     conversationId: ctx.conversationId,
-    wamid: ctx.message.wamid,
-    text: ctx.inboundText,
+    messageId: ctx.message.wamid,
+    role: "user",
+    parts: [{ type: "text", text: ctx.inboundText }],
     purgeAt: ctx.purgeAt,
   });
 }
@@ -231,7 +231,8 @@ async function handleAssistantTurn(
     const body =
       reply.text ||
       "I found a time that works. Use the buttons below to confirm.";
-    const replyMessageId = await persistAssistantMessage({
+    const replyMessageId = await appendMessage({
+      role: "assistant",
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: body ? [{ type: "text", text: body }] : [],
@@ -279,7 +280,8 @@ async function handleAssistantTurn(
     const replyText =
       reply.text ||
       "Thanks — I've passed your details along and the school will contact you to find a time.";
-    const replyMessageId = await persistAssistantMessage({
+    const replyMessageId = await appendMessage({
+      role: "assistant",
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: [{ type: "text", text: replyText }],
@@ -291,7 +293,8 @@ async function handleAssistantTurn(
 
   // Plain text reply.
   const replyText = reply.text;
-  const replyMessageId = await persistAssistantMessage({
+  const replyMessageId = await appendMessage({
+    role: "assistant",
     conversationId: ctx.conversationId,
     messageId: generateId(),
     parts: replyText ? [{ type: "text", text: replyText }] : [],
@@ -326,7 +329,7 @@ async function planReply(
     return () => handleConfirmation(ctx, intent);
   }
 
-  const history = await loadValidatedConversationMessages(ctx.conversationId);
+  const history = await loadTranscript(ctx.conversationId);
   if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) return null;
   return () => handleAssistantTurn(ctx, history, now);
 }
@@ -341,9 +344,8 @@ export async function processWhatsAppJob(
   runId: string,
 ): Promise<ProcessJobResult> {
   const message = job.payload as InboundWhatsAppMessage;
-  let conversationId: string | null = null;
   try {
-    const resolved = await resolveInboundConversation(message, new Date());
+    const resolved = await resolveInboundSchool(message);
     if (!resolved.resolved) {
       if (resolved.reason === "unknown_phone_number") {
         await failJob(job.id, job.attempts, "unknown_phone_number");
@@ -353,17 +355,24 @@ export async function processWhatsAppJob(
       await markJobDone(job.id);
       return "done";
     }
-    conversationId = resolved.conversationId;
     const now = new Date();
+    const result = await findOrCreateConversation({
+      schoolId: resolved.schoolId,
+      identity: { channel: "whatsapp", waId: message.waId },
+      now,
+    });
+    if (!result.ok) throw new Error(result.reason);
+    const conversationId = result.conversation.id;
 
     // Retry idempotency: if a previous attempt already persisted this inbound
     // message, do not run the agent or book a second time.
-    if (await messageExists(conversationId, message.wamid)) {
+    if (await hasConversationMessage(conversationId, message.wamid)) {
       await markJobDone(job.id, resolved.schoolId);
       return "done";
     }
 
-    if (!(await claimGenerating(conversationId, now))) {
+    const lock = await claimGeneration(conversationId, { wait: true, now });
+    if (!lock) {
       // Another job is mid-flight on this conversation; try again shortly.
       await rescheduleJob(job.id, 2000);
       return "done";
@@ -373,7 +382,7 @@ export async function processWhatsAppJob(
       const ctx: InboundContext = {
         schoolId: resolved.schoolId,
         conversationId,
-        purgeAt: resolved.purgeAt,
+        purgeAt: result.conversation.expiresAt,
         message,
         inboundText: message.text ?? "",
         inboundMessageId: randomUUID(),
@@ -398,11 +407,11 @@ export async function processWhatsAppJob(
       await markJobDone(job.id, resolved.schoolId);
       return "done";
     } finally {
-      await releaseGenerating(conversationId);
+      await lock.release();
     }
   } catch (error) {
-    // `releaseGenerating` is handled by the inner `finally`: the lock is only
-    // ever held between `claimGenerating` and that finally, so there is no
+    // The lock is released by the inner `finally`: it is only ever held
+    // between `claimGeneration` and that finally, so there is no
     // second release here (fail the job + backoff, never leak the lock).
     const message =
       error instanceof Error ? error.message : "whatsapp_job_failed";

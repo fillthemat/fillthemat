@@ -3,6 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools, type WhatsAppBookingIntent } from "@/db/schema";
+import { appendMessage } from "@/lib/conversations";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
 import { bookSlot } from "@/lib/schedule/book-slot";
 import { whatsappBookingQuotaExceeded } from "@/lib/security/limits";
@@ -11,7 +12,6 @@ import {
   attemptWhatsAppDeliveriesNow,
   enqueueWhatsAppDelivery,
 } from "./deliveries";
-import { persistAssistantMessage } from "./inbound";
 import { markBookingIntentConfirmed } from "./intents";
 
 /**
@@ -171,7 +171,8 @@ export async function confirmWhatsAppBooking({
   const transcript =
     `Booked! ${booking.participantNameSnapshot}'s trial for ${booking.offeringNameSnapshot} is ${when}. ` +
     `${school.name} will see you there.`;
-  const transcriptMessageId = await persistAssistantMessage({
+  const transcriptMessageId = await appendMessage({
+    role: "assistant",
     conversationId,
     messageId: generateId(),
     parts: [{ type: "text", text: transcript }],
