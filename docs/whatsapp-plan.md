@@ -25,7 +25,7 @@ It began as a spike-and-plan (no code in that pass). Implementation landed in la
 | Persistence shape | `messages` rows hold `UIMessage` **parts** (`schema.ts:375-396`, `ai@7.0.84` idiom) | A text channel can reuse parts verbatim (text parts + tool parts). |
 | Delivery state machine pattern | `email_deliveries` (`schema.ts:522+`): `pending→claimed→sent→delivered\|bounced\|complained`, `failed` + `nextAttemptAt` backoff capped 60 min (`deliveries.ts:5-9`), `FOR UPDATE SKIP LOCKED` claiming (`deliveries.ts:228-256`), `providerIdempotencyKey` unique (`:285,296`), `providerId` correlation | Direct template for `whatsapp_deliveries`. |
 | Webhook route pattern | `src/app/api/webhooks/resend/route.ts:7-49` — raw `request.text()`, size cap 64 KB → 413, signature verify, fast 200 ack, map to state enum | Copy for `/api/webhooks/whatsapp`. |
-| Degradable dev pattern | `src/lib/dev-flags.ts` (`isLocalEmailNoop`, `isLocalAiStub`) — non-prod + missing key → stub that **still advances the real state machine** (`deliveries.ts:96-110`) | Template for `isLocalWhatsAppNoop()`. |
+| Degradable dev pattern | `src/lib/dev-flags.ts` (`isLocalEmailNoop`) — non-prod + missing key → stub that **still advances the real state machine** (`deliveries.ts:96-110`) | Template for `isLocalWhatsAppNoop()`. |
 
 ### 1.2 What becomes a channel adapter (web-specific today)
 

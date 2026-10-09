@@ -10,7 +10,7 @@ type StreamPart =
     ? Part
     : never;
 
-export function gatewayLanguageModel(): LanguageModelV4 {
+function gatewayLanguageModel(): LanguageModelV4 {
   return gateway(
     process.env.BOOKING_AGENT_MODEL || "anthropic/claude-sonnet-4.6",
   );

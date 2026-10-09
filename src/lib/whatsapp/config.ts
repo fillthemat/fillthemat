@@ -1,6 +1,6 @@
 /**
  * Dev-stub values so the webhook + replay CLI work with ZERO WHATSAPP_* env vars
- * outside production. Mirrors the `isLocalEmailNoop` / `isLocalAiStub` pattern.
+ * outside production. Mirrors the `isLocalEmailNoop` pattern.
  *
  * Production always resolves these from the environment and fails closed
  * (returns `null`, which the route maps to HTTP 500 "unconfigured").

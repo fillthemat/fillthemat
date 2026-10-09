@@ -1,11 +1,23 @@
 import { randomUUID } from "node:crypto";
-import type { UIMessage } from "ai";
+import { simulateReadableStream, type UIMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
-import { type AssistantInput, completedReply } from "./assistant";
+import {
+  type AssistantInput,
+  type AssistantUIMessage,
+  completedReply,
+  type ReplyFinish,
+  streamedReply,
+} from "./assistant";
 
 type ModelStep = Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>>;
+type ModelStreamPart =
+  Awaited<
+    ReturnType<MockLanguageModelV4["doStream"]>
+  >["stream"] extends ReadableStream<infer Part>
+    ? Part
+    : never;
 
 const usage = {
   inputTokens: {
@@ -47,6 +59,53 @@ function toolCallStep(
 
 function scriptedModel(...steps: ModelStep[]) {
   return new MockLanguageModelV4({ doGenerate: steps });
+}
+
+// Step 1 lists the trial offerings. Step 2, once that tool result is back,
+// streams the reply word by word.
+function streamingModel(reply: string, { chunkDelayInMs = 0 } = {}) {
+  return new MockLanguageModelV4({
+    doStream: async ({ prompt }) => {
+      const chunks: ModelStreamPart[] =
+        prompt.at(-1)?.role === "tool"
+          ? [
+              { type: "text-start", id: "reply" },
+              ...reply.split(/(?<= )/).map(
+                (delta): ModelStreamPart => ({
+                  type: "text-delta",
+                  id: "reply",
+                  delta,
+                }),
+              ),
+              { type: "text-end", id: "reply" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: undefined },
+                usage,
+              },
+            ]
+          : [
+              {
+                type: "tool-call",
+                toolCallId: randomUUID(),
+                toolName: "list_trial_offerings",
+                input: "{}",
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: undefined },
+                usage,
+              },
+            ];
+      return { stream: simulateReadableStream({ chunks, chunkDelayInMs }) };
+    },
+  });
+}
+
+function textOf(message: AssistantUIMessage) {
+  return message.parts
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .join("");
 }
 
 function toolOutputSentBackToModel(model: MockLanguageModelV4) {
@@ -302,5 +361,149 @@ describe("the assistant's completed reply with no model passed", () => {
     expect(reply.text).toBe(
       "Local scripted reply (no AI Gateway token). There are no active trial offerings.",
     );
+  });
+});
+
+describe("the assistant's streamed reply", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const kidsBjjListing = {
+    id: kidsBjj.id,
+    name: "Kids BJJ",
+    description: null,
+    minimumAge: 5,
+    maximumAge: 12,
+    attire: null,
+    expectations: null,
+  };
+
+  it("calls back once with the final reply and complete status when the response is read to the end", async () => {
+    const finishes: ReplyFinish[] = [];
+    const response = await streamedReply({
+      ...input,
+      model: streamingModel("We offer Kids BJJ."),
+      onFinish: (finish) => {
+        finishes.push(finish);
+      },
+    });
+
+    await response.text();
+
+    expect(finishes).toHaveLength(1);
+    const [{ reply, completion }] = finishes;
+    expect(completion).toBe("complete");
+    expect(reply.id).not.toBe("");
+    expect(reply.role).toBe("assistant");
+    expect(reply.parts).toEqual([
+      { type: "step-start" },
+      expect.objectContaining({
+        type: "tool-list_trial_offerings",
+        state: "output-available",
+        output: { offerings: [kidsBjjListing], noMatch: false },
+      }),
+      { type: "step-start" },
+      expect.objectContaining({
+        type: "text",
+        text: "We offer Kids BJJ.",
+        state: "done",
+      }),
+    ]);
+  });
+
+  it("still finishes the reply and calls back once with complete status when the consumer cancels the response stream", async () => {
+    const finishes: ReplyFinish[] = [];
+    const firstFinish = Promise.withResolvers<void>();
+    const response = await streamedReply({
+      ...input,
+      model: streamingModel("We offer Kids BJJ on Wednesdays at 6 PM.", {
+        chunkDelayInMs: 5,
+      }),
+      onFinish: (finish) => {
+        finishes.push(finish);
+        firstFinish.resolve();
+      },
+    });
+
+    const body = response.body?.getReader();
+    await body?.read();
+    await body?.cancel();
+    await firstFinish.promise;
+    // Leave time for a second call to show up.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(
+      finishes.map(({ reply, completion }) => [completion, textOf(reply)]),
+    ).toEqual([["complete", "We offer Kids BJJ on Wednesdays at 6 PM."]]);
+  });
+
+  it.each([
+    {
+      failure: "cannot be reached",
+      doStream: async () => {
+        throw new Error("Gateway unavailable");
+      },
+    },
+    {
+      failure: "fails part-way through the reply",
+      doStream: async () => ({
+        stream: simulateReadableStream<ModelStreamPart>({
+          chunks: [
+            { type: "text-start", id: "reply" },
+            { type: "text-delta", id: "reply", delta: "We offer " },
+            { type: "error", error: new Error("Model overloaded") },
+            {
+              type: "finish",
+              finishReason: { unified: "error", raw: undefined },
+              usage,
+            },
+          ],
+        }),
+      }),
+    },
+  ])(
+    "calls back once with error status when the model $failure",
+    async ({ doStream }) => {
+      // The AI SDK logs model errors.
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const finishes: ReplyFinish[] = [];
+      const response = await streamedReply({
+        ...input,
+        model: new MockLanguageModelV4({ doStream }),
+        onFinish: (finish) => {
+          finishes.push(finish);
+        },
+      });
+
+      await response.text();
+
+      expect(finishes.map(({ completion }) => completion)).toEqual(["error"]);
+    },
+  );
+
+  it("still ends the response, and rejects nothing unhandled, when the finish callback throws", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const unhandled: unknown[] = [];
+    const recordUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", recordUnhandled);
+    try {
+      const response = await streamedReply({
+        ...input,
+        model: streamingModel("We offer Kids BJJ."),
+        onFinish: () => {
+          throw new Error("Database unavailable");
+        },
+      });
+
+      const body = await response.text();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(body).toMatch(/data: \[DONE\]\n\n$/);
+      expect(unhandled).toEqual([]);
+      expect(logged).toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", recordUnhandled);
+    }
   });
 });

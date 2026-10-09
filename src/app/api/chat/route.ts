@@ -1,18 +1,10 @@
-import {
-  createAgentUIStreamResponse,
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-  generateId,
-  type UIMessage,
-  validateUIMessages,
-} from "ai";
+import { type UIMessage, validateUIMessages } from "ai";
 import { addDays } from "date-fns";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { conversations, messages } from "@/db/schema";
-import { createBookingAgent } from "@/lib/ai/assistant";
+import { streamedReply } from "@/lib/ai/assistant";
 import { hashToken } from "@/lib/crypto";
-import { isLocalAiStub } from "@/lib/dev-flags";
 import { TRANSCRIPT_RETENTION_DAYS } from "@/lib/schedule/constants";
 import {
   getSchoolForLandingAccess,
@@ -121,6 +113,16 @@ export async function POST(request: Request) {
     return Response.json({ error: "generation_in_progress" }, { status: 409 });
   }
 
+  const releaseLock = async () => {
+    await db
+      .update(conversations)
+      .set({ generatingAt: null, updatedAt: new Date() })
+      .where(eq(conversations.id, conversation.id));
+  };
+
+  // Every way out of this handler releases the lock, unless the reply has
+  // started streaming: then its onFinish releases it once the reply is saved.
+  let replyOwnsLock = false;
   try {
     const stored = await db
       .select()
@@ -156,86 +158,30 @@ export async function POST(request: Request) {
       purgeAt,
     });
 
-    const persistAssistant = async ({
-      responseMessage,
-      isAborted,
-      outcome,
-    }: {
-      responseMessage: UIMessage;
-      isAborted: boolean;
-      outcome: { status: string };
-    }) => {
-      const completion =
-        isAborted || outcome.status === "aborted"
-          ? "aborted"
-          : outcome.status === "failed"
-            ? "error"
-            : "complete";
-      await db.insert(messages).values({
-        conversationId: conversation.id,
-        messageId: responseMessage.id,
-        role: "assistant",
-        parts: responseMessage.parts,
-        completion,
-        purgeAt,
-      });
-      await db
-        .update(conversations)
-        .set({ generatingAt: null, updatedAt: new Date() })
-        .where(eq(conversations.id, conversation.id));
-    };
-
-    if (isLocalAiStub()) {
-      const offeringNames = catalog.offerings
-        .filter((offering) => offering.active)
-        .map((offering) => offering.name);
-      const stubText =
-        offeringNames.length > 0
-          ? `Local chat stub (no VERCEL_OIDC_TOKEN). ${school.name} offers ${offeringNames.join(", ")}. Use Book Trial to confirm a slot.`
-          : `Local chat stub (no VERCEL_OIDC_TOKEN). Use Book Trial on this page to pick a time at ${school.name}.`;
-      return createUIMessageStreamResponse({
-        stream: createUIMessageStream({
-          originalMessages: uiMessages as never,
-          generateId,
-          execute: ({ writer }) => {
-            writer.write({ type: "text-start", id: "stub" });
-            writer.write({
-              type: "text-delta",
-              id: "stub",
-              delta: stubText,
-            });
-            writer.write({ type: "text-end", id: "stub" });
-          },
-          onEnd: persistAssistant,
-        }),
-      });
-    }
-
-    const agent = createBookingAgent({
+    const response = await streamedReply({
       school,
-      offerings: catalog.offerings,
-      windows: catalog.windows,
-      occurrences: catalog.occurrences,
-      faqs: catalog.faqs,
+      catalog,
+      messages: uiMessages,
       now,
-    });
-
-    return createAgentUIStreamResponse({
-      agent,
-      uiMessages: uiMessages as never,
-      originalMessages: uiMessages as never,
-      generateMessageId: generateId,
-      consumeSseStream: async ({ stream }) => {
-        await stream.pipeTo(new WritableStream({ write() {} }));
+      onFinish: async ({ reply, completion }) => {
+        try {
+          await db.insert(messages).values({
+            conversationId: conversation.id,
+            messageId: reply.id,
+            role: "assistant",
+            parts: reply.parts,
+            completion,
+            purgeAt,
+          });
+        } finally {
+          await releaseLock();
+        }
       },
-      onEnd: persistAssistant,
     });
-  } catch (error) {
-    await db
-      .update(conversations)
-      .set({ generatingAt: null, updatedAt: new Date() })
-      .where(eq(conversations.id, conversation.id));
-    throw error;
+    replyOwnsLock = true;
+    return response;
+  } finally {
+    if (!replyOwnsLock) await releaseLock();
   }
 }
 

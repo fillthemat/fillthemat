@@ -92,9 +92,9 @@ async function main() {
   console.log("");
   console.log("  Sign in   owner@local.test / local-dev-password");
   console.log("");
-  if (!existing.VERCEL_OIDC_TOKEN && !merged.VERCEL_OIDC_TOKEN) {
+  if (!merged.VERCEL_OIDC_TOKEN && !merged.AI_GATEWAY_API_KEY) {
     console.log(
-      "Optional: bunx vercel env pull  (real booking chat; local stub otherwise).",
+      "Optional: bunx vercel env pull  (real assistant model; scripted local model otherwise).",
     );
   }
   if (!existing.RESEND_API_KEY && !merged.RESEND_API_KEY) {
