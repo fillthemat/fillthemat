@@ -8,7 +8,7 @@ import {
   type WhatsAppBookingIntent,
   type WhatsAppJob,
 } from "@/db/schema";
-import { completedReply, PLATFORM_INSTRUCTIONS_HASH } from "@/lib/ai/assistant";
+import { completedReply } from "@/lib/ai/assistant";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { loadSchoolCatalog } from "@/lib/schools/public";
@@ -209,10 +209,7 @@ async function handleAssistantTurn(
     messages: uiMessages,
     now,
   });
-  const assistant = {
-    modelId: reply.modelId,
-    platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
-  };
+  const { provenance } = reply;
 
   await saveInboundMessage(ctx);
 
@@ -256,7 +253,7 @@ async function handleAssistantTurn(
     if (deliveryId) {
       await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
     }
-    return { replyMessageId, replyText: body, assistant };
+    return { replyMessageId, replyText: body, provenance };
   }
 
   // Lead: platform writes it (shared create-lead). Owner delivery stays email.
@@ -289,7 +286,7 @@ async function handleAssistantTurn(
       purgeAt: ctx.purgeAt,
     });
     await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${lead.id}`);
-    return { replyMessageId, replyText, assistant };
+    return { replyMessageId, replyText, provenance };
   }
 
   // Plain text reply.
@@ -301,7 +298,7 @@ async function handleAssistantTurn(
     purgeAt: ctx.purgeAt,
   });
   await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${generateId()}`);
-  return { replyMessageId, replyText, assistant };
+  return { replyMessageId, replyText, provenance };
 }
 
 /**

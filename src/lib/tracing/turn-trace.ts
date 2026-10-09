@@ -27,7 +27,7 @@ export type TurnReply = {
   /** How the saved reply ended, where it can end short of complete. */
   completion?: "complete" | "aborted" | "error";
   /** What the reply came from, when the assistant wrote it. */
-  assistant?: { modelId: string; platformInstructionsHash: string };
+  provenance?: { modelId: string; platformInstructionsHash: string };
 };
 
 export type TurnTrace = {
@@ -122,15 +122,15 @@ export function startTurnTrace({
         }
       });
     },
-    end({ replyMessageId, replyText, completion, assistant }) {
+    end({ replyMessageId, replyText, completion, provenance }) {
       endRoot({
         output: replyText,
         level: completion && LEVEL_BY_COMPLETION[completion],
         metadata: {
           replyMessageId,
           completion,
-          modelId: assistant?.modelId,
-          platformInstructionsHash: assistant?.platformInstructionsHash,
+          modelId: provenance?.modelId,
+          platformInstructionsHash: provenance?.platformInstructionsHash,
         },
       });
     },

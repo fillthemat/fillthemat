@@ -32,11 +32,18 @@ import {
   type SchoolPromptInput,
 } from "./system-prompt";
 
-/** A short hash of the platform instructions every reply follows. */
-export const PLATFORM_INSTRUCTIONS_HASH = createHash("sha256")
+const PLATFORM_INSTRUCTIONS_HASH = createHash("sha256")
   .update(PLATFORM_INSTRUCTIONS)
   .digest("hex")
   .slice(0, 12);
+
+/** What a reply came from. */
+export type ReplyProvenance = {
+  /** The language model that wrote the reply. */
+  modelId: string;
+  /** A short hash of the platform instructions every reply follows. */
+  platformInstructionsHash: string;
+};
 
 /** The school's id plus the details its instructions show the model. */
 export type AssistantSchool = Pick<School, "id"> &
@@ -215,10 +222,11 @@ function createAssistant({
       }),
     },
   });
-  return {
-    assistant,
+  const provenance: ReplyProvenance = {
     modelId: typeof model === "string" ? model : model.modelId,
+    platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
   };
+  return { assistant, provenance };
 }
 
 type Assistant = ReturnType<typeof createAssistant>["assistant"];
@@ -252,8 +260,7 @@ export type CompletedReply = {
   text: string;
   bookingIntent: BookingIntent | null;
   leadRequest: LeadRequest | null;
-  /** The language model that wrote the reply. */
-  modelId: string;
+  provenance: ReplyProvenance;
 };
 
 /**
@@ -264,7 +271,7 @@ export async function completedReply({
   messages,
   ...input
 }: AssistantInput): Promise<CompletedReply> {
-  const { assistant, modelId } = createAssistant(input);
+  const { assistant, provenance } = createAssistant(input);
   const result = await assistant.generate({
     messages: await convertToModelMessages(messages, {
       tools: assistant.tools,
@@ -295,7 +302,7 @@ export async function completedReply({
           statedNeed: lastCaptureLead.output.statedNeed,
         }
       : null,
-    modelId,
+    provenance,
   };
 }
 
@@ -305,8 +312,7 @@ export type ReplyCompletion = "complete" | "aborted" | "error";
 export type ReplyFinish = {
   reply: AssistantUIMessage;
   completion: ReplyCompletion;
-  /** The language model that wrote the reply. */
-  modelId: string;
+  provenance: ReplyProvenance;
 };
 
 type StreamEnd = Parameters<
@@ -339,7 +345,7 @@ export async function streamedReply({
 }: AssistantInput & {
   onFinish: (finish: ReplyFinish) => Promise<void> | void;
 }): Promise<Response> {
-  const { assistant, modelId } = createAssistant(input);
+  const { assistant, provenance } = createAssistant(input);
   let finishFailed = false;
   const stream = await createAgentUIStream({
     agent: assistant,
@@ -350,7 +356,7 @@ export async function streamedReply({
         await onFinish({
           reply: end.responseMessage,
           completion: replyCompletion(end),
-          modelId,
+          provenance,
         });
       } catch (error) {
         // Rethrowing would cut the response off mid-stream, which looks like

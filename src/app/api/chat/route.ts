@@ -5,7 +5,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { after } from "next/server";
 import { getDb } from "@/db";
 import { conversations, messages } from "@/db/schema";
-import { PLATFORM_INSTRUCTIONS_HASH, streamedReply } from "@/lib/ai/assistant";
+import { streamedReply } from "@/lib/ai/assistant";
 import { hashToken } from "@/lib/crypto";
 import { TRANSCRIPT_RETENTION_DAYS } from "@/lib/schedule/constants";
 import {
@@ -187,7 +187,7 @@ export async function POST(request: Request) {
         catalog,
         messages: uiMessages,
         now,
-        onFinish: async ({ reply, completion, modelId }) => {
+        onFinish: async ({ reply, completion, provenance }) => {
           const replyMessageId = randomUUID();
           // Saving the reply is the last of the turn's work.
           await turn.run(async () => {
@@ -209,10 +209,7 @@ export async function POST(request: Request) {
             replyMessageId,
             replyText: textFromMessage(reply),
             completion,
-            assistant: {
-              modelId,
-              platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
-            },
+            provenance,
           });
         },
       });
