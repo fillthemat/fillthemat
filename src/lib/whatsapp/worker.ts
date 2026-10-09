@@ -71,8 +71,8 @@ type JobContext = {
 type InboundContext = JobContext & {
   message: InboundWhatsAppMessage;
   /**
-   * The inbound message's id in traces, instead of its wamid, which encodes
-   * the sender's phone number.
+   * The row id the inbound message is saved under. Traces use it instead of
+   * the wamid, which encodes the sender's phone number.
    */
   inboundMessageId: string;
   runId: string;

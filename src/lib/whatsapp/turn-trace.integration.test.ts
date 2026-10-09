@@ -79,8 +79,8 @@ async function pressButton(waId: string, buttonId: string) {
 // webhook would wake.
 async function send(wamid: string, payload: unknown) {
   await POST(post(payload));
-  // The database stamps when the message's job is due by its own clock, which
-  // can run a few ms ahead of this one's: the worker would skip the job.
+  // The database stamps the job's due time with its own clock, which can run
+  // a few ms ahead of this machine's, and the worker skips jobs not yet due.
   const [job] = await db
     .select({ dueAt: whatsappJobs.nextAttemptAt })
     .from(whatsappJobs)
@@ -216,10 +216,7 @@ describe("a WhatsApp assistant turn's trace", () => {
     await sendText(waId, "What can my son try?");
 
     const conversation = await conversationWith(waId);
-    const traces = await exportedTraces();
-    expect(
-      traces.filter(({ sessionId }) => sessionId === conversation.id),
-    ).toEqual([
+    expect(await exportedTraces()).toEqual([
       expect.objectContaining({
         sessionId: conversation.id,
         userId: schoolId,
