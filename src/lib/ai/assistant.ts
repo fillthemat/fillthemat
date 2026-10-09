@@ -235,25 +235,25 @@ export type AssistantUIMessage = InferAgentUIMessage<
 >;
 
 type AssistantTools = ReturnType<typeof createAssistant>["tools"];
-type PreparedBooking = Extract<
+type PrepareBookingOk = Extract<
   InferToolOutput<AssistantTools["prepare_booking"]>,
   { ok: true }
 >;
 
 export type BookingIntent = {
-  trialOfferingId: PreparedBooking["offering"]["id"];
-  slotId: PreparedBooking["slot"]["slotId"];
-  participantName: PreparedBooking["participantName"];
-  participantAge: PreparedBooking["participantAge"];
+  trialOfferingId: PrepareBookingOk["offering"]["id"];
+  slotId: PrepareBookingOk["slot"]["slotId"];
+  participantName: PrepareBookingOk["participantName"];
+  participantAge: PrepareBookingOk["participantAge"];
 };
 
-type CapturedLead = InferToolOutput<AssistantTools["capture_lead"]>;
+type CaptureLeadOutput = InferToolOutput<AssistantTools["capture_lead"]>;
 
 export type LeadRequest = {
-  participantName: CapturedLead["participantName"];
-  participantAge: CapturedLead["participantAge"];
-  trialOfferingId: CapturedLead["offeringId"];
-  statedNeed: CapturedLead["statedNeed"];
+  participantName: CaptureLeadOutput["participantName"];
+  participantAge: CaptureLeadOutput["participantAge"];
+  trialOfferingId: CaptureLeadOutput["offeringId"];
+  statedNeed: CaptureLeadOutput["statedNeed"];
 };
 
 export type CompletedReply = {
@@ -281,28 +281,28 @@ export async function completedReply({
     }),
   });
   // The last result wins: a failed attempt after a successful one cancels it.
-  const prepared = result.staticToolResults.findLast(
+  const lastPrepareBooking = result.staticToolResults.findLast(
     (toolResult) => toolResult.toolName === "prepare_booking",
   );
-  const lead = result.staticToolResults.findLast(
+  const lastCaptureLead = result.staticToolResults.findLast(
     (toolResult) => toolResult.toolName === "capture_lead",
   );
   return {
     text: result.text.trim(),
-    bookingIntent: prepared?.output.ok
+    bookingIntent: lastPrepareBooking?.output.ok
       ? {
-          trialOfferingId: prepared.output.offering.id,
-          slotId: prepared.output.slot.slotId,
-          participantName: prepared.output.participantName,
-          participantAge: prepared.output.participantAge,
+          trialOfferingId: lastPrepareBooking.output.offering.id,
+          slotId: lastPrepareBooking.output.slot.slotId,
+          participantName: lastPrepareBooking.output.participantName,
+          participantAge: lastPrepareBooking.output.participantAge,
         }
       : null,
-    leadRequest: lead
+    leadRequest: lastCaptureLead
       ? {
-          participantName: lead.output.participantName,
-          participantAge: lead.output.participantAge,
-          trialOfferingId: lead.output.offeringId,
-          statedNeed: lead.output.statedNeed,
+          participantName: lastCaptureLead.output.participantName,
+          participantAge: lastCaptureLead.output.participantAge,
+          trialOfferingId: lastCaptureLead.output.offeringId,
+          statedNeed: lastCaptureLead.output.statedNeed,
         }
       : null,
   };
