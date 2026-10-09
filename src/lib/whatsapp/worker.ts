@@ -109,7 +109,7 @@ async function handleConfirmation(
     await persistUserMessage({
       id: ctx.inboundMessageId,
       conversationId: ctx.conversationId,
-      messageId: ctx.message.wamid,
+      wamid: ctx.message.wamid,
       text: ctx.message.text ?? "",
       purgeAt: ctx.purgeAt,
     });
@@ -134,7 +134,7 @@ async function handleConfirmation(
   await persistUserMessage({
     id: ctx.inboundMessageId,
     conversationId: ctx.conversationId,
-    messageId: ctx.message.wamid,
+    wamid: ctx.message.wamid,
     text: ctx.message.text ?? "",
     purgeAt: ctx.purgeAt,
   });
@@ -182,7 +182,7 @@ async function handleAssistantTurn(
     await persistUserMessage({
       id: ctx.inboundMessageId,
       conversationId: ctx.conversationId,
-      messageId: ctx.message.wamid,
+      wamid: ctx.message.wamid,
       text: ctx.message.text ?? "",
       purgeAt: ctx.purgeAt,
     });
@@ -224,7 +224,7 @@ async function handleAssistantTurn(
   await persistUserMessage({
     id: ctx.inboundMessageId,
     conversationId: ctx.conversationId,
-    messageId: ctx.message.wamid,
+    wamid: ctx.message.wamid,
     text: ctx.message.text ?? "",
     purgeAt: ctx.purgeAt,
   });
