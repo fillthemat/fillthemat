@@ -70,6 +70,7 @@ type JobContext = {
 
 type InboundContext = JobContext & {
   message: InboundWhatsAppMessage;
+  inboundText: string;
   /**
    * The row id the inbound message is saved under. Traces use it instead of
    * the wamid, which encodes the sender's phone number.
@@ -77,6 +78,16 @@ type InboundContext = JobContext & {
   inboundMessageId: string;
   runId: string;
 };
+
+async function saveInboundMessage(ctx: InboundContext): Promise<void> {
+  await persistUserMessage({
+    id: ctx.inboundMessageId,
+    conversationId: ctx.conversationId,
+    wamid: ctx.message.wamid,
+    text: ctx.inboundText,
+    purgeAt: ctx.purgeAt,
+  });
+}
 
 // Notices are sent but not saved as messages, so their reply has no id.
 async function sendNotice(
@@ -106,13 +117,7 @@ async function handleConfirmation(
   // Book BEFORE persisting the user message so a crash/retry replays into the
   // same deterministic idempotency key instead of silently dropping a confirm.
   if (!intent) {
-    await persistUserMessage({
-      id: ctx.inboundMessageId,
-      conversationId: ctx.conversationId,
-      wamid: ctx.message.wamid,
-      text: ctx.message.text ?? "",
-      purgeAt: ctx.purgeAt,
-    });
+    await saveInboundMessage(ctx);
     return sendNotice(
       ctx,
       "That booking option has expired or was replaced. Please ask for available times again.",
@@ -131,13 +136,7 @@ async function handleConfirmation(
     runId: ctx.runId,
   });
 
-  await persistUserMessage({
-    id: ctx.inboundMessageId,
-    conversationId: ctx.conversationId,
-    wamid: ctx.message.wamid,
-    text: ctx.message.text ?? "",
-    purgeAt: ctx.purgeAt,
-  });
+  await saveInboundMessage(ctx);
   return { replyMessageId: reply.messageId, replyText: reply.text };
 }
 
@@ -179,13 +178,7 @@ async function handleAssistantTurn(
   if (
     await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
   ) {
-    await persistUserMessage({
-      id: ctx.inboundMessageId,
-      conversationId: ctx.conversationId,
-      wamid: ctx.message.wamid,
-      text: ctx.message.text ?? "",
-      purgeAt: ctx.purgeAt,
-    });
+    await saveInboundMessage(ctx);
     return sendNotice(
       ctx,
       "You've reached today's message limit. Please try again tomorrow.",
@@ -195,7 +188,7 @@ async function handleAssistantTurn(
   const inboundUIMessage: UIMessage = {
     id: ctx.message.wamid,
     role: "user",
-    parts: [{ type: "text", text: ctx.message.text ?? "" }],
+    parts: [{ type: "text", text: ctx.inboundText }],
   };
   const uiMessages = await validateUIMessages({
     messages: [...history, inboundUIMessage],
@@ -221,13 +214,7 @@ async function handleAssistantTurn(
     platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
   };
 
-  await persistUserMessage({
-    id: ctx.inboundMessageId,
-    conversationId: ctx.conversationId,
-    wamid: ctx.message.wamid,
-    text: ctx.message.text ?? "",
-    purgeAt: ctx.purgeAt,
-  });
+  await saveInboundMessage(ctx);
 
   const windowExpiresAt = addHours(now, 24);
 
@@ -330,10 +317,12 @@ async function planReply(
   ctx: InboundContext,
   now: Date,
 ): Promise<(() => Promise<TurnReply>) | null> {
-  const inboundText = ctx.message.text ?? "";
-  const buttonIntentId = parseConfirmBookingButton(inboundText);
+  const buttonIntentId = parseConfirmBookingButton(ctx.inboundText);
   const pending = await getPendingBookingIntent(ctx.conversationId, now);
-  if (buttonIntentId || (pending && isAffirmativeConfirmation(inboundText))) {
+  if (
+    buttonIntentId ||
+    (pending && isAffirmativeConfirmation(ctx.inboundText))
+  ) {
     const intent = buttonIntentId
       ? await getPendingBookingIntentById(buttonIntentId, ctx.schoolId, now)
       : pending;
@@ -389,6 +378,7 @@ export async function processWhatsAppJob(
         conversationId,
         purgeAt: resolved.purgeAt,
         message,
+        inboundText: message.text ?? "",
         inboundMessageId: randomUUID(),
         runId,
       };
@@ -403,7 +393,7 @@ export async function processWhatsAppJob(
           conversationId,
           schoolId: resolved.schoolId,
           inboundMessageId: ctx.inboundMessageId,
-          inboundText: message.text ?? "",
+          inboundText: ctx.inboundText,
         });
         turn.end(await turn.run(sendReply));
       }
