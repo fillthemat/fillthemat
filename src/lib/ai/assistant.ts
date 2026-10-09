@@ -358,8 +358,8 @@ export async function streamedReply({
     // `onEnd` coming, after the browser disconnects.
     consumeSseStream: consumeStream,
     onEnd: async (end: StreamEnd) => {
-      // The reply has already reached the browser; a failing callback must not
-      // break its stream or surface as an unhandled rejection from the drain.
+      // The reply has already reached the browser: log a failing callback
+      // rather than break the end of its stream.
       try {
         await onFinish({
           reply: end.responseMessage,
