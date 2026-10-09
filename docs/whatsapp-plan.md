@@ -17,7 +17,7 @@ It began as a spike-and-plan (no code in that pass). Implementation landed in la
 
 | Layer | Where | Why it survives |
 | --- | --- | --- |
-| Booking agent | `src/lib/ai/booking-agent.ts:29-38` — `ToolLoopAgent` + `gateway(BOOKING_AGENT_MODEL)` + `stopWhen: isStepCount(8)` + tools `list_trial_offerings` / `list_trial_slots` / `prepare_booking` | Pure function of (school catalog, messages). No browser or stream dependency. |
+| Assistant | `src/lib/ai/assistant.ts` — `ToolLoopAgent` + `stopWhen: isStepCount(8)` + tools `list_trial_offerings` / `list_trial_slots` / `prepare_booking` / `capture_lead`; WhatsApp calls its `completedReply`. Model from `src/lib/ai/language-model.ts`: `gateway(BOOKING_AGENT_MODEL)`, or a scripted local model outside production without a Gateway token | Pure function of (school, school catalog, messages). No browser or stream dependency. |
 | Immutable safety rules | `src/lib/ai/system-prompt.ts:1-10` — agent MAY answer/qualify/list/prepare but "MUST NOT create a booking or a lead"; tenant data delimited + treated as untrusted (`:98-115`, `assertTenantCannotOverride` test) | Hostile-input invariant, channel-independent. |
 | Slot math | `src/lib/schedule/occurrences.ts:77-145` (`listOpenSlots`, 14-day horizon, 120-min lead) + `slot-id.ts` encode/parse | Pure. |
 | Booking write core | `src/lib/schedule/book-slot.ts` — single transaction, `(school_id, idempotency_key)` replay, `FOR UPDATE`, atomic `bookedCount < capacity` increment, contact/participant upsert, delivery enqueue, funnel event | The canonical write path; WhatsApp calls it with platform-minted keys. |
@@ -51,7 +51,7 @@ INBOUND (prospect → Fillthemat)
     → find/create conversations keyed (school_id, wa_id)
     → persist inbound as UIMessage parts
     → claim generatingAt (single-flight, mirror chat/route.ts:111-122)
-    → load history → validateUIMessages → createBookingAgent(...) run to completion
+    → load history → validateUIMessages → assistant completedReply(...) (runs to completion)
     → render text from parts → enqueue whatsapp_deliveries (or send inline if in 24h window)
     → release generatingAt
 
@@ -242,7 +242,8 @@ outbound queue, template fallback for the 24h window, status webhook.
 **Concrete changes**
 - Server-side agent driver: load history → `validateUIMessages([...history, inbound])` →
   `createBookingAgent(...)` run **to completion** (consume the stream / non-SSE variant of
-  `createAgentUIStreamResponse` — see D3) → extract text parts → enqueue reply.
+  `createAgentUIStreamResponse` — see D3; now the assistant's `completedReply`) → extract text parts →
+  enqueue reply.
 - `whatsapp_deliveries` claim/send worker: inline-on-create attempt + cron `FOR UPDATE SKIP LOCKED` reuse
   (D4): if `windowExpiresAt > now` send free-form text; else send template message (D5 — template library).
 - `src/lib/whatsapp/client.ts` (Graph transport): `WHATSAPP_SYSTEM_USER_TOKEN` + versioned base URL;
@@ -433,8 +434,8 @@ Concrete changes (**Phase 4 scope**; relocate D4's "inline send" inside the work
   conversation keyed `(school_id, wa_id_hash)` → persist inbound as UIMessage parts with `messageId =
   wamid` (also gives retry idempotency via the existing `messages` unique) → claim `generatingAt`
   single-flight (mirror `chat/route.ts`; if already generating, reschedule the job shortly instead of
-  failing) → `validateUIMessages([...history, inbound])` → `createBookingAgent(...)` run to completion
-  (D3) → persist assistant message → enqueue `whatsapp_deliveries` + attempt send (stub or Graph) →
+  failing) → `validateUIMessages([...history, inbound])` → the assistant's `completedReply(...)`, run to
+  completion (D3) → persist assistant message → enqueue `whatsapp_deliveries` + attempt send (stub or Graph) →
   release `generatingAt` → mark `done`. On error: mark `failed` + backoff, and always release the lock.
 - `scripts/whatsapp-worker.ts --once` + `package.json` script `whatsapp:worker` — local one-shot drain;
   the replay CLI enqueues, the worker processes.

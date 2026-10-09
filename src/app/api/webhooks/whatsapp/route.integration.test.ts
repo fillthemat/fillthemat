@@ -194,7 +194,7 @@ describe("worker + status flow", () => {
     const userRows = rows.filter((row) => row.role === "user");
     const assistantRows = rows.filter((row) => row.role === "assistant");
     expect(userRows).toHaveLength(1);
-    // The local AI stub produces a deterministic reply even without a model.
+    // With no Gateway token the assistant replies via its scripted local model.
     expect(assistantRows).toHaveLength(1);
 
     const deliveries = await deliveryRows();

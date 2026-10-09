@@ -10,7 +10,7 @@ import { addDays } from "date-fns";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { conversations, messages } from "@/db/schema";
-import { createBookingAgent } from "@/lib/ai/booking-agent";
+import { createBookingAgent } from "@/lib/ai/assistant";
 import { hashToken } from "@/lib/crypto";
 import { isLocalAiStub } from "@/lib/dev-flags";
 import { TRANSCRIPT_RETENTION_DAYS } from "@/lib/schedule/constants";

@@ -1,35 +1,78 @@
-import { gateway, isStepCount, ToolLoopAgent, tool } from "ai";
+import {
+  convertToModelMessages,
+  type InferToolOutput,
+  isStepCount,
+  type LanguageModel,
+  ToolLoopAgent,
+  tool,
+  type UIMessage,
+} from "ai";
 import { z } from "zod";
-import type { School, TrialOffering, TrialWindow } from "@/db/schema";
+import type { Faq, School, TrialOffering } from "@/db/schema";
 import {
   isAgeEligible,
   listOpenSlots,
   type SlotOccurrence,
+  type SlotWindow,
 } from "@/lib/schedule/occurrences";
 import { parseSlotId } from "@/lib/schedule/slot-id";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
+import { defaultLanguageModel, gatewayLanguageModel } from "./language-model";
 import { buildBookingAgentInstructions } from "./system-prompt";
 
-export const BOOKING_AGENT_MODEL =
-  process.env.BOOKING_AGENT_MODEL || "anthropic/claude-sonnet-4.6";
+export type AssistantSchool = Pick<
+  School,
+  | "id"
+  | "name"
+  | "timezone"
+  | "city"
+  | "address"
+  | "phone"
+  | "website"
+  | "parkingNotes"
+  | "accessNotes"
+  | "trialGuidance"
+  | "pricing"
+  | "welcomeMessage"
+  | "agentInstructions"
+>;
 
-export function createBookingAgent({
-  school,
-  offerings,
-  windows,
-  occurrences,
-  faqs,
-  now,
-}: {
-  school: School;
-  offerings: TrialOffering[];
-  windows: TrialWindow[];
+export type SchoolCatalog = {
+  offerings: Array<
+    Pick<
+      TrialOffering,
+      | "id"
+      | "name"
+      | "description"
+      | "minimumAge"
+      | "maximumAge"
+      | "attire"
+      | "expectations"
+      | "active"
+    >
+  >;
+  windows: SlotWindow[];
   occurrences: SlotOccurrence[];
-  faqs: Array<{ question: string; answer: string }>;
+  faqs: Array<Pick<Faq, "question" | "answer">>;
+};
+
+export type AssistantInput = {
+  school: AssistantSchool;
+  catalog: SchoolCatalog;
+  messages: UIMessage[];
   now: Date;
-}) {
+  /** Defaults to `defaultLanguageModel()`, chosen when the reply is made. */
+  model?: LanguageModel;
+};
+
+function createAssistant({
+  school,
+  catalog: { offerings, windows, occurrences, faqs },
+  now,
+  model,
+}: Omit<AssistantInput, "messages" | "model"> & { model: LanguageModel }) {
   return new ToolLoopAgent({
-    model: gateway(BOOKING_AGENT_MODEL),
+    model,
     instructions: buildBookingAgentInstructions({
       name: school.name,
       timezone: school.timezone,
@@ -130,7 +173,7 @@ export function createBookingAgent({
           );
           const parsed = parseSlotId(slotId);
           if (!offering || !parsed) {
-            return { ok: false, reason: "invalid" };
+            return { ok: false as const, reason: "invalid" as const };
           }
           const slots = listOpenSlots({
             offeringId,
@@ -140,9 +183,11 @@ export function createBookingAgent({
             now,
           });
           const slot = slots.find((candidate) => candidate.slotId === slotId);
-          if (!slot) return { ok: false, reason: "slot_unavailable" };
+          if (!slot) {
+            return { ok: false as const, reason: "slot_unavailable" as const };
+          }
           return {
-            ok: true,
+            ok: true as const,
             offering: {
               id: offering.id,
               name: offering.name,
@@ -176,5 +221,98 @@ export function createBookingAgent({
         }),
       }),
     },
+  });
+}
+
+type AssistantTools = ReturnType<typeof createAssistant>["tools"];
+type PreparedBooking = Extract<
+  InferToolOutput<AssistantTools["prepare_booking"]>,
+  { ok: true }
+>;
+
+export type BookingIntent = {
+  trialOfferingId: PreparedBooking["offering"]["id"];
+  slotId: PreparedBooking["slot"]["slotId"];
+  participantName: PreparedBooking["participantName"];
+  participantAge: PreparedBooking["participantAge"];
+};
+
+type CapturedLead = InferToolOutput<AssistantTools["capture_lead"]>;
+
+export type LeadRequest = {
+  participantName: CapturedLead["participantName"];
+  participantAge: CapturedLead["participantAge"];
+  trialOfferingId: CapturedLead["offeringId"];
+  statedNeed: CapturedLead["statedNeed"];
+};
+
+export type CompletedReply = {
+  text: string;
+  bookingIntent: BookingIntent | null;
+  leadRequest: LeadRequest | null;
+};
+
+/**
+ * Runs the assistant over the conversation to completion (WhatsApp) and
+ * returns its reply with any Booking Intent or Lead Request it gathered.
+ */
+export async function completedReply({
+  messages,
+  model,
+  ...input
+}: AssistantInput): Promise<CompletedReply> {
+  const assistant = createAssistant({
+    ...input,
+    model: model ?? defaultLanguageModel(),
+  });
+  const result = await assistant.generate({
+    messages: await convertToModelMessages(messages, {
+      tools: assistant.tools,
+    }),
+  });
+  // The last result wins: a failed attempt after a successful one cancels it.
+  const prepared = result.staticToolResults.findLast(
+    (toolResult) => toolResult.toolName === "prepare_booking",
+  );
+  const lead = result.staticToolResults.findLast(
+    (toolResult) => toolResult.toolName === "capture_lead",
+  );
+  return {
+    text: result.text.trim(),
+    bookingIntent: prepared?.output.ok
+      ? {
+          trialOfferingId: prepared.output.offering.id,
+          slotId: prepared.output.slot.slotId,
+          participantName: prepared.output.participantName,
+          participantAge: prepared.output.participantAge,
+        }
+      : null,
+    leadRequest: lead
+      ? {
+          participantName: lead.output.participantName,
+          participantAge: lead.output.participantAge,
+          trialOfferingId: lead.output.offeringId,
+          statedNeed: lead.output.statedNeed,
+        }
+      : null,
+  };
+}
+
+/**
+ * @deprecated Transitional (#49): only the web chat route still builds the
+ * agent itself, behind its own local-stub branch. #50 moves the route onto the
+ * assistant's streamed reply and deletes this export.
+ */
+export function createBookingAgent({
+  offerings,
+  windows,
+  occurrences,
+  faqs,
+  ...input
+}: Pick<AssistantInput, "school" | "now"> & SchoolCatalog) {
+  return createAssistant({
+    ...input,
+    catalog: { offerings, windows, occurrences, faqs },
+    model: gatewayLanguageModel(),
   });
 }
