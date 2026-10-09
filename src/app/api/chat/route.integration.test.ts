@@ -16,14 +16,20 @@ import { getDb } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { hashToken } from "@/lib/crypto";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
-import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
+import {
+  authSql,
+  loadLocalEnv,
+  requireRow,
+  whileSavingMessages,
+} from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
-  everythingExported,
   exportedSpans,
   exportedTraces,
   failSpanExports,
+  isAssistantRun,
   isRoot,
+  leaks,
 } from "@/test/tracing";
 import { POST } from "./route";
 
@@ -106,28 +112,6 @@ async function existingConversation({
     );
   }
   return { resumeToken, conversationId };
-}
-
-// Runs `work` while the database runs `statement` (PL/pgSQL) before saving
-// each assistant reply in the conversation, e.g. to make saving slow or fail.
-async function whileSavingRepliesIn(
-  conversationId: string,
-  statement: string,
-  work: () => Promise<void>,
-) {
-  const name = `test_reply_save_${randomUUID().replaceAll("-", "")}`;
-  await sql.unsafe(
-    `create function public.${name}() returns trigger language plpgsql as $$ begin ${statement}; return new; end $$`,
-  );
-  await sql.unsafe(
-    `create trigger ${name} before insert on app.messages for each row when (new.conversation_id = '${conversationId}' and new.role = 'assistant') execute function public.${name}()`,
-  );
-  try {
-    await work();
-  } finally {
-    await sql.unsafe(`drop trigger ${name} on app.messages`);
-    await sql.unsafe(`drop function public.${name}()`);
-  }
 }
 
 // Sorted: rows inserted together share a created_at.
@@ -296,9 +280,7 @@ describe("a web chat turn's trace", () => {
     ]);
     const spans = await exportedSpans();
     const root = spans.find(isRoot);
-    const assistantRun = spans.find(
-      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
-    );
+    const assistantRun = spans.find(isAssistantRun);
     expect(assistantRun?.parentSpanContext?.spanId).toBe(
       root?.spanContext().spanId,
     );
@@ -335,10 +317,7 @@ describe("a web chat turn's trace", () => {
           ...new Set(traceSpans.map((span) => span.attributes["session.id"])),
         ],
         assistantRunsThatSawIt: traceSpans
-          .filter(
-            (span) =>
-              span.attributes["gen_ai.operation.name"] === "invoke_agent",
-          )
+          .filter(isAssistantRun)
           .map((span) =>
             String(span.attributes["gen_ai.input.messages"]).includes(question),
           ),
@@ -357,7 +336,7 @@ describe("a web chat turn's trace", () => {
     );
   });
 
-  it("records the saved message ids, the model, and a short hash of the platform instructions", async () => {
+  it("records the saved message ids, how the reply ended, the model, and a short hash of the platform instructions", async () => {
     const resumeToken = randomUUID();
 
     await (
@@ -365,11 +344,15 @@ describe("a web chat turn's trace", () => {
     ).text();
 
     const conversation = await conversationFor(resumeToken);
-    const [question, reply] = await savedMessages(conversation.id);
+    const saved = await db
+      .select({ id: messages.id, role: messages.role })
+      .from(messages)
+      .where(eq(messages.conversationId, conversation.id));
     const [turnTrace] = await exportedTraces();
     expect(turnTrace?.metadata).toEqual({
-      inboundMessageId: question?.messageId,
-      replyMessageId: reply?.messageId,
+      inboundMessageId: saved.find(({ role }) => role === "user")?.id,
+      replyMessageId: saved.find(({ role }) => role === "assistant")?.id,
+      completion: "complete",
       modelId: "scripted-local",
       platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
     });
@@ -378,9 +361,9 @@ describe("a web chat turn's trace", () => {
   it("ends only once the reply has been saved", async () => {
     const { resumeToken, conversationId } = await existingConversation({});
 
-    await whileSavingRepliesIn(
-      conversationId,
-      "perform pg_sleep(0.5)",
+    await whileSavingMessages(
+      sql,
+      { conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
       async () => {
         await (
           await sendMessage(resumeToken, "question-1", "What can my son try?")
@@ -390,9 +373,7 @@ describe("a web chat turn's trace", () => {
 
     const spans = await exportedSpans();
     const root = spans.find(isRoot);
-    const assistantRun = spans.find(
-      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
-    );
+    const assistantRun = spans.find(isAssistantRun);
     if (!root || !assistantRun) throw new Error("missing turn spans");
     // The assistant was done half a second before its reply was saved.
     expect(
@@ -406,9 +387,13 @@ describe("a web chat turn's trace", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { resumeToken, conversationId } = await existingConversation({});
 
-    await whileSavingRepliesIn(
-      conversationId,
-      "raise exception 'disk full'",
+    await whileSavingMessages(
+      sql,
+      {
+        conversationId,
+        role: "assistant",
+        statement: "raise exception 'disk full'",
+      },
       async () => {
         await (
           await sendMessage(resumeToken, "question-1", "What can my son try?")
@@ -444,30 +429,75 @@ describe("a web chat turn's trace", () => {
       "My daughter Ana is 8. Email [email] or call [phone].\n[phone] is our home number.",
     );
     const spans = await exportedSpans();
-    const contactDetails = [
-      "ana.parent@example.com",
-      "+44 7700 900123",
-      "(512) 555-0199",
-      schoolPhone,
-      coachEmail,
-    ];
-    const leaks = spans.flatMap((span) =>
-      contactDetails
-        .filter((detail) => everythingExported(span).includes(detail))
-        .map((detail) => `${span.name}: ${detail}`),
-    );
-    expect(leaks).toEqual([]);
+    expect(
+      leaks(spans, [
+        "ana.parent@example.com",
+        "+44 7700 900123",
+        "(512) 555-0199",
+        schoolPhone,
+        coachEmail,
+      ]),
+    ).toEqual([]);
     const listing = spans.find(
       ({ name }) => name === "execute_tool list_trial_offerings",
     );
     expect(listing?.attributes["gen_ai.tool.call.result"]).toContain(
       "Questions? Email [email]",
     );
-    const assistantRun = spans.find(
-      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
-    );
+    const assistantRun = spans.find(isAssistantRun);
     expect(assistantRun?.attributes["gen_ai.system_instructions"]).toContain(
       "[phone]",
+    );
+  });
+});
+
+describe("a web chat turn whose browser disconnects mid-reply", () => {
+  it("still saves the reply, releases the lock, and is traced once, with the saved reply as output", async () => {
+    const { resumeToken, conversationId } = await existingConversation({});
+
+    await whileSavingMessages(
+      sql,
+      { conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
+      async () => {
+        const response = await sendMessage(
+          resumeToken,
+          "question-1",
+          "What can my son try?",
+        );
+        const body = response.body?.getReader();
+        await body?.read();
+        await body?.cancel();
+
+        // The browser left before the reply was saved.
+        expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
+        await vi.waitFor(
+          async () =>
+            expect(
+              (await conversationFor(resumeToken)).generatingAt,
+            ).toBeNull(),
+          { timeout: 5_000 },
+        );
+      },
+    );
+
+    const [, reply] = await savedMessages(conversationId);
+    expect(reply).toEqual(
+      expect.objectContaining({ role: "assistant", completion: "complete" }),
+    );
+    expect(reply?.parts).toContainEqual(
+      expect.objectContaining({
+        type: "text",
+        text: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
+      }),
+    );
+    await vi.waitFor(async () =>
+      expect(await exportedTraces()).toEqual([
+        expect.objectContaining({
+          sessionId: conversationId,
+          output:
+            "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
+        }),
+      ]),
     );
   });
 });

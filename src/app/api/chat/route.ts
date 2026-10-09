@@ -1,10 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { type UIMessage, validateUIMessages } from "ai";
 import { addDays } from "date-fns";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { after } from "next/server";
 import { getDb } from "@/db";
 import { conversations, messages } from "@/db/schema";
-import { PLATFORM_INSTRUCTIONS_HASH, streamedReply } from "@/lib/ai/assistant";
+import { streamedReply } from "@/lib/ai/assistant";
 import { hashToken } from "@/lib/crypto";
 import { TRANSCRIPT_RETENTION_DAYS } from "@/lib/schedule/constants";
 import {
@@ -144,17 +145,20 @@ export async function POST(request: Request) {
     // after the response, once the turn has ended: a browser that disconnects
     // early closes the response before the reply is saved.
     const message = body.message;
+    const inboundMessageId = randomUUID();
     const turn = startTurnTrace({
       channel: "web",
       conversationId: conversation.id,
       schoolId: school.id,
-      inboundMessageId: message.id,
+      inboundMessageId,
       inboundText: userText,
     });
     try {
       after(() => turn.exportWhenEnded());
     } catch {
-      // after() needs a Next request scope, which tests and scripts lack.
+      // after() throws outside a Next request scope, as in tests and scripts.
+      // There the export isn't awaited, because the turn only ends once the
+      // response has streamed. It never rejects.
       void turn.exportWhenEnded();
     }
 
@@ -171,6 +175,7 @@ export async function POST(request: Request) {
       });
 
       await db.insert(messages).values({
+        id: inboundMessageId,
         conversationId: conversation.id,
         messageId: message.id,
         role: "user",
@@ -184,11 +189,13 @@ export async function POST(request: Request) {
         catalog,
         messages: uiMessages,
         now,
-        onFinish: async ({ reply, completion, modelId }) => {
+        onFinish: async ({ reply, completion, provenance }) => {
+          const replyMessageId = randomUUID();
           // Saving the reply is the last of the turn's work.
           await turn.run(async () => {
             try {
               await db.insert(messages).values({
+                id: replyMessageId,
                 conversationId: conversation.id,
                 messageId: reply.id,
                 role: "assistant",
@@ -201,12 +208,10 @@ export async function POST(request: Request) {
             }
           });
           turn.end({
-            replyMessageId: reply.id,
-            replyText: textFromMessage(reply),
-            assistant: {
-              modelId,
-              platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
-            },
+            text: textFromMessage(reply),
+            messageId: replyMessageId,
+            completion,
+            provenance,
           });
         },
       });

@@ -4,24 +4,28 @@ import {
   startObservation,
 } from "@langfuse/tracing";
 import { context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
-
-/** The medium a conversation happens over. */
-export type Channel = "web" | "whatsapp";
+import type { Channel } from "@/lib/channel";
 
 export type TurnTraceStart = {
   channel: Channel;
   conversationId: string;
   schoolId: string;
+  /** The id of the inbound message's saved row. */
   inboundMessageId: string;
   inboundText: string;
 };
 
 export type TurnReply = {
-  /** Absent when the reply was sent but not saved as a message. */
-  replyMessageId?: string;
-  replyText: string;
+  text: string;
+  /**
+   * The id of the reply's saved row. Absent when the reply was sent but not
+   * saved as a message.
+   */
+  messageId?: string;
+  /** How the saved reply ended, where it can end short of complete. */
+  completion?: "complete" | "aborted" | "error";
   /** What the reply came from, when the assistant wrote it. */
-  assistant?: { modelId: string; platformInstructionsHash: string };
+  provenance?: { modelId: string; platformInstructionsHash: string };
 };
 
 export type TurnTrace = {
@@ -32,8 +36,6 @@ export type TurnTrace = {
   run<T>(work: () => Promise<T>): Promise<T>;
   /** Ends the turn with its reply, once the turn has settled. */
   end(reply: TurnReply): void;
-  /** Ends the turn as failed. */
-  fail(error: unknown): void;
   /**
    * Exports the turn's trace once the turn has ended, waiting at most
    * END_TIMEOUT_MS. Never rejects: a failed export is only logged.
@@ -42,6 +44,17 @@ export type TurnTrace = {
 };
 
 const TRACE_NAME = "turn";
+
+// A reply saved short of complete flags its turn, so a failure never looks
+// like a clean turn.
+const LEVEL_BY_COMPLETION = {
+  complete: undefined,
+  aborted: "WARNING",
+  error: "ERROR",
+} as const satisfies Record<
+  NonNullable<TurnReply["completion"]>,
+  LangfuseSpanAttributes["level"]
+>;
 
 // Long enough for a full assistant turn, and well under the platform's
 // default function duration, so a turn that never ends still has its finished
@@ -84,7 +97,8 @@ export function startTurnTrace({
       ),
   );
 
-  // A turn ends once: whichever of end and fail comes first.
+  // A turn ends once: with its reply, or as failed when work run in it throws,
+  // whichever comes first.
   const ended = Promise.withResolvers<void>();
   let hasEnded = false;
   const endRoot = (attributes: LangfuseSpanAttributes) => {
@@ -95,29 +109,28 @@ export function startTurnTrace({
     ended.resolve();
   };
 
-  const turn: TurnTrace = {
+  return {
     run(work) {
       return context.with(turnContext, async () => {
         try {
           return await work();
         } catch (error) {
-          turn.fail(error);
+          endRoot({ level: "ERROR", statusMessage: failureMessage(error) });
           throw error;
         }
       });
     },
-    end({ replyMessageId, replyText, assistant }) {
+    end({ text, messageId, completion, provenance }) {
       endRoot({
-        output: replyText,
+        output: text,
+        level: completion && LEVEL_BY_COMPLETION[completion],
         metadata: {
-          replyMessageId,
-          modelId: assistant?.modelId,
-          platformInstructionsHash: assistant?.platformInstructionsHash,
+          replyMessageId: messageId,
+          completion,
+          modelId: provenance?.modelId,
+          platformInstructionsHash: provenance?.platformInstructionsHash,
         },
       });
-    },
-    fail(error) {
-      endRoot({ level: "ERROR", statusMessage: failureMessage(error) });
     },
     async exportWhenEnded() {
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -131,10 +144,9 @@ export function startTurnTrace({
       if (!endedInTime) {
         console.warn("tracing: exporting a turn that has not ended");
       }
-      await exportEndedSpans();
+      await exportEndedTurns();
     },
   };
-  return turn;
 }
 
 // The innermost cause says what actually went wrong, e.g. the database error
@@ -153,11 +165,17 @@ type FlushableTracerProvider = {
   forceFlush?: (options?: { timeoutMillis?: number }) => Promise<void>;
 };
 
-// Exports every span that has ended so far, through whichever tracer provider
-// is registered. Without one (no Langfuse keys) there is nothing to export.
-async function exportEndedSpans(): Promise<void> {
-  // The registered provider sits behind the API's proxy. It's duck-typed
-  // because the SDK and the API may come from different package copies.
+/**
+ * Exports the traces of every turn that has ended so far. Never rejects: a
+ * failed export is only logged. Without Langfuse keys there is nothing to
+ * export.
+ */
+export async function exportEndedTurns(): Promise<void> {
+  // Flushes through the global tracer provider, not a module-level reference
+  // to what registerTracing made: Next bundles instrumentation and routes
+  // separately, so such a reference isn't reliably shared. The provider sits
+  // behind the API's proxy, and is duck-typed because the SDK and the API may
+  // come from different package copies.
   const proxy = trace.getTracerProvider() as { getDelegate?: () => unknown };
   const provider = (proxy.getDelegate?.() ?? proxy) as FlushableTracerProvider;
   if (typeof provider.forceFlush !== "function") return;

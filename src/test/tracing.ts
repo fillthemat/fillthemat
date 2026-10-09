@@ -1,24 +1,19 @@
-import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
-import { context, trace } from "@opentelemetry/api";
-import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { ExportResultCode } from "@opentelemetry/core";
 import {
-  BasicTracerProvider,
   InMemorySpanExporter,
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
-import { registerTelemetry } from "ai";
 import { afterEach, beforeEach, vi } from "vitest";
-import { createTraceSpanProcessor } from "@/lib/tracing/span-processor";
+import { registerTracing } from "@/lib/tracing/register";
 
-// Integration tests trace the way production does when Langfuse keys are set:
-// the production span processor and the AI SDK's Langfuse integration. Spans
-// are exported into memory instead of to Langfuse. Installed once per test
-// process, because the AI SDK integration stays bound to the first provider.
+// Integration tests trace the way production does when Langfuse keys are set,
+// through the same registration, but spans are exported into memory instead
+// of to Langfuse. Installed once per test process, because the AI SDK
+// integration stays bound to the first provider.
 
 type TestTracing = {
   exporter: InMemorySpanExporter;
-  provider: BasicTracerProvider;
+  provider: NonNullable<ReturnType<typeof registerTracing>>;
 };
 
 const INSTALLED = Symbol.for("fillthemat.testTracing");
@@ -28,14 +23,14 @@ const registry = globalThis as typeof globalThis & {
 
 function install(): TestTracing {
   const exporter = new InMemorySpanExporter();
-  const provider = new BasicTracerProvider({
-    spanProcessors: [createTraceSpanProcessor({ exporter })],
+  const provider = registerTracing({
+    env: {
+      LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+      LANGFUSE_SECRET_KEY: "sk-lf-test",
+    },
+    exporter,
   });
-  context.setGlobalContextManager(
-    new AsyncLocalStorageContextManager().enable(),
-  );
-  trace.setGlobalTracerProvider(provider);
-  registerTelemetry(new LangfuseVercelAiSdkIntegration());
+  if (!provider) throw new Error("tracing: the test harness wasn't registered");
   return { exporter, provider };
 }
 
@@ -63,10 +58,25 @@ export function isRoot(span: ReadableSpan) {
   return !span.parentSpanContext;
 }
 
+/** The span of one assistant run: its model calls and tool calls nest under it. */
+export function isAssistantRun(span: ReadableSpan) {
+  return span.attributes["gen_ai.operation.name"] === "invoke_agent";
+}
+
 /** Everything a span sends to Langfuse about itself, as one string. */
-export function everythingExported(span: ReadableSpan): string {
+function everythingExported(span: ReadableSpan): string {
   const { name, attributes, events, status, links } = span;
   return JSON.stringify({ name, attributes, events, status, links });
+}
+
+/** Each of `values` that any of `spans` sends to Langfuse, by span name. */
+export function leaks(spans: ReadableSpan[], values: string[]): string[] {
+  return spans.flatMap((span) => {
+    const exported = everythingExported(span);
+    return values
+      .filter((value) => exported.includes(value))
+      .map((value) => `${span.name}: ${value}`);
+  });
 }
 
 /**
@@ -104,12 +114,13 @@ export async function exportedTraces() {
   });
 }
 
-let langfuseOutage: Array<{ mockRestore(): void }> = [];
+// Undoes what a test did to Langfuse, once the test ends.
+let undoAfterTest: Array<() => void> = [];
 
 /** Makes exporting spans fail for the rest of the test, as if Langfuse were down. */
 export function failSpanExports() {
   const unreachable = new Error("Langfuse is unreachable");
-  langfuseOutage = [
+  const spies = [
     vi
       .spyOn(tracing.exporter, "export")
       .mockImplementation((_spans, done) =>
@@ -117,6 +128,30 @@ export function failSpanExports() {
       ),
     vi.spyOn(tracing.exporter, "forceFlush").mockRejectedValue(unreachable),
   ];
+  undoAfterTest.push(() => {
+    for (const spy of spies) spy.mockRestore();
+  });
+}
+
+/**
+ * Holds every span export until `release` is called, as if Langfuse were
+ * slow to answer. `started` resolves once the first export has started.
+ */
+export function holdSpanExports() {
+  const started = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const exportSpans = tracing.exporter.export.bind(tracing.exporter);
+  const spy = vi
+    .spyOn(tracing.exporter, "export")
+    .mockImplementation((spans, done) => {
+      started.resolve();
+      void released.promise.then(() => exportSpans(spans, done));
+    });
+  undoAfterTest.push(() => {
+    released.resolve();
+    spy.mockRestore();
+  });
+  return { started: started.promise, release: () => released.resolve() };
 }
 
 beforeEach(async () => {
@@ -125,6 +160,6 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  for (const spy of langfuseOutage) spy.mockRestore();
-  langfuseOutage = [];
+  for (const undo of undoAfterTest) undo();
+  undoAfterTest = [];
 });

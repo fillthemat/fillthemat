@@ -117,14 +117,15 @@ export async function messageExists(
 export async function persistUserMessage({
   id,
   conversationId,
-  messageId,
+  wamid,
   text,
   purgeAt,
 }: {
   /** The saved row's id, chosen before saving. */
   id: string;
   conversationId: string;
-  messageId: string;
+  /** WhatsApp's id for the message, saved as its message id. */
+  wamid: string;
   text: string;
   purgeAt: Date;
 }): Promise<boolean> {
@@ -134,7 +135,7 @@ export async function persistUserMessage({
     .values({
       id,
       conversationId,
-      messageId,
+      messageId: wamid,
       role: "user",
       parts: [{ type: "text", text }],
       completion: "complete",

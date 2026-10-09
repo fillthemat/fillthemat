@@ -29,13 +29,20 @@ import {
 import { confirmBookingButtonId } from "@/lib/whatsapp/confirmation";
 import { upsertPendingBookingIntent } from "@/lib/whatsapp/intents";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
-import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
+import {
+  authSql,
+  loadLocalEnv,
+  requireRow,
+  whileSavingMessages,
+} from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
-  everythingExported,
   exportedSpans,
   exportedTraces,
+  holdSpanExports,
+  isAssistantRun,
   isRoot,
+  leaks,
   spansExportedSoFar,
 } from "@/test/tracing";
 import {
@@ -78,6 +85,12 @@ async function pressButton(waId: string, buttonId: string) {
 // The message `wamid` in `payload` through the webhook, then the worker the
 // webhook would wake.
 async function send(wamid: string, payload: unknown) {
+  await receive(wamid, payload);
+  await runWhatsAppWorkerOnce(randomUUID());
+}
+
+// The message `wamid` in `payload` through the webhook, once its job is due.
+async function receive(wamid: string, payload: unknown) {
   await POST(post(payload));
   // The database stamps the job's due time with its own clock, which can run
   // a few ms ahead of this machine's, and the worker skips jobs not yet due.
@@ -86,7 +99,20 @@ async function send(wamid: string, payload: unknown) {
     .from(whatsappJobs)
     .where(eq(whatsappJobs.dedupeKey, wamid));
   await sleep(Math.max(0, (job?.dueAt.getTime() ?? 0) + 1 - Date.now()));
-  await runWhatsAppWorkerOnce(randomUUID());
+}
+
+// Whether a reply has been sent to `waId`.
+async function repliedTo(waId: string) {
+  const sent = await db
+    .select({ id: whatsappDeliveries.id })
+    .from(whatsappDeliveries)
+    .where(
+      and(
+        eq(whatsappDeliveries.recipientWaId, waId),
+        eq(whatsappDeliveries.state, "sent"),
+      ),
+    );
+  return sent.length > 0;
 }
 
 async function conversationWith(waId: string) {
@@ -130,28 +156,8 @@ async function startConversation(waId: string) {
   return requireRow(conversation, "conversation").id;
 }
 
-// Runs `work` while saving the conversation's inbound messages fails.
-async function whileSavingInboundMessagesFails(
-  conversationId: string,
-  work: () => Promise<void>,
-) {
-  const name = `test_inbound_save_${randomUUID().replaceAll("-", "")}`;
-  await sql.unsafe(
-    `create function public.${name}() returns trigger language plpgsql as $$ begin raise exception 'disk full'; end $$`,
-  );
-  await sql.unsafe(
-    `create trigger ${name} before insert on app.messages for each row when (new.conversation_id = '${conversationId}' and new.role = 'user') execute function public.${name}()`,
-  );
-  try {
-    await work();
-  } finally {
-    await sql.unsafe(`drop trigger ${name} on app.messages`);
-    await sql.unsafe(`drop function public.${name}()`);
-  }
-}
-
 // A conversation with `waId` whose Booking Intent awaits confirmation.
-async function proposedBooking(
+async function proposeBookingIntent(
   waId: string,
   participant: { participantName: string; participantAge: number | null },
 ) {
@@ -238,9 +244,7 @@ describe("a WhatsApp assistant turn's trace", () => {
     ]);
     const spans = await exportedSpans();
     const root = spans.find(isRoot);
-    const assistantRun = spans.find(
-      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
-    );
+    const assistantRun = spans.find(isAssistantRun);
     expect(assistantRun?.parentSpanContext?.spanId).toBe(
       root?.spanContext().spanId,
     );
@@ -291,20 +295,48 @@ describe("a WhatsApp assistant turn's trace", () => {
 
     const spans = await exportedSpans();
     expect(spans.filter(isRoot)).toHaveLength(1);
-    const identifiers = [waId, hashWaId(waId), wamid];
-    const leaks = spans.flatMap((span) =>
-      identifiers
-        .filter((identifier) => everythingExported(span).includes(identifier))
-        .map((identifier) => `${span.name}: ${identifier}`),
-    );
-    expect(leaks).toEqual([]);
+    expect(leaks(spans, [waId, hashWaId(waId), wamid])).toEqual([]);
+  });
+});
+
+describe("a WhatsApp worker run with several messages to answer", () => {
+  it("answers them all without waiting for Langfuse, then exports every turn's trace before it finishes", async () => {
+    const waIds = ["16505550141", "16505550142", "16505550143"];
+    for (const waId of waIds) {
+      const wamid = wamidFrom(waId);
+      await receive(
+        wamid,
+        textInboundPayload({
+          phoneNumberId,
+          waId,
+          wamid,
+          text: "What can my son try?",
+        }),
+      );
+    }
+    const slowLangfuse = holdSpanExports();
+
+    const run = runWhatsAppWorkerOnce(randomUUID());
+    await slowLangfuse.started;
+    const answeredWhileExporting = await Promise.all(waIds.map(repliedTo));
+    slowLangfuse.release();
+    await run;
+
+    expect(answeredWhileExporting).toEqual([true, true, true]);
+    const conversations = await Promise.all(waIds.map(conversationWith));
+    expect(
+      spansExportedSoFar()
+        .filter(isRoot)
+        .map(({ attributes }) => attributes["session.id"])
+        .toSorted(),
+    ).toEqual(conversations.map(({ id }) => id).toSorted());
   });
 });
 
 describe("a WhatsApp turn answered without the assistant", () => {
   it("is one trace for a booking confirmation, with the saved confirmation as output and no model spans", async () => {
     const waId = "16505550111";
-    const { conversationId, intentId } = await proposedBooking(waId, {
+    const { conversationId, intentId } = await proposeBookingIntent(waId, {
       participantName: "Alex",
       participantAge: 8,
     });
@@ -364,9 +396,9 @@ describe("a WhatsApp turn answered without the assistant", () => {
     expect((await exportedSpans()).map(({ name }) => name)).toEqual(["turn"]);
   });
 
-  it("is one trace for a notice that a confirmed booking needs the participant's age", async () => {
+  it("is one trace for a notice that the Booking Intent being confirmed needs the participant's age", async () => {
     const waId = "16505550113";
-    const { conversationId, intentId } = await proposedBooking(waId, {
+    const { conversationId, intentId } = await proposeBookingIntent(waId, {
       participantName: "Alex",
       participantAge: null,
     });
@@ -385,7 +417,7 @@ describe("a WhatsApp turn answered without the assistant", () => {
     ]);
   });
 
-  it("is one trace for a notice that the booking option being confirmed has expired", async () => {
+  it("is one trace for a notice that the Booking Intent being confirmed has expired", async () => {
     const waId = "16505550114";
     const expiredIntentButton = confirmBookingButtonId(randomUUID());
 
@@ -503,35 +535,39 @@ describe("an inbound WhatsApp message that gets no reply", () => {
   });
 });
 
-describe("a WhatsApp turn whose attempt fails", () => {
+describe("a failed attempt at a WhatsApp turn", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("is exported as an error with the assistant's spans under it, and its retry is traced as a turn of its own", async () => {
+  it("is exported as an error with the assistant's spans under it, and the retry is traced separately", async () => {
     // The worker logs the failed job.
     vi.spyOn(console, "error").mockImplementation(() => {});
     const waId = "16505550131";
     const conversationId = await startConversation(waId);
     const wamid = wamidFrom(waId);
 
-    await whileSavingInboundMessagesFails(conversationId, () =>
-      sendText(waId, "What can my son try?", wamid),
+    await whileSavingMessages(
+      sql,
+      {
+        conversationId,
+        role: "user",
+        statement: "raise exception 'disk full'",
+      },
+      () => sendText(waId, "What can my son try?", wamid),
     );
 
     const exportedByWorker = spansExportedSoFar();
-    const failedTurn = exportedByWorker.find(isRoot);
-    expect(failedTurn?.attributes).toMatchObject({
+    const failedAttempt = exportedByWorker.find(isRoot);
+    expect(failedAttempt?.attributes).toMatchObject({
       "session.id": conversationId,
       "langfuse.observation.level": "ERROR",
       "langfuse.observation.status_message":
         expect.stringContaining("disk full"),
     });
-    const assistantRun = exportedByWorker.find(
-      (span) => span.attributes["gen_ai.operation.name"] === "invoke_agent",
-    );
+    const assistantRun = exportedByWorker.find(isAssistantRun);
     expect(assistantRun?.parentSpanContext?.spanId).toBe(
-      failedTurn?.spanContext().spanId,
+      failedAttempt?.spanContext().spanId,
     );
 
     await db

@@ -8,7 +8,7 @@ import {
   type WhatsAppBookingIntent,
   type WhatsAppJob,
 } from "@/db/schema";
-import { completedReply, PLATFORM_INSTRUCTIONS_HASH } from "@/lib/ai/assistant";
+import { completedReply } from "@/lib/ai/assistant";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { loadSchoolCatalog } from "@/lib/schools/public";
@@ -17,9 +17,9 @@ import {
   whatsappOutboundQuotaExceeded,
 } from "@/lib/security/limits";
 import {
+  exportEndedTurns,
   startTurnTrace,
   type TurnReply,
-  type TurnTrace,
 } from "@/lib/tracing/turn-trace";
 import { confirmWhatsAppBooking } from "./booking";
 import {
@@ -70,6 +70,7 @@ type JobContext = {
 
 type InboundContext = JobContext & {
   message: InboundWhatsAppMessage;
+  inboundText: string;
   /**
    * The row id the inbound message is saved under. Traces use it instead of
    * the wamid, which encodes the sender's phone number.
@@ -77,6 +78,16 @@ type InboundContext = JobContext & {
   inboundMessageId: string;
   runId: string;
 };
+
+async function saveInboundMessage(ctx: InboundContext): Promise<void> {
+  await persistUserMessage({
+    id: ctx.inboundMessageId,
+    conversationId: ctx.conversationId,
+    wamid: ctx.message.wamid,
+    text: ctx.inboundText,
+    purgeAt: ctx.purgeAt,
+  });
+}
 
 // Notices are sent but not saved as messages, so their reply has no id.
 async function sendNotice(
@@ -92,7 +103,7 @@ async function sendNotice(
     windowExpiresAt: addHours(new Date(), 24),
   });
   if (deliveryId) await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
-  return { replyText: text };
+  return { text };
 }
 
 /**
@@ -106,13 +117,7 @@ async function handleConfirmation(
   // Book BEFORE persisting the user message so a crash/retry replays into the
   // same deterministic idempotency key instead of silently dropping a confirm.
   if (!intent) {
-    await persistUserMessage({
-      id: ctx.inboundMessageId,
-      conversationId: ctx.conversationId,
-      messageId: ctx.message.wamid,
-      text: ctx.message.text ?? "",
-      purgeAt: ctx.purgeAt,
-    });
+    await saveInboundMessage(ctx);
     return sendNotice(
       ctx,
       "That booking option has expired or was replaced. Please ask for available times again.",
@@ -131,14 +136,8 @@ async function handleConfirmation(
     runId: ctx.runId,
   });
 
-  await persistUserMessage({
-    id: ctx.inboundMessageId,
-    conversationId: ctx.conversationId,
-    messageId: ctx.message.wamid,
-    text: ctx.message.text ?? "",
-    purgeAt: ctx.purgeAt,
-  });
-  return { replyMessageId: reply.messageId, replyText: reply.text };
+  await saveInboundMessage(ctx);
+  return reply;
 }
 
 async function enqueueAndSendTextReplies(
@@ -179,13 +178,7 @@ async function handleAssistantTurn(
   if (
     await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
   ) {
-    await persistUserMessage({
-      id: ctx.inboundMessageId,
-      conversationId: ctx.conversationId,
-      messageId: ctx.message.wamid,
-      text: ctx.message.text ?? "",
-      purgeAt: ctx.purgeAt,
-    });
+    await saveInboundMessage(ctx);
     return sendNotice(
       ctx,
       "You've reached today's message limit. Please try again tomorrow.",
@@ -195,7 +188,7 @@ async function handleAssistantTurn(
   const inboundUIMessage: UIMessage = {
     id: ctx.message.wamid,
     role: "user",
-    parts: [{ type: "text", text: ctx.message.text ?? "" }],
+    parts: [{ type: "text", text: ctx.inboundText }],
   };
   const uiMessages = await validateUIMessages({
     messages: [...history, inboundUIMessage],
@@ -216,18 +209,9 @@ async function handleAssistantTurn(
     messages: uiMessages,
     now,
   });
-  const assistant = {
-    modelId: reply.modelId,
-    platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
-  };
+  const { provenance } = reply;
 
-  await persistUserMessage({
-    id: ctx.inboundMessageId,
-    conversationId: ctx.conversationId,
-    messageId: ctx.message.wamid,
-    text: ctx.message.text ?? "",
-    purgeAt: ctx.purgeAt,
-  });
+  await saveInboundMessage(ctx);
 
   const windowExpiresAt = addHours(now, 24);
 
@@ -269,7 +253,7 @@ async function handleAssistantTurn(
     if (deliveryId) {
       await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
     }
-    return { replyMessageId, replyText: body, assistant };
+    return { text: body, messageId: replyMessageId, provenance };
   }
 
   // Lead: platform writes it (shared create-lead). Owner delivery stays email.
@@ -302,7 +286,7 @@ async function handleAssistantTurn(
       purgeAt: ctx.purgeAt,
     });
     await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${lead.id}`);
-    return { replyMessageId, replyText, assistant };
+    return { text: replyText, messageId: replyMessageId, provenance };
   }
 
   // Plain text reply.
@@ -314,7 +298,7 @@ async function handleAssistantTurn(
     purgeAt: ctx.purgeAt,
   });
   await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${generateId()}`);
-  return { replyMessageId, replyText, assistant };
+  return { text: replyText, messageId: replyMessageId, provenance };
 }
 
 /**
@@ -324,16 +308,18 @@ async function handleAssistantTurn(
  *
  * Deterministic confirmation path (addendum "Deterministic confirmation"): a
  * `confirm_booking:<id>` reply button, or an exact affirmative while a pending
- * intent exists, goes straight to `bookSlot` instead of the agent.
+ * intent exists, goes straight to `bookSlot` instead of the assistant.
  */
 async function planReply(
   ctx: InboundContext,
   now: Date,
 ): Promise<(() => Promise<TurnReply>) | null> {
-  const inboundText = ctx.message.text ?? "";
-  const buttonIntentId = parseConfirmBookingButton(inboundText);
+  const buttonIntentId = parseConfirmBookingButton(ctx.inboundText);
   const pending = await getPendingBookingIntent(ctx.conversationId, now);
-  if (buttonIntentId || (pending && isAffirmativeConfirmation(inboundText))) {
+  if (
+    buttonIntentId ||
+    (pending && isAffirmativeConfirmation(ctx.inboundText))
+  ) {
     const intent = buttonIntentId
       ? await getPendingBookingIntentById(buttonIntentId, ctx.schoolId, now)
       : pending;
@@ -356,7 +342,6 @@ export async function processWhatsAppJob(
 ): Promise<ProcessJobResult> {
   const message = job.payload as InboundWhatsAppMessage;
   let conversationId: string | null = null;
-  let turn: TurnTrace | undefined;
   try {
     const resolved = await resolveInboundConversation(message, new Date());
     if (!resolved.resolved) {
@@ -390,6 +375,7 @@ export async function processWhatsAppJob(
         conversationId,
         purgeAt: resolved.purgeAt,
         message,
+        inboundText: message.text ?? "",
         inboundMessageId: randomUUID(),
         runId,
       };
@@ -397,13 +383,14 @@ export async function processWhatsAppJob(
       const sendReply = await planReply(ctx, now);
       if (sendReply) {
         // A message that gets a reply is a turn. Its trace starts only once
-        // that's known, because a started trace can't be dropped.
-        turn = startTurnTrace({
+        // that's known, because a started trace can't be dropped. It's
+        // exported when the worker run ends.
+        const turn = startTurnTrace({
           channel: "whatsapp",
           conversationId,
           schoolId: resolved.schoolId,
           inboundMessageId: ctx.inboundMessageId,
-          inboundText: message.text ?? "",
+          inboundText: ctx.inboundText,
         });
         turn.end(await turn.run(sendReply));
       }
@@ -422,11 +409,6 @@ export async function processWhatsAppJob(
     await failJob(job.id, job.attempts, message);
     console.error("whatsapp: job failed", job.id, message);
     return "failed";
-  } finally {
-    // Before the worker finishes, so the trace isn't lost when its invocation
-    // ends, and after the lock is released, so exporting never holds up the
-    // conversation's next message. A failed export is only logged.
-    await turn?.exportWhenEnded();
   }
 }
 
@@ -455,9 +437,16 @@ export async function drainWhatsAppJobs(
  * re-picking-up here.
  */
 export async function runWhatsAppWorkerOnce(runId: string) {
-  await recoverStuckWhatsAppJobs();
-  await recoverStuckWhatsAppDeliveries();
-  const jobs = await drainWhatsAppJobs(runId);
-  const deliveries = await drainDueWhatsAppDeliveries(runId);
-  return { jobs, deliveries };
+  try {
+    await recoverStuckWhatsAppJobs();
+    await recoverStuckWhatsAppDeliveries();
+    const jobs = await drainWhatsAppJobs(runId);
+    const deliveries = await drainDueWhatsAppDeliveries(runId);
+    return { jobs, deliveries };
+  } finally {
+    // Once, after every reply in the run, so a slow or unreachable Langfuse
+    // never delays a reply and costs the run one export at most. Awaited, so
+    // the traces aren't lost when the invocation ends.
+    await exportEndedTurns();
+  }
 }

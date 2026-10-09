@@ -114,6 +114,14 @@ function textOf(message: AssistantUIMessage) {
     .join("");
 }
 
+// What a reply written by `modelId` came from.
+function writtenBy(modelId: string) {
+  return {
+    modelId,
+    platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+  };
+}
+
 function toolOutputSentBackToModel(model: MockLanguageModelV4) {
   const toolMessage = model.doGenerateCalls[1]?.prompt.at(-1);
   if (toolMessage?.role !== "tool") return undefined;
@@ -313,11 +321,11 @@ describe("the assistant's completed reply", () => {
       text: "Kids BJJ trains on Wednesdays.",
       bookingIntent: null,
       leadRequest: null,
-      modelId: "mock-model-id",
+      provenance: writtenBy("mock-model-id"),
     });
   });
 
-  it("returns the id of the model that wrote the reply", async () => {
+  it("returns the id of the model that wrote the reply and a short hash of the platform instructions it followed", async () => {
     const reply = await completedReply({
       ...input,
       model: new MockLanguageModelV4({
@@ -326,7 +334,10 @@ describe("the assistant's completed reply", () => {
       }),
     });
 
-    expect(reply.modelId).toBe("anthropic/claude-sonnet-4.6");
+    expect(reply.provenance).toEqual({
+      modelId: "anthropic/claude-sonnet-4.6",
+      platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+    });
   });
 
   it("returns a Booking Intent with the participant when it prepares a booking for an open slot", async () => {
@@ -352,7 +363,7 @@ describe("the assistant's completed reply", () => {
         participantAge: 8,
       },
       leadRequest: null,
-      modelId: "mock-model-id",
+      provenance: writtenBy("mock-model-id"),
     });
   });
 
@@ -398,7 +409,7 @@ describe("the assistant's completed reply", () => {
         text: "Sorry, I can't hold that time. Shall we look at others?",
         bookingIntent: null,
         leadRequest: null,
-        modelId: "mock-model-id",
+        provenance: writtenBy("mock-model-id"),
       });
     },
   );
@@ -444,7 +455,7 @@ describe("the assistant's completed reply", () => {
         trialOfferingId: null,
         statedNeed: "Adult evening classes",
       },
-      modelId: "mock-model-id",
+      provenance: writtenBy("mock-model-id"),
     });
   });
 });
@@ -465,7 +476,7 @@ describe("the assistant's completed reply with no model passed", () => {
       text: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
       bookingIntent: null,
       leadRequest: null,
-      modelId: "scripted-local",
+      provenance: writtenBy("scripted-local"),
     });
   });
 
@@ -532,7 +543,7 @@ describe("the assistant's streamed reply", () => {
     ]);
   });
 
-  it("calls back with the id of the model that wrote the reply", async () => {
+  it("calls back with the id of the model that wrote the reply and a short hash of the platform instructions it followed", async () => {
     const finishes: ReplyFinish[] = [];
     const response = await streamedReply({
       ...input,
@@ -550,8 +561,11 @@ describe("the assistant's streamed reply", () => {
 
     await response.text();
 
-    expect(finishes.map(({ modelId }) => modelId)).toEqual([
-      "anthropic/claude-sonnet-4.6",
+    expect(finishes.map(({ provenance }) => provenance)).toEqual([
+      {
+        modelId: "anthropic/claude-sonnet-4.6",
+        platformInstructionsHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      },
     ]);
   });
 

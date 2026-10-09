@@ -37,6 +37,7 @@
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/sdk-node": "^0.222.0",
     "@opentelemetry/sdk-trace-base": "2.11.0",
+    "@opentelemetry/sdk-trace-node": "2.11.0",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "ai": "^7.0.128",
@@ -59,7 +60,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.11",
-    "@opentelemetry/context-async-hooks": "2.11.0",
     "@opentelemetry/core": "2.11.0",
     "@playwright/test": "^1.62.1",
     "@shadcn/lint": "^0.1.0",
