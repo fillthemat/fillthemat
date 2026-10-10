@@ -45,7 +45,7 @@ export const emailStateEnum = appSchema.enum("email_state", [
 
 export const whatsappDeliveryStateEnum = appSchema.enum(
   "whatsapp_delivery_state",
-  ["pending", "claimed", "sent", "delivered", "read", "failed"],
+  ["pending", "claimed", "sent", "delivered", "read", "failed", "dead"],
 );
 
 export const whatsappJobStateEnum = appSchema.enum("whatsapp_job_state", [
@@ -626,6 +626,11 @@ export const whatsappDeliveries = appSchema.table(
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimedBy: text("claimed_by"),
     lastError: text("last_error"),
+    failureReason: text("failure_reason"),
+    failureCode: integer("failure_code"),
+    terminalCause: text("terminal_cause").$type<
+      "permanent" | "attempts_exhausted"
+    >(),
     ...timestamps,
   },
   (t) => [

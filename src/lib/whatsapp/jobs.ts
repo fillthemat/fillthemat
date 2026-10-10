@@ -130,7 +130,7 @@ export async function startJobExecution(
 
 export async function failJob(
   job: WhatsAppJob,
-  failure: RetryFailure,
+  failure: Extract<RetryFailure, { kind: "internal" }>,
   message: string,
   now = new Date(),
 ): Promise<"retrying" | "dead" | "deferred"> {

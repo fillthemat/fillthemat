@@ -6,6 +6,7 @@ export function logDeadTransition(event: {
   id: string;
   schoolId: string | null;
   reason: string;
+  code?: number | null;
   terminalCause: TerminalCause;
   executions: number;
   runId: string;
@@ -21,6 +22,9 @@ export function logDeadTransition(event: {
         ? event.reason
         : "unknown_failure",
       terminalCause: event.terminalCause,
+      ...(event.code != null && Number.isInteger(event.code)
+        ? { code: event.code }
+        : {}),
       executions: event.executions,
       runId: event.runId,
     }),
