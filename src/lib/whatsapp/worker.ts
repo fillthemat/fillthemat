@@ -300,14 +300,7 @@ async function planReply(
   ctx: InboundContext,
   now: Date,
 ): Promise<(() => Promise<TurnReply>) | null> {
-  const history = await loadTranscript(ctx.conversationId);
-  if (
-    await endConversationAtMessageLimit(ctx.conversationId, history.length, now)
-  ) {
-    await sendNotice(ctx, CONVERSATION_LIMIT_NOTICE);
-    return null;
-  }
-
+  // Booking confirmations bypass the assistant's message limit.
   const buttonIntentId = parseConfirmBookingButton(ctx.inboundText);
   const pending = await getPendingBookingIntent(ctx.conversationId, now);
   if (
@@ -318,6 +311,14 @@ async function planReply(
       ? await getPendingBookingIntentById(buttonIntentId, ctx.schoolId, now)
       : pending;
     return () => handleConfirmation(ctx, intent);
+  }
+
+  const history = await loadTranscript(ctx.conversationId);
+  if (
+    await endConversationAtMessageLimit(ctx.conversationId, history.length, now)
+  ) {
+    await sendNotice(ctx, CONVERSATION_LIMIT_NOTICE);
+    return null;
   }
 
   // Daily-cap refusals leave the conversation open and its transcript intact.

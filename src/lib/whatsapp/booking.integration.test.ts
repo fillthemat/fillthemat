@@ -8,6 +8,7 @@ import {
   bookings,
   conversations,
   emailDeliveries,
+  messages,
   schools,
   trialOccurrences,
   trialOfferings,
@@ -21,6 +22,7 @@ import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
 import {
   MAX_BOOKINGS_PER_WA_ID_PER_DAY,
+  MAX_CHAT_MESSAGES_PER_CONVERSATION,
   whatsappBookingQuotaExceeded,
 } from "@/lib/security/limits";
 import { confirmWhatsAppBooking } from "@/lib/whatsapp/booking";
@@ -265,8 +267,19 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     );
     expect(notice?.state).toBe("sent");
   });
-  it("confirms a reply-button booking: row + occupancy + WhatsApp template confirmation", async () => {
+  it("confirms a reply-button booking at the message limit: row + occupancy + normal confirmation", async () => {
     const conversationId = await makeConversation(waA);
+    await db.insert(messages).values(
+      Array.from(
+        { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
+        (_, index) => ({
+          conversationId,
+          messageId: `earlier-${index}`,
+          role: index % 2 === 0 ? "user" : "assistant",
+          parts: [{ type: "text", text: `Message ${index + 1}` }],
+        }),
+      ),
+    );
 
     const [window] = await db
       .select()
@@ -303,6 +316,27 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     const booking = bookingRows[0];
     expect(booking.contactEmailSnapshot).toBeNull();
     expect(booking.contactPhoneSnapshot).toBe(waA);
+    expect(booking.conversationId).toBe(conversationId);
+
+    const replies = await db
+      .select({ parts: messages.parts })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.role, "assistant"),
+        ),
+      );
+    expect(replies).toContainEqual({
+      parts: [
+        {
+          type: "text",
+          text: expect.stringMatching(
+            /^Booked! Alex's trial for Kids beginner trial/,
+          ),
+        },
+      ],
+    });
 
     const [occurrence] = await db
       .select()

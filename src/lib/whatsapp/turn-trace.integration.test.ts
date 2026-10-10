@@ -14,9 +14,11 @@ import {
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
 import {
+  bookings,
   conversations,
   messages,
   trialWindows,
+  whatsappBookingIntents,
   whatsappDeliveries,
   whatsappJobs,
 } from "@/db/schema";
@@ -490,6 +492,67 @@ describe("a WhatsApp turn answered without the assistant", () => {
       }),
     ]);
   });
+
+  it("sends the expired notice for a Confirm tap after an ordinary message ended the conversation at the limit", async () => {
+    const waId = "16505550115";
+    const { conversationId, intentId } = await proposeBookingIntent(waId, {
+      participantName: "Alex",
+      participantAge: 8,
+    });
+    await db.insert(messages).values(
+      Array.from(
+        { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
+        (_, index) => ({
+          conversationId,
+          messageId: `earlier-${index}`,
+          role: index % 2 === 0 ? "user" : "assistant",
+          parts: [{ type: "text", text: `Message ${index + 1}` }],
+        }),
+      ),
+    );
+    await sendText(waId, "One more question?");
+    const ended = await conversationWith(waId);
+    expect(ended.endedAt).not.toBeNull();
+    expect(ended.endReason).toBe("message_limit");
+    const transcript = await savedMessages(ended);
+
+    await pressButton(waId, confirmBookingButtonId(intentId));
+
+    expect(await savedMessages(ended)).toEqual(transcript);
+    expect(
+      await db
+        .select()
+        .from(bookings)
+        .where(eq(bookings.conversationId, conversationId)),
+    ).toEqual([]);
+    const [intent] = await db
+      .select({ state: whatsappBookingIntents.state })
+      .from(whatsappBookingIntents)
+      .where(eq(whatsappBookingIntents.id, intentId));
+    expect(intent?.state).toBe("expired");
+    const notices = await db
+      .select({
+        body: whatsappDeliveries.body,
+        state: whatsappDeliveries.state,
+      })
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, waId),
+          eq(
+            whatsappDeliveries.body,
+            "That booking option has expired or was replaced. Please ask for available times again.",
+          ),
+        ),
+      );
+    expect(notices).toEqual([
+      {
+        body: "That booking option has expired or was replaced. Please ask for available times again.",
+        state: "sent",
+      },
+    ]);
+  });
 });
 
 describe("an inbound WhatsApp message that gets no reply", () => {
@@ -618,7 +681,7 @@ describe("an inbound WhatsApp message that gets no reply", () => {
     expect(await exportedTraces()).toEqual([]);
   });
 
-  it("is not traced when its conversation has reached the message limit", async () => {
+  it("ends the conversation at the message limit, sends the fixed notice, and saves and traces nothing for an ordinary message", async () => {
     const waId = "16505550124";
     const conversationId = await startConversation(waId);
     await db.insert(messages).values(
@@ -633,8 +696,32 @@ describe("an inbound WhatsApp message that gets no reply", () => {
       ),
     );
 
+    const transcript = await savedMessages({ id: conversationId });
     await sendText(waId, "One more question?");
 
+    const ended = await conversationWith(waId);
+    expect(ended.endedAt).not.toBeNull();
+    expect(ended.endReason).toBe("message_limit");
+    expect(ended.generatingAt).toBeNull();
+    expect(await savedMessages(ended)).toEqual(transcript);
+    const notices = await db
+      .select({
+        body: whatsappDeliveries.body,
+        state: whatsappDeliveries.state,
+      })
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, waId),
+        ),
+      );
+    expect(notices).toEqual([
+      {
+        body: "This conversation has reached its message limit. Your next message starts a fresh conversation.",
+        state: "sent",
+      },
+    ]);
     expect(await exportedTraces()).toEqual([]);
   });
 
