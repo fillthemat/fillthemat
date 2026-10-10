@@ -28,7 +28,7 @@ describe("assistant instructions", () => {
     expect(tools.prepare_booking.description).toContain(
       "Eligibility is determined only by offering age ranges",
     );
-    expect(tools.list_trial_slots.description).toContain(
+    expect(tools.list_trial_occurrences.description).toContain(
       'Never invent, round, or "hold" a time',
     );
     expect(tools.prepare_booking.description).toContain(
