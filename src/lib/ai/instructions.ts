@@ -37,9 +37,7 @@ export type SchoolPromptInput = {
   faqs: Array<{ question: string; answer: string }>;
 };
 
-export function buildBookingAgentInstructions(
-  school: SchoolPromptInput,
-): string {
+export function assistantInstructions(school: SchoolPromptInput): string {
   const faqs =
     school.faqs.length === 0
       ? "(none)"
