@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { getDb } from "@/db";
+import { getDb, type Transaction } from "@/db";
 import {
   type WhatsAppBookingIntent,
   whatsappBookingIntents,
@@ -26,13 +26,15 @@ export type BookingIntentInput = {
  *
  * The agent NEVER writes this — the platform calls it after a successful
  * `prepare_booking` tool capture.
+ * An optional transaction includes the intent in the caller's Turn commit.
  */
 export async function upsertPendingBookingIntent(
   input: BookingIntentInput,
+  transaction?: Transaction,
 ): Promise<WhatsAppBookingIntent> {
   const db = getDb();
   const now = input.now ?? new Date();
-  return db.transaction(async (tx) => {
+  const write = async (tx: Transaction) => {
     await tx
       .update(whatsappBookingIntents)
       .set({ state: "superseded", updatedAt: now })
@@ -58,7 +60,8 @@ export async function upsertPendingBookingIntent(
       .returning();
     if (!intent) throw new Error("whatsapp_booking_intent_insert_failed");
     return intent;
-  });
+  };
+  return transaction ? write(transaction) : db.transaction(write);
 }
 
 /** Mark an expired row expired and return null (intents are short-lived). */

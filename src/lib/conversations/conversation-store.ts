@@ -13,7 +13,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import { type Database, getDb } from "@/db";
+import { type Database, getDb, type Transaction } from "@/db";
 import {
   type Conversation,
   conversations,
@@ -321,23 +321,27 @@ export async function hasWhatsAppMessage({
   return Boolean(row);
 }
 
-/** Returns the saved row id, or undefined for an already-saved message. */
-export async function appendMessage({
-  id,
-  conversationId,
-  messageId,
-  role,
-  parts,
-  completion = "complete",
-}: {
-  id?: string;
-  conversationId: string;
-  messageId: string;
-  role: UIMessage["role"];
-  parts: UIMessage["parts"];
-  completion?: typeof messages.$inferInsert.completion;
-}): Promise<string | undefined> {
-  return getDb().transaction(async (tx) => {
+/** Returns the saved row id, or undefined for an already-saved message.
+ * An optional transaction commits the append with the caller's other writes. */
+export async function appendMessage(
+  {
+    id,
+    conversationId,
+    messageId,
+    role,
+    parts,
+    completion = "complete",
+  }: {
+    id?: string;
+    conversationId: string;
+    messageId: string;
+    role: UIMessage["role"];
+    parts: UIMessage["parts"];
+    completion?: typeof messages.$inferInsert.completion;
+  },
+  transaction?: Transaction,
+): Promise<string | undefined> {
+  const write = async (tx: Transaction) => {
     const [row] = await tx
       .insert(messages)
       .values({
@@ -368,7 +372,8 @@ export async function appendMessage({
         );
     }
     return row?.id;
-  });
+  };
+  return transaction ? write(transaction) : getDb().transaction(write);
 }
 
 /** Tenant-check and attach the first contact within the booking transaction. */

@@ -9,7 +9,7 @@ import {
   notInArray,
   sql,
 } from "drizzle-orm";
-import { getDb } from "@/db";
+import { type Database, getDb } from "@/db";
 import {
   schools,
   type WhatsAppDelivery,
@@ -181,8 +181,8 @@ export type EnqueueWhatsAppDelivery = {
 export async function enqueueWhatsAppDelivery(
   input: EnqueueWhatsAppDelivery,
   now = new Date(),
+  db: Pick<Database, "insert"> = getDb(),
 ): Promise<string | null> {
-  const db = getDb();
   const [row] = await db
     .insert(whatsappDeliveries)
     .values({

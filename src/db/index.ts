@@ -19,3 +19,4 @@ export function getDb() {
 }
 
 export type Database = ReturnType<typeof getDb>;
+export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];

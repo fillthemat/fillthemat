@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { getDb } from "@/db";
+import { getDb, type Transaction } from "@/db";
 import {
   contacts,
   emailDeliveries,
@@ -42,6 +42,7 @@ export type CreateLeadInput = {
  * Shared lead write path (decision J / Phase 5). Web (`POST /api/leads`) and the
  * WhatsApp worker both call this so the transaction/email/funnel semantics stay
  * in one place.
+ * A caller's transaction can include the lead and its outboxes in a Turn commit.
  *
  * - Contacts are upserted keyed `(school_id, email)` when an email is present
  *   (web semantics unchanged) and `(school_id, phone)` when there is none
@@ -52,13 +53,16 @@ export type CreateLeadInput = {
  * - Owner-lead delivery always stays email (`recipient` = school notification
  *   email); the funnel event records `{ channel: 'whatsapp' }` for WhatsApp.
  */
-export async function createLead(input: CreateLeadInput) {
+export async function createLead(
+  input: CreateLeadInput,
+  transaction?: Transaction,
+) {
   const db = getDb();
   const email = input.contact.email
     ? normalizeEmail(input.contact.email)
     : null;
 
-  return db.transaction(async (tx) => {
+  const write = async (tx: Transaction) => {
     const contactValues = {
       schoolId: input.school.id,
       email,
@@ -191,5 +195,6 @@ export async function createLead(input: CreateLeadInput) {
           : { hasOffering: Boolean(input.offeringId) },
     });
     return row;
-  });
+  };
+  return transaction ? write(transaction) : db.transaction(write);
 }
