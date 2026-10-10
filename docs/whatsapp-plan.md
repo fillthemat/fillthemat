@@ -17,7 +17,7 @@ It began as a spike-and-plan (no code in that pass). Implementation landed in la
 
 | Layer | Where | Why it survives |
 | --- | --- | --- |
-| Assistant | `src/lib/ai/assistant.ts` — `ToolLoopAgent` + `stopWhen: isStepCount(8)` + tools `list_trial_offerings` / `list_trial_slots` / `prepare_booking` / `capture_lead`; WhatsApp calls its `completedReply`. Model from `src/lib/ai/language-model.ts`: `gateway(BOOKING_AGENT_MODEL)`, or a scripted local model outside production without a Gateway token | Pure function of (school, school catalog, messages). No browser or stream dependency. |
+| Assistant | `src/lib/ai/assistant.ts` — `ToolLoopAgent` + `stopWhen: isStepCount(8)` + tools `list_trial_offerings` / `list_trial_occurrences` / `prepare_booking` / `request_contact`; WhatsApp calls its `completedReply`. Model from `src/lib/ai/language-model.ts`: `gateway(BOOKING_AGENT_MODEL)`, or a scripted local model outside production without a Gateway token | Pure function of (school, school catalog, messages). No browser or stream dependency. |
 | Immutable safety rules | `src/lib/ai/system-prompt.ts:1-10` — agent MAY answer/qualify/list/prepare but "MUST NOT create a booking or a lead"; tenant data delimited + treated as untrusted (`:98-115`, `assertTenantCannotOverride` test) | Hostile-input invariant, channel-independent. |
 | Slot math | `src/lib/schedule/occurrences.ts:77-145` (`listOpenSlots`, 14-day horizon, 120-min lead) + `slot-id.ts` encode/parse | Pure. |
 | Booking write core | `src/lib/schedule/book-slot.ts` — single transaction, `(school_id, idempotency_key)` replay, `FOR UPDATE`, atomic `bookedCount < capacity` increment, contact/participant upsert, delivery enqueue, funnel event | The canonical write path; WhatsApp calls it with platform-minted keys. |
@@ -81,7 +81,7 @@ User            Meta              /api/webhooks/whatsapp        Agent (server)  
  |                |--------------------->| verify sig + dedupe      |                    |                |
  |                | 200                   | lock conversation       |                    |                |
  |                |                       | load history → agent    |                    |                |
- |                |                       |------------------------>| list_trial_slots  |                |
+ |                |                       |------------------------>| list_trial_occurrences |                |
  |                |                       |        slot list (text) |                    |                |
  |  "1" (slot)    |                       |-------------------------|                    |                |
  |<---------------| webhook (button/text) |  agent → prepare_booking|                    |                |

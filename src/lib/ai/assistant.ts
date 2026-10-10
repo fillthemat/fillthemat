@@ -100,13 +100,13 @@ export async function completedReply({
   const lastPrepareBooking = result.staticToolResults.findLast(
     (toolResult) => toolResult.toolName === "prepare_booking",
   );
-  const lastCaptureLead = result.staticToolResults.findLast(
-    (toolResult) => toolResult.toolName === "capture_lead",
+  const lastContactRequest = result.staticToolResults.findLast(
+    (toolResult) => toolResult.toolName === "request_contact",
   );
   return {
     text: result.text.trim(),
     bookingIntent: bookingIntentFromResult(lastPrepareBooking?.output),
-    leadRequest: leadRequestFromResult(lastCaptureLead?.output),
+    leadRequest: leadRequestFromResult(lastContactRequest?.output),
     provenance,
   };
 }

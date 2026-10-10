@@ -150,3 +150,43 @@ bun run lint
 
 Tests exercise actual `completedReply` with a scripted AI SDK model plus the
 public scoring/comparison seams, without credentials or network.
+
+## Tool-name replay check (#99)
+
+`scripts/assistant-replay-check.ts` sends a JSON-round-tripped saved web-chat
+history containing **both** `tool-list_trial_slots` and `tool-capture_lead` to
+the real Gateway `google/gemini-2.5-flash` model. It exercises `completedReply`
+and the actual web-chat `streamedReply` path, checks a completed nonempty reply,
+and records the model-boundary history names and registered names. Calls are
+paced at 40 seconds; the script never uses the scripted local fallback.
+
+```bash
+bun --no-env-file --env-file=/path/to/main/.env.production.local \
+  --env-file=/path/to/main/.env.local scripts/assistant-replay-check.ts \
+  /path/to/private/replay.json
+```
+
+Keep the report private, as with eval reports. The matching offline regression
+test retains the old saved names rather than rewriting the fixture.
+
+**October 9, 2026 outcome:** both completed and streamed replies succeeded with
+only the four current names registered; both legacy tool results reached the
+Gateway model unchanged. No compatibility aliases are needed. AI SDK 7.0.128's
+agent stream validation converts missing terminal tools to dynamic history
+parts. The model replied rather than erroring, but declined the requested recap;
+this probe establishes replay compatibility, not semantic reply quality (the
+fixed eval gate checks the latter). Private report: `issue-99-replay.json` in the
+session's OpenCode temporary directory.
+
+**#99 eval gate:** same assistant/judge model `google/gemini-2.5-flash`, candidate
+paced at `--interval-ms 40000`. Complete 12-case baseline experiment
+`spec-92-baseline-e76e0cc-paced-20261009` (`1cdaf02e-bb96-4d19-b337-46cdf7bb5fe6`)
+compared with `spec-92-issue-99-glossary-0a98541-20261009`
+(`8b6b1a60-d2ea-4564-b5a8-0fabc97e76f0`): **compare exit 0, no per-case
+regressions**. Private reports are `spec-92-baseline.json` and
+`issue-99-candidate.json` in the same OpenCode temporary directory. Every metric
+passed for ten cases; `explicit-contact` and `chosen-occurrence-missing-name`
+retain their baseline `reply-rules` failures (premature contact promise and not
+asking the participant's name). `no-open-occurrences` improved from a failing
+reply rule to passing. No prompt/description changes were made to fix existing
+baseline failures; those belong to the separate prompt redesign (#98).
