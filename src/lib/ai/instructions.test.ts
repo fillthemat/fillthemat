@@ -15,6 +15,9 @@ describe("assistant instructions", () => {
     expect(PLATFORM_INSTRUCTIONS).toContain(
       "Never tell someone they are booked or will be contacted",
     );
+    expect(PLATFORM_INSTRUCTIONS).toContain(
+      "still needs their confirmation through the platform, not confirmation or automatic follow-up from the school",
+    );
     expect(PLATFORM_INSTRUCTIONS).not.toContain("You may answer questions");
     expect(PLATFORM_INSTRUCTIONS).not.toMatch(
       /eligibility|age ranges|timeslot|Class times|slot rules/i,
