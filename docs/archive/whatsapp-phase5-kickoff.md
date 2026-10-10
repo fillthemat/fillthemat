@@ -20,7 +20,8 @@ recorded in `docs/decisions/whatsapp-cron-after.md`. **Phases 1–4 are ALREADY 
   `generatingAt`.
 - Phase 4: `whatsapp_jobs` enqueue-then-ack worker (`FOR UPDATE SKIP LOCKED`), agent driver
   (`runBookingAgentToCompletion`, D3), `whatsapp_deliveries` claim/send, status webhook, 24h window +
-  template fallback, `src/lib/whatsapp/client.ts` (Graph transport + noop), PLUS the spike follow-up:
+  explicit utility templates (no generic closed-window fallback), `src/lib/whatsapp/client.ts`
+  (Graph transport + noop), PLUS the spike follow-up:
   `next after()` inline worker wake in the webhook, synchronous typing indicator, Hobby-safe daily cron
   (`0 5 * * *`), stuck-claim recovery, and a `sendWhatsAppTypingIndicator` client helper.
 

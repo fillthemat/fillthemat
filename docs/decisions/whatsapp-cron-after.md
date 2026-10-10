@@ -1,6 +1,13 @@
 # Spike: Supabase-triggered WhatsApp worker vs. `after()` — decision doc
 
 **Status:** accepted and implemented (`after()` in the WhatsApp webhook + typing indicator + Hobby-safe daily cron `0 5 * * *` on `/api/cron/whatsapp`). Do not reopen unless production needs sub-daily retries.
+
+**Retry update (2026-10-09, #79 implemented):** active worker runs now retry WhatsApp jobs/deliveries
+at roughly 10/20/40/80 seconds within four minutes from entry, with a five-execution cap. The daily
+sweeper continues remaining work without resetting counts. This does not add a sub-daily timer outside
+an active run; Vercel Pro cron / Supabase `pg_cron` remain deferred for revisit. Later references here
+to retries becoming daily describe the original scheduler tradeoff, not the new in-run loop. Current
+behavior: `docs/whatsapp-plan.md` §1.6; decision record: `whatsapp-retry-limits-research.md`.
 **Date:** 2026-09-11
 **Scope:** evaluate replacing the Vercel 1-minute cron that PR #34 adds for the
 WhatsApp outbound worker with (a) a Supabase `pg_cron`/pgmq trigger, or

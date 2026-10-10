@@ -5,6 +5,8 @@ Do not re-run the spike or Phase 5.
 
 This file is the binding channel spec: §4 (A–L) plus the phase log below. Worker wake-up is `after()`
 in the inbound webhook plus a Hobby-safe daily cron — see `docs/decisions/whatsapp-cron-after.md`.
+The implemented retry policy in §1.6 supersedes older phase-era retry descriptions; decision record:
+`docs/decisions/whatsapp-retry-limits-research.md` ([#79](https://github.com/fillthemat/fillthemat/issues/79)).
 
 It began as a spike-and-plan (no code in that pass). Implementation landed in later PRs (Phases 1–4 on
 `main`, Phase 5 assumed landed). Phase sections 1–5 are historical how-we-got-here, not open tasks.
@@ -23,7 +25,7 @@ It began as a spike-and-plan (no code in that pass). Implementation landed in la
 | Booking write core | `src/lib/schedule/book-slot.ts` — single transaction, `(school_id, idempotency_key)` replay, `FOR UPDATE`, atomic `bookedCount < capacity` increment, contact/participant upsert, delivery enqueue, funnel event | The canonical write path; WhatsApp calls it with platform-minted keys. |
 | Public gates | `getPublicSchoolBySlug` / `getSchoolForLandingAccess` (`src/lib/public.ts:29-66`) — approved+published | Same gate semantics apply to WhatsApp. |
 | Persistence shape | `messages` rows hold `UIMessage` **parts** (`schema.ts:375-396`, `ai@7.0.84` idiom) | A text channel can reuse parts verbatim (text parts + tool parts). |
-| Delivery state machine pattern | `email_deliveries` (`schema.ts:522+`): `pending→claimed→sent→delivered\|bounced\|complained`, `failed` + `nextAttemptAt` backoff capped 60 min (`deliveries.ts:5-9`), `FOR UPDATE SKIP LOCKED` claiming (`deliveries.ts:228-256`), `providerIdempotencyKey` unique (`:285,296`), `providerId` correlation | Direct template for `whatsapp_deliveries`. |
+| Delivery state machine pattern | `email_deliveries`: `pending→claimed→sent→delivered\|bounced\|complained`, retryable `failed`, terminal `dead`, five started executions, minute-based backoff; `FOR UPDATE SKIP LOCKED` fresh/retry lanes, unique `providerIdempotencyKey`, `providerId` correlation | Shared policy in `src/lib/retry-policy.ts`; WhatsApp has seconds-based in-run retries (§1.6). |
 | Webhook route pattern | `src/app/api/webhooks/resend/route.ts:7-49` — raw `request.text()`, size cap 64 KB → 413, signature verify, fast 200 ack, map to state enum | Copy for `/api/webhooks/whatsapp`. |
 | Degradable dev pattern | `src/lib/dev-flags.ts` (`isLocalEmailNoop`) — non-prod + missing key → stub that **still advances the real state machine** (`deliveries.ts:96-110`) | Template for `isLocalWhatsAppNoop()`. |
 
@@ -61,8 +63,9 @@ OUTBOUND (Fillthemat → WhatsApp user)
     → if 24h customer-service window open (last inbound < 24h): free-form text
        POST https://graph.facebook.com/v23.0/<phone_number_id>/messages
        {messaging_product, recipient_type, to, type:"text", text:{body}}
-    → if window closed: template message (pre-approved, per language)
-       {type:"template", template:{name, language:{code}, components}}
+    → explicit template delivery: template message (pre-approved, per language; window not required)
+        {type:"template", template:{name, language:{code}, components}}
+    → text/interactive with closed or missing window: dead (no generic template substitution)
     → store wamid in providerId; status webhook (sent|delivered|read|failed) updates state
 
 WRITE PATHS (platform-created, after in-chat confirmation)
@@ -99,9 +102,12 @@ User            Meta              /api/webhooks/whatsapp        Agent (server)  
   unique for email-present rows. Migrates existing data untouched (email stays set for all current rows).
 - `conversations`: add a WhatsApp channel key — recommended `wa_id_hash text` nullable + partial unique
   `(school_id, wa_id_hash)` (or a `channel` column; Phase 3 decides exact shape). `resumeTokenHash` stays.
-- `whatsapp_deliveries` (new, parallel to `email_deliveries`): `state` (`pending|claimed|sent|delivered|read|failed`),
+- `whatsapp_deliveries` (parallel to `email_deliveries`): `state` (`pending|claimed|sent|delivered|read|failed|dead`),
   `recipientWaId`, `phoneNumberId`, `providerId` (wamid), `providerIdempotencyKey` unique, `templateName/params`,
-  `windowExpiresAt`, `attempts`, `nextAttemptAt`, `claimedAt/claimedBy`, `lastError`.
+  `windowExpiresAt`, `attempts`, `nextAttemptAt`, `claimedAt/claimedBy`, `lastError`, `failureReason`,
+  `failureCode`, `terminalCause`.
+- `whatsapp_jobs`: `state` (`pending|claimed|done|failed|dead`), inbound payload + unique `dedupeKey`,
+  `attempts`, due/claim fields, `lastError`, `failureReason`, `terminalCause`.
 - `leads.landingSessionId`: keep column but feed WhatsApp leads a synthesized session
   (`utm_source='whatsapp'`, wa-keyed) instead of relaxing the FK (least-surprise, keeps analytics).
 
@@ -117,6 +123,63 @@ WHATSAPP_GRAPH_BASE          # optional override, default https://graph.facebook
 Local dev: no values needed — `isLocalWhatsAppNoop()` (non-prod + no token) logs + advances
 `whatsapp_deliveries` to terminal states. `bun run setup` prints a hint and leaves them blank.
 `bun run doctor` gains `WHATSAPP_*` report lines.
+
+### 1.6 Bounded retries and failure notifications (implemented, #79)
+
+Source: `src/lib/retry-policy.ts`, `src/lib/whatsapp/{jobs,deliveries,worker}.ts` and
+`src/lib/email/deliveries.ts`.
+
+- **Five started executions total**, not five retries, for inbound WhatsApp jobs and every WhatsApp/email
+  delivery. The count is saved before side effects; accepted sends and crashed executions consume it.
+  A fifth success is allowed. Failed status callbacks use the accepted send's count without incrementing
+  it again. Single-flight deferrals do not consume an execution. WhatsApp delivery school/window preflight
+  rejection does not invoke transport or consume an outbound execution.
+- **`failed` is retryable; `dead` is terminal.** Shared policy stops known permanent failures immediately:
+  unknown phone mapping, missing/unapproved school, closed window, missing credentials, and Meta's
+  recipient, payload, template, auth/permission or policy/account failures. Rate limits, temporary service
+  failures, network/HTTP/malformed responses and unknown/no-code failures get bounded retries. Classification
+  uses machine reasons/codes/details, not human error prose. The code matrix is in the decision record.
+  Email uses the same cap with its own request/auth/recipient vs transient provider classification.
+- **Claims have two lanes**, ordered by `created_at, id` before the limit: jobs **8 fresh + 2 retry**,
+  WhatsApp deliveries **20 + 5**, email deliveries **20 + 5**. Fresh means `attempts = 0`; retries include
+  recovered pending rows with nonzero counts. Unused capacity refills from the other lane. Due gates and
+  `SKIP LOCKED` remain; this is preference among available rows, not global or per-conversation FIFO.
+- **WhatsApp retries in the same run:** initial job/delivery batches use those lanes, then the worker
+  claims retries only (one row per queue per pass), sleeping for persisted due times at roughly
+  **10/20/40/80 seconds** after executions 1–4. It stops when no retry is due before its deadline or
+  **four minutes from run entry** have elapsed. It does not chase newly arriving fresh jobs. Started work
+  is not forcibly cancelled; the deadline prevents starting further queued work and releases untouched
+  claims. Both inbound webhook `after()` and daily cron run this worker. Status-only callbacks persist
+  their decisions but do not wake it. The **05:00 UTC daily sweeper continues the same budget**, never
+  resets it. Email retains **1/2/4/8-minute** due times and a single batch per send run, not a fast loop.
+- **Callbacks/recovery:** duplicate or older failed callbacks cannot reschedule the same accepted send;
+  `delivered`/`read` cannot regress to retries, and `dead` cannot revive. Stale claims keep execution
+  counts and stop at the cap. Reservation/finalization are fenced by claim owner, timestamp, state and
+  count, so an old worker cannot overwrite recovery. `dead` retains payload, keys, last error, structured
+  reason/code (where present), count and cause (`permanent`, `attempts_exhausted`, `stale`); claims clear.
+  No automatic replay exists. Bounded retries do not guarantee exactly-once delivery across network ambiguity.
+- **Booking confirmation:** an unsent `booking_confirmation` delivery linked to a booking stops at/after
+  class start with cause `stale`. Otherwise, terminal failure atomically enqueues one
+  `owner_whatsapp_confirmation_failed` email per booking, telling the School Owner to contact the prospect.
+  No owner email for stale confirmations, ordinary replies, or other templates, and none once the class
+  starts. It is ordinary capped email work, sent by the email run/maintenance, not by the WhatsApp worker.
+  Email death never enqueues another notification.
+- **Prospect apology:** transient exhaustion of an inbound job atomically enqueues at most one fixed
+  plain-text delivery keyed `job-fallback/<job.id>`: “Sorry, we're having trouble replying right now.
+  Please message us again in a bit.” Only with an open window, recipient and matching school mapping;
+  never on permanent failure. Tail exhaustion attempts this specific delivery inline within the remaining
+  budget. Its own bounded failures cannot trigger another apology. This is **not** a closed-window
+  template fallback. Today its deadline uses the latest original inbound **receipt time** for that
+  school number/recipient +24h, not conversation expiry or retry processing time. Verified Meta message
+  timestamps and other processing-time window calculations remain the **#78 pre-pilot gate**.
+- **Visibility, not alerting:** one privacy-safe `queue.dead` log per successful terminal transition
+  (row/school IDs, machine reason/code, cause, executions, run ID; no body, phone or raw provider ID).
+  Worker results separate jobs `{claimed, done, retrying, dead, deferred}` and deliveries
+  `{claimed, sent, retrying, dead, deferred}`. They count outcomes across executions, not unique rows;
+  inline sends are separate from delivery sweep counters, and recovery deaths can exceed claimed counts.
+  WhatsApp cron returns these counters and relies on logs; it does **not** write maintenance `cron_runs`.
+  No operator configuration/credential alerts exist (accepted pilot gap). Minute-scale timed wakes outside
+  active runs (Vercel Pro cron or Supabase `pg_cron`) are deferred; see `docs/known-gaps.md`.
 
 ---
 
@@ -238,14 +301,15 @@ Ended conversations and their transcripts are kept; there is no transcript purge
 ### Phase 4 — Agent loop + outbound (local: full conversation via stub)
 
 **Goal:** inbound message drives the real agent and replies over WhatsApp: server-side run-to-completion,
-outbound queue, template fallback for the 24h window, status webhook.
+outbound queue, 24h-window enforcement plus explicit utility templates, status webhook.
 
 **Concrete changes**
 - Server-side agent driver: load history → `validateUIMessages([...history, inbound])` →
   the assistant's `completedReply(...)`, run **to completion** (see D3) → extract text parts →
   enqueue reply.
 - `whatsapp_deliveries` claim/send worker: inline-on-create attempt + cron `FOR UPDATE SKIP LOCKED` reuse
-  (D4): if `windowExpiresAt > now` send free-form text; else send template message (D5 — template library).
+  (D4): explicit template rows send their registered template (D5); text/interactive rows require
+  `windowExpiresAt > now`, otherwise stop `dead`. No generic template fallback.
 - `src/lib/whatsapp/client.ts` (Graph transport): `WHATSAPP_SYSTEM_USER_TOKEN` + versioned base URL;
   `isLocalWhatsAppNoop()` logs + advances state when token absent.
 - Extend webhook to accept status payloads (`statuses[].status` sent|delivered|read|failed, recipient_id,
@@ -271,7 +335,8 @@ pending→claimed→sent (stub) and a synthetic `status-delivered.json` flips it
 
 **Risks**: Meta expects a fast webhook ack — the agent must not run synchronously inside the webhook
 handler without a timeout strategy; prefer enqueue-then-ack with the worker doing the run, or bound the
-agent run. 24h-expiry is only visible at send time (error `131030`); fall back to template on failure.
+agent run. Check the stored window before sending; Meta re-engagement error `131047` also stops the
+row permanently. Only explicit utility-template deliveries can send outside the window.
 
 ### Phase 5 — WhatsApp-sourced leads and bookings (local: full funnel via replay)
 
@@ -329,9 +394,9 @@ template send outside the window; a real WhatsApp booking in staging then produc
 **Resolved decisions at this phase**
 - **D10 — ship order.** **RESOLVED (decision D): leads first, bookings second**, one pilot school approved +
   published, dashboard flag per school toggles WhatsApp active.
-- **D11 — retry cadence in prod.** If real send volume needs sub-daily retries, add a second Vercel cron
-  entry (e.g. every 5 min on the Pro plan) — currently one cron exists (`vercel.ts:7`). **RESOLVED: defer
-  until pilot shows need** (no action by default).
+- **D11 — timed wake cadence in prod.** Active WhatsApp runs now retry within seconds (§1.6).
+  Outside a run, the daily sweeper remains the safety net. Minute-scale timed wakes (Vercel Pro cron
+  or Supabase `pg_cron`) remain **deferred for revisit**; no sub-daily Vercel cron on Hobby.
 
 ---
 
@@ -377,8 +442,10 @@ implementer; reversing one is a product decision, not an implementation detail. 
 7. **App Review**: required if used by people without a role on the app/business; budget time before
    public rollout.
 8. **Env on Vercel**: the five `WHATSAPP_*` vars; keep `bun run setup`-managed local env separate.
-9. **Monitoring/idempotency/retry**: `whatsapp_deliveries` state visibility, cron run rows, wamid dedupe,
-   backoff, 24h-window template fallback, per-wa_id caps; alert on `failed` spikes.
+9. **Monitoring/idempotency/retry**: inspect WhatsApp jobs/deliveries `failed` and `dead`, safe terminal
+    logs and WhatsApp cron counters (not maintenance `cron_runs`); wamid dedupe, five-execution cap,
+    fresh/retry lanes, in-run retry budget and per-wa_id caps. Closed-window text fails closed (`131047`),
+    with no generic template fallback. Operator alerting is absent; #78 must land before the pilot.
 10. **Rollout order**: staging pilot school → real test phone → leads → bookings → second school → publish.
 
 ---
@@ -410,9 +477,9 @@ Supersedes/augments the noted subsections above. Everything not mentioned here s
 
 **Decision: enqueue-then-ack.** The webhook never runs the agent. It verifies, normalizes, enqueues one
 `whatsapp_jobs` row per inbound message (idempotent by `wamid`), and returns 200 immediately. A dedicated
-worker claims jobs with `FOR UPDATE SKIP LOCKED` and runs the agent + outbound send. `after()` (Vercel
-background functions) is a *later* upgrade path — verify it exists in the installed `next@16.3.3` docs
-before ever adopting — not v1.
+worker claims jobs with `FOR UPDATE SKIP LOCKED` and runs the agent + outbound send. The subsequently
+implemented wake decision uses inbound-webhook `after()` plus daily cron at 05:00 UTC
+(`docs/decisions/whatsapp-cron-after.md`), with the bounded in-run retries in §1.6.
 
 Rationale: an 8-step tool loop can exceed both Vercel's function timeout and Meta's webhook expectations.
 This reuses the exact `claimDue*`/backoff machinery already proven in `src/lib/email/deliveries.ts`, and it
@@ -421,27 +488,28 @@ works identically in local dev.
 Concrete changes (**Phase 4 scope**; relocate D4's "inline send" inside the worker):
 
 - New table `whatsapp_jobs` (Drizzle `app` schema): `id` uuid pk; `school_id` nullable (unknown
-  `phone_number_id` → `state=failed`, `last_error='unknown_phone_number'`); `phone_number_id` text not
+  `phone_number_id` → `state=dead`, `failure_reason='unknown_phone_number'`); `phone_number_id` text not
   null; `dedupe_key` text not null **unique** (= inbound `wamid`); `kind` text not null default
   `'inbound_message'`; `payload` jsonb not null; `state` enum `whatsapp_job_state`
-  (`pending|claimed|done|failed`); `attempts` int default 0; `next_attempt_at`; `claimed_at`; `claimed_by`;
-  `last_error`; timestamps; index `(state, next_attempt_at)`.
+  (`pending|claimed|done|failed|dead`); `attempts` int default 0 (started executions); `next_attempt_at`;
+  `claimed_at`; `claimed_by`; `last_error`; `failure_reason`; `terminal_cause`; timestamps;
+  index `(state, next_attempt_at)`.
 - `src/app/api/cron/whatsapp/route.ts` — `cronSecretMatches` gate → claim due jobs → process each → 200
   (mirror `src/app/api/cron/maintenance/route.ts`).
-- `vercel.ts` — add a second cron entry **every 1 minute** (mirror the existing entry; verify the exact
-  shape in the file before editing).
+- `vercel.ts` — WhatsApp daily sweeper **`0 5 * * *`**, separate from maintenance; no minute cron on Hobby.
 - `src/lib/whatsapp/worker.ts` — claim + process: resolve school via `phone_number_id` → find/create
   conversation keyed `(school_id, wa_id_hash)` → persist inbound as UIMessage parts with `messageId =
   wamid` (also gives retry idempotency via the existing `messages` unique) → claim `generatingAt`
   single-flight (mirror `chat/route.ts`; if already generating, reschedule the job shortly instead of
   failing) → `validateUIMessages([...history, inbound])` → the assistant's `completedReply(...)`, run to
   completion (D3) → persist assistant message → enqueue `whatsapp_deliveries` + attempt send (stub or Graph) →
-  release `generatingAt` → mark `done`. On error: mark `failed` + backoff, and always release the lock.
+  release `generatingAt` → mark `done`. On error: shared policy chooses retryable `failed` or terminal
+  `dead` within five executions (§1.6), and always release the lock.
 - `scripts/whatsapp-worker.ts --once` + `package.json` script `whatsapp:worker` — local one-shot drain;
   the replay CLI enqueues, the worker processes.
 
-Accepted latency: ≤ ~1 min worst case (Vercel cron floor is 1 minute). If pilot UX needs sub-minute
-replies, revisit `after()` — do not silently switch.
+Normal inbound replies start in the same invocation via `after()`; there is no one-minute wake guarantee
+for idle/recovered work. The daily sweeper is the safety net after an active run ends.
 
 ## Phase 5 additions — pending booking intent + structured capture (RESOLVED)
 
