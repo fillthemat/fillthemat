@@ -11,6 +11,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Read only the recipient needed by job-death fallback from a persisted payload. */
+export function jobRecipientWaId(payload: unknown): string | null {
+  return isRecord(payload) &&
+    typeof payload.waId === "string" &&
+    payload.waId.trim()
+    ? payload.waId
+    : null;
+}
+
 function textFromMessage(message: Record<string, unknown>): string | null {
   const text = message.text;
   if (isRecord(text) && typeof text.body === "string" && text.body.trim()) {

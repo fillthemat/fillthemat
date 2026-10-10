@@ -13,6 +13,8 @@ import { verifyWhatsAppSignature } from "@/lib/whatsapp/signature";
 import { parseInboundWhatsAppStatuses } from "@/lib/whatsapp/status";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 
+export const maxDuration = 300;
+
 /**
  * The body is read with `request.text()` BEFORE any signature check so the
  * HMAC is computed over the exact raw bytes Meta signed — never

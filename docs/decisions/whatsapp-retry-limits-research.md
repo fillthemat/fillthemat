@@ -1,12 +1,66 @@
 # Spike: bounded WhatsApp retries and fresh-first claims — decision notes
 
-**Status:** research; maintainer answers recorded 2026-10-09 (see [Maintainer decisions](#maintainer-decisions-2026-10-09)), which supersede the TL;DR where they differ. Specified in [#79](https://github.com/fillthemat/fillthemat/issues/79); not implemented.
+**Status:** **implemented** — [#79](https://github.com/fillthemat/fillthemat/issues/79), implementation
+tickets #80–#88 and documentation #89. The shipped summary below and `docs/whatsapp-plan.md` §1.6
+describe current behavior. Maintainer answers and grilling refinements superseded the original spike
+recommendations; historical code findings/options below are not current runtime instructions.
 **Date:** 2026-10-09
-**Scope:** [issue #68](https://github.com/fillthemat/fillthemat/issues/68), before the Phase 6 pilot. Code checked at `0dcc40f`; vendor documentation fetched on the date above. No code, database, env, or scheduler changes were made.
+**Original research scope:** [issue #68](https://github.com/fillthemat/fillthemat/issues/68), before the
+Phase 6 pilot; superseded by #79. The spike checked code at `0dcc40f` and fetched vendor documentation
+on the date above. The research pass made no code/database/env/scheduler changes; subsequent tickets
+implemented the decisions.
 
 ---
 
-## TL;DR recommendation
+## Shipped outcome (#79)
+
+- Shared policy: `src/lib/retry-policy.ts`; five **started executions** for WhatsApp inbound jobs and all
+  WhatsApp/email sends. Permanent machine reasons/provider failures stop immediately; transient and
+  unknown failures retry within the cap. `dead` is terminal, `failed` remains retryable. Generated
+  Drizzle migrations add all three `dead` enums, structured failure metadata and owner email kind;
+  legacy failed WhatsApp deliveries with a provider ID count as at least one execution.
+- Claim lanes reserve **8 fresh + 2 retry jobs**, **20 + 5 WhatsApp deliveries**, **20 + 5 email deliveries**,
+  oldest-first by `created_at, id` before the limit, with unused capacity refilled under `SKIP LOCKED`.
+  Existing due indexes remain. This supersedes the proposed attempts-first single ordering.
+- WhatsApp retries use **10/20/40/80-second** due times inside a worker run bounded to **four minutes from
+  entry** (initial batches, then retry-only claims). Started work is not forcibly cancelled; no new queued
+  execution starts after the deadline. Inbound `after()` and daily cron share this loop; status-only
+  callbacks do not wake it. Daily sweeps continue counts, not reset them. Email retains **1/2/4/8-minute**
+  due times and a single batch per run, not fast retries.
+- Accepted sends/crashes consume executions; callback failure uses the same execution without incrementing.
+  Duplicate/out-of-order failures cannot reschedule that send; delivered/read cannot regress to retries;
+  dead cannot revive. Stale recovery preserves counts and stops exhaustion. Claim-owner/timestamp/state/
+  count fences prevent old workers overwriting recovery; single-flight deferral consumes no execution.
+- `dead` keeps payload, keys, count, last error, reason/code where present and terminal cause
+  (`permanent`, `attempts_exhausted`, `stale`); clears claims; never automatically replays. Safe
+  `queue.dead` logging occurs once per successful terminal transition. Worker counters separate done/sent,
+  retrying, dead and deferred. WhatsApp cron returns counters and uses logs, **not maintenance `cron_runs`**.
+- Non-stale WhatsApp booking-confirmation death atomically enqueues one ordinary
+  `owner_whatsapp_confirmation_failed` email per booking. At/after class start, unsent confirmations stop
+  stale and owner mail is suppressed. No owner mail for ordinary replies/other templates; email death
+  triggers no notification. There is no separate batching/rate-limit mechanism beyond booking dedupe and
+  normal capped email lanes.
+- Transient inbound-job exhaustion atomically enqueues one fixed plain-text apology per job, only with
+  an open window and valid recipient/school mapping. Its own capped failure cannot recurse. The retry
+  tail attempts only this job's fallback inline within its remaining budget, not arbitrary fresh arrivals.
+  This supersedes the early “never notify prospects through the failed channel” recommendation; it is
+  **not** a generic template fallback. Closed-window text/interactive fails closed; the code is **`131047`**.
+- **Still open:** #78 is a pre-pilot gate for verified inbound message timestamps. The apology currently
+  uses latest original receipt time +24h for the same school number/recipient, not retry processing time
+  or 30-day conversation expiry; other window creation still uses processing time. Operator credential/
+  configuration alerts are absent (accepted pilot gap); minute-scale timed wakes outside active runs
+  (Vercel Pro cron or Supabase `pg_cron`) are deferred. See `docs/known-gaps.md`.
+
+Implementation sources: `src/lib/whatsapp/{jobs,deliveries,worker,job-fallback,confirmation-delivery}.ts`,
+`src/lib/email/deliveries.ts`, `src/lib/retry-log.ts`, and the WhatsApp webhook/cron routes.
+No glossary/ADR addition: `dead` and lanes are queue mechanics, not domain terms. The original exact-ID
+cleanup proposal below is historical, not a claim that a broad/shared database cleanup was run.
+The webhook integration suite already deletes its own jobs by its exact suite phone-number ID before
+deleting its School Owner fixture; no broader cleanup is needed or performed by the docs ticket.
+
+---
+
+## Original TL;DR recommendation (historical, superseded where noted above)
 
 1. **Stop permanent failures immediately; allow five total executions for transient/unknown failures** (initial execution + four retries). Keep the existing exponential backoff; stop free-form deliveries earlier when their real customer-service window closes. Apply the same classification to synchronous sends and failed status callbacks (§1–2).
 2. **Add `dead` to both WhatsApp state enums.** Keep `failed` meaning retryable. Retain the row, error and attempt count; exclude `dead` from claims, recovery and automatic resurrection. Log the terminal transition once and monitor terminal counts using the pilot's existing logs/table workflow; no automatic prospect WhatsApp or School Owner email in this issue (§3).
@@ -18,15 +72,15 @@ These are proposed policy choices, not vendor-prescribed limits. The grounding a
 
 ---
 
-## Grounding: what exists today
+## Grounding: pre-implementation snapshot at `0dcc40f` (historical)
 
 - Claims are **Drizzle transactions in TypeScript**, not Postgres stored functions: select due `pending|failed`, lock with `FOR UPDATE SKIP LOCKED`, limit 10 jobs / 25 deliveries, update those IDs to `claimed`, return the original selected rows. Neither select has `ORDER BY` (`src/lib/whatsapp/jobs.ts:37–73`; `src/lib/whatsapp/deliveries.ts:122–161`). Worker processing is sequential: one jobs batch, then one deliveries batch, with inline sends during job processing (`src/lib/whatsapp/worker.ts:143–164,415–450`). The two tables have separate quotas: poison deliveries do not literally consume the ten job slots, but consume worker time; poison jobs can displace new inbound jobs.
 - Migrations are **Drizzle-owned in `drizzle/`**, not `supabase/migrations/` (`drizzle.config.ts:3–10`). Job enum: `pending|claimed|done|failed`; delivery enum: `pending|claimed|sent|delivered|read|failed` (`src/db/schema.ts:46–56`; `drizzle/0005_groovy_raider.sql:1–18`; `drizzle/0001_silky_fantastic_four.sql:1–24`). No terminal failure state exists.
 - Both tables have `attempts DEFAULT 0`, non-null `next_attempt_at DEFAULT now()`, claim fields, `last_error`, timestamps, and a B-tree `(state,next_attempt_at)` due index. Jobs have unique `dedupe_key`; deliveries have unique `provider_idempotency_key`. Deleting a School nulls job `school_id` but cascades deliveries (`src/db/schema.ts:592–672`; `drizzle/0005_groovy_raider.sql:22–23`; `drizzle/0001_silky_fantastic_four.sql:30–33`). No failure code/category column exists.
-- **`attempts` currently counts recorded synchronous failures, not executions.** Failure increments it and sets 1, 2, 4, 8, … minutes, capped at 60, without any limit. Success does not increment it; failed status callbacks and stale-claim recovery do not increment it either (`src/lib/whatsapp/jobs.ts:6–9,92–108,132–152`; `src/lib/whatsapp/deliveries.ts:12–15,179–279,344–362,386–406`). Thus changing only the synchronous failure writers misses repeat accepted-send → failed-callback cycles and repeated crashes.
+- **Before implementation, `attempts` counted recorded synchronous failures, not executions.** Failure incremented it and set 1, 2, 4, 8, … minute due times, capped at 60; the missing execution limit was the bug addressed by #79. Success, failed callbacks and stale recovery did not increment it (`src/lib/whatsapp/jobs.ts:6–9,92–108,132–152`; `src/lib/whatsapp/deliveries.ts:12–15,179–279,344–362,386–406`). Changing only synchronous failure writers would miss accepted-send → failed-callback cycles and repeated crashes.
 - The inbound route schedules `after()` only for inbound messages; status-only callbacks do not wake the worker. It logs persistence failures but still returns 200. The WhatsApp cron authenticates and returns worker counters, **without writing `cron_runs`** (`src/app/api/webhooks/whatsapp/route.ts:79–112`; `src/app/api/cron/whatsapp/route.ts:5–10`). Daily wake is 05:00 UTC (`vercel.ts:18–23`). Backoff is an **earliest eligibility time**, not a timer.
 
-## 1. Failure inventory and classification
+## 1. Failure inventory and classification (original research snapshot)
 
 **Permanent** below means “do not retry this unchanged row automatically,” not “the condition can never be repaired.” Approval, credentials and template approval can change; deliberate replay after repair is different from indefinite polling. **Transient** means bounded retry, not guaranteed recovery. SDK/database exceptions are open-ended, so inventory their catch boundaries and explicitly named errors rather than inventing a finite list of possible library messages.
 
@@ -78,7 +132,9 @@ Meta recommends classification by **code and `error_data.details`**, not titles;
 | `131048`, `131064`, `131049`, `131063`, `130472` | Quality restriction, template-classification enforcement, ecosystem/marketing restriction, marketing disabled, experiment ([Meta][meta-errors]). | **No short automatic retry loop in v1**; terminal/operator review. `131049` is not intrinsically permanent: Meta says wait at least 24h for relevant marketing retries, but this repo owns utility templates, not a marketing retry workflow (`src/lib/whatsapp/templates.ts:10–35`). |
 | Any other code / no code | Client currently accepts arbitrary Graph codes; vendor lists other APIs' media/Flows/registration errors too ([Meta][meta-errors]; `src/lib/whatsapp/client.ts:15–19,54–59`). | **Unknown, bounded** unless clearly deterministic. Do not claim this matrix exhausts future provider codes. |
 
-**Erratum:** `WHATSAPP_WINDOW_CLOSED_CODE = 131030` is unused (`src/lib/whatsapp/client.ts:13`; send path `src/lib/whatsapp/deliveries.ts:214–251`). The fetched current Meta list identifies **`131047`** as re-engagement; it does not list `131030`. Do not use `131030` as the window classifier without separate primary-source verification. Fix misleading references in `docs/whatsapp-plan.md:271–273` and `docs/whatsapp-phase6-kickoff.md:195–197` during implementation.
+**Erratum implemented:** `WHATSAPP_WINDOW_CLOSED_CODE` is **`131047`**, Meta's re-engagement code.
+The shared policy treats it as permanent, and planning/rollout docs now agree. Generic text/interactive
+deliveries fail closed rather than substituting a template.
 
 ## 2. Decision 1 — retry budget and execution semantics
 

@@ -9,10 +9,10 @@ import {
   whatsappDeliveries,
   whatsappJobs,
 } from "@/db/schema";
-import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { post, textInboundPayload } from "@/test/whatsapp-webhook";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 
 loadLocalEnv();
 
@@ -21,6 +21,7 @@ const sql = authSql();
 const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
 const phoneNumberId = `399${Date.now().toString().slice(-9)}`;
+const { runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [phoneNumberId]);
 const waId = "16505557777";
 let schoolId = "";
 

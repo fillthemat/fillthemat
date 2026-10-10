@@ -6,39 +6,87 @@ import {
 } from "./config";
 import { whatsappTemplateComponents } from "./templates";
 
+export type WhatsAppSendFailure =
+  | { ok: false; kind: "missing_credentials"; message: string }
+  | { ok: false; kind: "network_error"; message: string }
+  | {
+      ok: false;
+      kind: "whatsapp_error";
+      code: number | null;
+      subcode: number | null;
+      details: string | null;
+      status: number;
+      message: string;
+    }
+  | { ok: false; kind: "malformed_response"; status: number; message: string }
+  | { ok: false; kind: "http_error"; status: number; message: string };
+
 export type WhatsAppSendOutcome =
-  | { ok: true; providerId: string | null }
-  | { ok: false; code: number | null; message: string };
+  | { ok: true; kind: "accepted"; providerId: string }
+  | { ok: true; kind: "local_noop"; providerId: null }
+  | WhatsAppSendFailure;
 
-export const WHATSAPP_WINDOW_CLOSED_CODE = 131030;
+export type WhatsAppReceiptOutcome =
+  | { ok: true; kind: "receipt_accepted" | "local_noop"; providerId: null }
+  | WhatsAppSendFailure;
 
-type GraphError = {
-  code?: number;
-  error_subcode?: number;
-  message?: string;
+export type WhatsAppGraphDependencies = {
+  fetch?: typeof fetch;
+  token?: string | null;
+  localNoop?: boolean;
 };
+
+export const WHATSAPP_WINDOW_CLOSED_CODE = 131047;
+
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
 
 function graphPost(
   phoneNumberId: string,
   payload: Record<string, unknown>,
-): Promise<WhatsAppSendOutcome> {
-  const token = whatsappSystemUserToken();
+  dependencies?: WhatsAppGraphDependencies,
+  requireMessageId?: true,
+): Promise<WhatsAppSendOutcome>;
+function graphPost(
+  phoneNumberId: string,
+  payload: Record<string, unknown>,
+  dependencies: WhatsAppGraphDependencies | undefined,
+  requireMessageId: false,
+): Promise<WhatsAppReceiptOutcome>;
+
+function graphPost(
+  phoneNumberId: string,
+  payload: Record<string, unknown>,
+  dependencies: WhatsAppGraphDependencies = {},
+  requireMessageId = true,
+): Promise<WhatsAppSendOutcome | WhatsAppReceiptOutcome> {
+  const token =
+    dependencies.token === undefined
+      ? whatsappSystemUserToken()
+      : dependencies.token;
   if (!token) {
-    if (isLocalWhatsAppNoop()) {
+    if (dependencies.localNoop ?? isLocalWhatsAppNoop()) {
       console.info(
         `[local whatsapp noop] POST ${phoneNumberId}/messages: ${JSON.stringify(payload)}`,
       );
-      return Promise.resolve({ ok: true, providerId: null });
+      return Promise.resolve({
+        ok: true,
+        kind: "local_noop",
+        providerId: null,
+      });
     }
     return Promise.resolve({
       ok: false,
-      code: null,
+      kind: "missing_credentials",
       message: "WHATSAPP_SYSTEM_USER_TOKEN is not set",
     });
   }
 
   const url = `${whatsappGraphBase()}/${whatsappApiVersion()}/${phoneNumberId}/messages`;
-  return fetch(url, {
+  return (dependencies.fetch ?? fetch)(url, {
     method: "POST",
     headers: {
       authorization: `Bearer ${token}`,
@@ -47,43 +95,97 @@ function graphPost(
     body: JSON.stringify(payload),
   })
     .then(async (response) => {
-      const json = (await response.json().catch(() => ({}))) as {
-        messages?: Array<{ id?: string }>;
-        error?: GraphError;
-      };
-      if (json.error) {
+      let body: unknown;
+      let invalidJson = false;
+      try {
+        body = await response.json();
+      } catch {
+        invalidJson = true;
+      }
+      const json = record(body);
+      if (json.error && typeof json.error === "object") {
+        const error = record(json.error);
+        const details = record(error.error_data).details;
         return {
           ok: false as const,
-          code: json.error.code ?? json.error.error_subcode ?? null,
-          message: json.error.message ?? "graph_error",
+          kind: "whatsapp_error" as const,
+          code: typeof error.code === "number" ? error.code : null,
+          subcode:
+            typeof error.error_subcode === "number"
+              ? error.error_subcode
+              : null,
+          details: typeof details === "string" ? details : null,
+          status: response.status,
+          message:
+            typeof error.message === "string" ? error.message : "graph_error",
         };
       }
-      const providerId = json.messages?.[0]?.id ?? null;
-      return { ok: true as const, providerId };
+      if (!response.ok) {
+        return {
+          ok: false as const,
+          kind: "http_error" as const,
+          status: response.status,
+          message: `graph_http_${response.status}`,
+        };
+      }
+      if (invalidJson) {
+        return {
+          ok: false as const,
+          kind: "malformed_response" as const,
+          status: response.status,
+          message: "graph_invalid_json",
+        };
+      }
+      if (!requireMessageId) {
+        return {
+          ok: true as const,
+          kind: "receipt_accepted" as const,
+          providerId: null,
+        };
+      }
+      const providerId = Array.isArray(json.messages)
+        ? record(json.messages[0]).id
+        : null;
+      if (typeof providerId !== "string" || !providerId.trim()) {
+        return {
+          ok: false as const,
+          kind: "malformed_response" as const,
+          status: response.status,
+          message: "graph_missing_message_id",
+        };
+      }
+      return { ok: true as const, kind: "accepted" as const, providerId };
     })
     .catch((error) => ({
       ok: false as const,
-      code: null,
+      kind: "network_error" as const,
       message: error instanceof Error ? error.message : "send_failed",
     }));
 }
 
-export function sendWhatsAppText({
-  phoneNumberId,
-  to,
-  text,
-}: {
-  phoneNumberId: string;
-  to: string;
-  text: string;
-}): Promise<WhatsAppSendOutcome> {
-  return graphPost(phoneNumberId, {
-    messaging_product: "whatsapp",
-    recipient_type: "individual",
+export function sendWhatsAppText(
+  {
+    phoneNumberId,
     to,
-    type: "text",
-    text: { body: text },
-  });
+    text,
+  }: {
+    phoneNumberId: string;
+    to: string;
+    text: string;
+  },
+  dependencies?: WhatsAppGraphDependencies,
+): Promise<WhatsAppSendOutcome> {
+  return graphPost(
+    phoneNumberId,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "text",
+      text: { body: text },
+    },
+    dependencies,
+  );
 }
 
 /**
@@ -92,46 +194,61 @@ export function sendWhatsAppText({
  * `ok: true` means Meta accepted it. This is the perceived-immediacy lever:
  * the chat shows "typing…" (≈25s TTL) while the worker crafts the real reply.
  */
-export function sendWhatsAppTypingIndicator({
-  phoneNumberId,
-  messageId,
-}: {
-  phoneNumberId: string;
-  messageId: string;
-}): Promise<WhatsAppSendOutcome> {
-  return graphPost(phoneNumberId, {
-    messaging_product: "whatsapp",
-    status: "read",
-    message_id: messageId,
-    typing_indicator: { type: "text" },
-  });
+export function sendWhatsAppTypingIndicator(
+  {
+    phoneNumberId,
+    messageId,
+  }: {
+    phoneNumberId: string;
+    messageId: string;
+  },
+  dependencies?: WhatsAppGraphDependencies,
+): Promise<WhatsAppReceiptOutcome> {
+  return graphPost(
+    phoneNumberId,
+    {
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: messageId,
+      typing_indicator: { type: "text" },
+    },
+    dependencies,
+    false,
+  );
 }
 
-export function sendWhatsAppTemplate({
-  phoneNumberId,
-  to,
-  templateName,
-  languageCode,
-  params,
-}: {
-  phoneNumberId: string;
-  to: string;
-  templateName: string;
-  languageCode: string;
-  params: unknown[];
-}): Promise<WhatsAppSendOutcome> {
-  const components = whatsappTemplateComponents(params);
-  return graphPost(phoneNumberId, {
-    messaging_product: "whatsapp",
-    recipient_type: "individual",
+export function sendWhatsAppTemplate(
+  {
+    phoneNumberId,
     to,
-    type: "template",
-    template: {
-      name: templateName,
-      language: { code: languageCode },
-      components,
+    templateName,
+    languageCode,
+    params,
+  }: {
+    phoneNumberId: string;
+    to: string;
+    templateName: string;
+    languageCode: string;
+    params: unknown[];
+  },
+  dependencies?: WhatsAppGraphDependencies,
+): Promise<WhatsAppSendOutcome> {
+  const components = whatsappTemplateComponents(params);
+  return graphPost(
+    phoneNumberId,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+        components,
+      },
     },
-  });
+    dependencies,
+  );
 }
 
 // Interactive message limits (verified against Meta's Cloud API docs): body
@@ -140,34 +257,44 @@ export function sendWhatsAppTemplate({
 export const WHATSAPP_INTERACTIVE_BODY_CHAR_LIMIT = 1024;
 export const WHATSAPP_INTERACTIVE_TITLE_CHAR_LIMIT = 20;
 
-export function sendWhatsAppInteractive({
-  phoneNumberId,
-  to,
-  body,
-  buttons,
-}: {
-  phoneNumberId: string;
-  to: string;
-  body: string;
-  buttons: Array<{ id: string; title: string }>;
-}): Promise<WhatsAppSendOutcome> {
-  return graphPost(phoneNumberId, {
-    messaging_product: "whatsapp",
-    recipient_type: "individual",
+export function sendWhatsAppInteractive(
+  {
+    phoneNumberId,
     to,
-    type: "interactive",
-    interactive: {
-      type: "button",
-      body: { text: body.slice(0, WHATSAPP_INTERACTIVE_BODY_CHAR_LIMIT) },
-      action: {
-        buttons: buttons.map((button) => ({
-          type: "reply",
-          reply: {
-            id: button.id.slice(0, 256),
-            title: button.title.slice(0, WHATSAPP_INTERACTIVE_TITLE_CHAR_LIMIT),
-          },
-        })),
+    body,
+    buttons,
+  }: {
+    phoneNumberId: string;
+    to: string;
+    body: string;
+    buttons: Array<{ id: string; title: string }>;
+  },
+  dependencies?: WhatsAppGraphDependencies,
+): Promise<WhatsAppSendOutcome> {
+  return graphPost(
+    phoneNumberId,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: body.slice(0, WHATSAPP_INTERACTIVE_BODY_CHAR_LIMIT) },
+        action: {
+          buttons: buttons.map((button) => ({
+            type: "reply",
+            reply: {
+              id: button.id.slice(0, 256),
+              title: button.title.slice(
+                0,
+                WHATSAPP_INTERACTIVE_TITLE_CHAR_LIMIT,
+              ),
+            },
+          })),
+        },
       },
     },
-  });
+    dependencies,
+  );
 }

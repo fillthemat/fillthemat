@@ -8,8 +8,9 @@ After [PR #38](https://github.com/jakegoodmandev/fillthemat/pull/38) (Phase 5) i
 the product path is live in stub mode. This document is the operator runbook.
 
 Source of truth: `docs/whatsapp-plan.md` §3 Phase 6, §5 production checklist, decisions **C / D / G /
-D10 / D11**, plus `docs/spike-supabase-cron.md` (Hobby-safe daily cron; do not add a sub-daily Vercel
-cron on Hobby).
+D10 / D11** and §1.6 (implemented bounded retries), plus `docs/decisions/whatsapp-cron-after.md`
+(Hobby-safe daily cron; do not add a sub-daily Vercel cron on Hobby) and
+`docs/decisions/whatsapp-retry-limits-research.md` (#79 shipped policy).
 
 ---
 
@@ -20,8 +21,9 @@ cron on Hobby).
 | 1 | `whatsapp_deliveries`, nullable `contacts.email` + unique `(school_id, phone)`, `schools.whatsapp_phone_number_id` / `whatsapp_waba_id`, `isLocalWhatsAppNoop()` |
 | 2 | `/api/webhooks/whatsapp` GET verify + POST `X-Hub-Signature-256`, wamid dedupe, replay CLI |
 | 3 | `conversations.wa_id_hash`, inbound UIMessage parts, `generatingAt` |
-| 4 | `whatsapp_jobs` worker, Graph client + noop, 24h window + template fallback, `after()` wake, typing indicator, daily cron `0 5 * * *` |
+| 4 | `whatsapp_jobs` worker, Graph client + noop, 24h window enforced for text/interactive; explicit utility templates only, `after()` wake, typing indicator, daily cron `0 5 * * *` |
 | 5 | intents + confirmation buttons, shared `create-lead`, `bookSlot` no-email + WA template confirmation, per-`wa_id` caps |
+| #79 | terminal `dead`, five-execution cap for WhatsApp jobs and WhatsApp/email sends, fresh/retry claim lanes, bounded in-run WhatsApp retries, stale-confirmation cutoff, owner email and one in-window prospect apology |
 
 **Toggle today:** a school is WhatsApp-routable iff `schools.whatsapp_phone_number_id` is set (unique
 when non-null). Local seed uses `LOCAL_WHATSAPP_PHONE_NUMBER_ID`. There is **no dashboard UI** for
@@ -33,7 +35,8 @@ settings form, that is a **separate, optional, small Director task** — not Pha
 
 ## 1. Preconditions (code)
 
-1. Merge Phase 5. Apply Drizzle migration `0006` (intents table + nullable `bookings.contact_email_snapshot`).
+1. Merge Phase 5 and #79. Apply all committed Drizzle migrations on staging then production (including
+   job/WhatsApp/email `dead` enums, failure metadata, legacy accepted-send backfill, and new owner email kind).
 2. Confirm production/staging has the Hobby-safe cron only: `vercel.ts` → `/api/cron/whatsapp` at `0 5 * * *`.
    D11: do **not** add a 1-minute / 5-minute cron unless you are on Pro **and** the pilot proves need.
 3. Confirm `WHATSAPP_API_VERSION` default (`src/lib/whatsapp/config.ts`, currently `v26.0`) is still a
@@ -51,7 +54,10 @@ settings form, that is a **separate, optional, small Director task** — not Pha
    Manager; Graph send only passes the name + ordered body params.
 
 5. Optional deploy-time check (not required locally): `after()` / `waitUntil` actually runs on the
-   Vercel runtime you ship. Daily cron is the safety net if it does not.
+    Vercel runtime you ship. Daily cron is the safety net if it does not.
+6. **Pre-pilot correctness gate: [#78](https://github.com/fillthemat/fillthemat/issues/78).** Customer-service
+   windows must use the verified customer's message time, not processing time. #79 does not fix that bug;
+   its apology uses original inbound receipt time, which still is not the verified Meta timestamp.
 
 ---
 
@@ -176,7 +182,7 @@ All of these on **staging**, then the same on **production** with the pilot numb
    owner email still fires.
 4. **Booking path second:** `prepare_booking` → interactive confirm → `bookings` row, occupancy +1,
    no double-write on Meta retry of the same wamid. No-email contact → `booking_confirmation`
-   template enqueued (needs the template APPROVED, or stay inside 24h and still assert the row).
+    template enqueued (needs the template APPROVED even inside 24h; checking the row alone is not delivery).
 5. **Out-of-window template:** after 24h with no inbound (or force-closed window in a controlled
    test), a template send succeeds once approved.
 6. **Caps:** do not load-test a real number into the daily cap; the integration tests already cover
@@ -188,19 +194,58 @@ a later ops step: another `phone_number_id` on another row, same WABA.
 
 ---
 
-## 6. Monitoring (minimum)
+## 6. Retry behavior and monitoring
 
-No new product surface required for v1. Watch:
+Implemented states:
 
-- `whatsapp_jobs` stuck `claimed` / `failed` (daily cron recovers stale claims).
-- `whatsapp_deliveries` `failed` spikes; 24h-window error `131030` should fall back to template, not
-  sit in failed if the template is approved.
-- Cron: `/api/cron/whatsapp` at 05:00 UTC; `cron_runs` / logs for that route.
+- Jobs: `pending|claimed|done|failed|dead`; WhatsApp deliveries:
+  `pending|claimed|sent|delivered|read|failed|dead`; email:
+  `pending|claimed|sent|failed|delivered|bounced|complained|dead`.
+- `failed` means retryable; `dead` means no automatic retry/replay. Rows keep payload, dedupe key,
+  execution count, last error, structured failure reason/code where present and terminal cause
+  (`permanent`, `attempts_exhausted`, `stale`); active claims clear.
+- **Five started executions total** across all runs. Counts are saved before side effects, so accepted
+  sends and crashes consume the budget; a fifth success is allowed. Single-flight deferrals do not
+  consume it, and failed status callbacks do not increment it again. Delivered/read cannot regress
+  into retries, duplicate/out-of-order failures cannot reschedule a send, and dead rows cannot revive.
+- Known permanent school/mapping/window/credential failures and Meta recipient/payload/template/auth/
+  permission/policy errors stop immediately. Rate limits, temporary/network failures and unknown/no-code
+  outcomes retry within the cap. Shared classifier: `src/lib/retry-policy.ts`; matrix: the decision record.
+- Initial claims reserve **8 fresh + 2 retry jobs**, **20 + 5 WhatsApp deliveries**, and **20 + 5 email
+  deliveries**, refilling unused capacity. Each lane is oldest-first by `created_at, id` under `SKIP LOCKED`.
+- In both inbound `after()` and cron runs, initial fresh-first batches are followed by retry-only claims
+  with roughly **10/20/40/80-second** due times, within **four minutes from run entry**. The worker stops
+  when no retry is due before the deadline, does not chase new fresh arrivals, and does not cancel work
+  already started. Daily cron continues remaining work without resetting the cap. Email still uses
+  **1/2/4/8-minute** due gates and ordinary email runs/maintenance, not this fast loop. Status-only
+  callbacks do not wake the WhatsApp worker.
+- Text/interactive with a closed or missing window stops permanently; Meta's re-engagement code is
+  **`131047`**. **No generic template fallback exists.** Explicit registered utility templates are separate.
+- Booking confirmations stop stale at/after class start, without owner mail. Non-stale confirmation
+  death atomically enqueues one `owner_whatsapp_confirmation_failed` email per booking, unless class
+  has already started. Ordinary replies/other templates do not notify owners; email death never recurses.
+- Inbound transient exhaustion can enqueue one fixed in-window “trouble replying” plain-text apology,
+  deduped per job, with normal send caps and no recursive fallback. No apology for permanent failures
+  or closed windows. Its receipt-based window assumption remains subject to #78.
+
+No new product monitoring surface or operator alerting exists. For diagnosis, inspect:
+
+- `whatsapp_jobs` / `whatsapp_deliveries` stuck `claimed`, retryable `failed`, and terminal `dead` counts
+  and reasons. Stale claims recover with counts intact; exhausted claims stop, never get a fresh budget.
+- One privacy-safe `queue.dead` log per successful terminal transition: row/school IDs, machine
+  reason/code, cause, execution count and run ID; no message body, phone or raw provider ID.
+- `/api/cron/whatsapp` at 05:00 UTC returns job `{claimed, done, retrying, dead, deferred}` and delivery
+  `{claimed, sent, retrying, dead, deferred}` counters; use its Vercel logs/response. Counters aggregate
+  execution outcomes, not unique rows; inline sends are separate and recovery deaths can exceed claims.
+  The route **does not write `cron_runs`**; those rows/dashboard health are email-maintenance metrics.
 - Wamid uniqueness: duplicate Meta deliveries must no-op.
 - Per-`wa_id` caps in `src/lib/security/limits.ts` (`MAX_BOOKINGS_PER_WA_ID_PER_DAY`,
   `MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY`) — distinct from email recipient quota.
 
-Alerting: start with Vercel logs + a query on `failed` counts. Fancy dashboards are out of scope.
+Nobody is assigned to watch these logs/rows. **No operator configuration/credential alerting** is an
+accepted pilot gap, not an implemented control. Owner booking-confirmation emails are actionable
+business notifications, not infrastructure alerts. See `docs/known-gaps.md` for the gap and deferred
+minute-scale timed wakes outside active runs.
 
 ---
 
@@ -222,16 +267,19 @@ These are **not** Phase 6. Each is a small, separate Director plan if you choose
 1. **Dashboard WhatsApp settings** — owner (or you) can set/clear `whatsapp_phone_number_id` /
    `whatsapp_waba_id` without SQL. Closest match to D10's "dashboard flag".
 2. **Graph version bump** — if `v26.0` is EOL at rollout.
-3. **Pro-plan retry cron** — only after the pilot shows the daily sweeper is too slow (D11).
-4. **Failed-delivery alerting** — Resend-style webhook already exists for email; WhatsApp is logs +
-   table until you add something.
+3. **Minute-scale timed retry wake** — Vercel Pro cron or Supabase `pg_cron`, deferred for revisit if
+   daily idle recovery is too slow (D11); active-run retries already exist.
+4. **Operator alerting** — configuration/credential failures remain logs + table only, with no assigned
+   watcher. Define a recipient, dedupe and recursion policy before adding alerts.
 
 ---
 
 ## 9. Operator checklist (copy/paste)
 
 ```
-[ ] Phase 5 merged; migration 0006 applied on staging then prod
+[ ] Phase 5 + #79 merged; all committed Drizzle migrations applied on staging then prod
+[ ] #78 verified inbound-message window timestamp fix shipped before pilot
+[ ] Accepted operator-alerting gap understood; WhatsApp logs/counters are not maintenance cron_runs
 [ ] Graph version still live; WHATSAPP_API_VERSION set to match
 [ ] Meta app + WhatsApp use case
 [ ] Business portfolio (+ verification if required)
