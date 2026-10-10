@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { type InferToolOutput, tool } from "ai";
 import { z } from "zod";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
 import { parseSlotId } from "@/lib/schedule/slot-id";
@@ -59,4 +59,26 @@ export function prepareBooking({
       };
     },
   });
+}
+
+type PrepareBookingOutput = InferToolOutput<ReturnType<typeof prepareBooking>>;
+type PrepareBookingOk = Extract<PrepareBookingOutput, { ok: true }>;
+
+export type BookingIntent = {
+  trialOfferingId: PrepareBookingOk["offering"]["id"];
+  slotId: PrepareBookingOk["slot"]["slotId"];
+  participantName: PrepareBookingOk["participantName"];
+  participantAge: PrepareBookingOk["participantAge"];
+};
+
+export function bookingIntentFromResult(
+  output: PrepareBookingOutput | undefined,
+): BookingIntent | null {
+  if (!output?.ok) return null;
+  return {
+    trialOfferingId: output.offering.id,
+    slotId: output.slot.slotId,
+    participantName: output.participantName,
+    participantAge: output.participantAge,
+  };
 }

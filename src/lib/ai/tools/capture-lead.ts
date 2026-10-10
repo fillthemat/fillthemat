@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { type InferToolOutput, tool } from "ai";
 import { z } from "zod";
 import type { AssistantContext } from "../context";
 
@@ -20,4 +20,25 @@ export function captureLead(_ctx: AssistantContext) {
       statedNeed: input.statedNeed ?? null,
     }),
   });
+}
+
+type CaptureLeadOutput = InferToolOutput<ReturnType<typeof captureLead>>;
+
+export type LeadRequest = {
+  participantName: CaptureLeadOutput["participantName"];
+  participantAge: CaptureLeadOutput["participantAge"];
+  trialOfferingId: CaptureLeadOutput["offeringId"];
+  statedNeed: CaptureLeadOutput["statedNeed"];
+};
+
+export function leadRequestFromResult(
+  output: CaptureLeadOutput | undefined,
+): LeadRequest | null {
+  if (!output) return null;
+  return {
+    participantName: output.participantName,
+    participantAge: output.participantAge,
+    trialOfferingId: output.offeringId,
+    statedNeed: output.statedNeed,
+  };
 }
