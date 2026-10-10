@@ -6,31 +6,27 @@ import {
   createUIMessageStreamResponse,
   generateId,
   type InferAgentUIMessage,
-  type InferToolOutput,
   isStepCount,
   type LanguageModel,
   ToolLoopAgent,
-  tool,
   type UIMessage,
   type UIMessageChunk,
   type UIMessageStreamOnEndCallback,
 } from "ai";
-import { z } from "zod";
-import type { Faq, School, TrialOffering } from "@/db/schema";
-import {
-  isAgeEligible,
-  listOpenSlots,
-  type SlotOccurrence,
-  type SlotWindow,
-} from "@/lib/schedule/occurrences";
-import { parseSlotId } from "@/lib/schedule/slot-id";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
+import type { AssistantContext } from "./context";
+import { assistantInstructions, PLATFORM_INSTRUCTIONS } from "./instructions";
 import { defaultLanguageModel } from "./language-model";
+import { assistantTools } from "./tools";
+import { type LeadRequest, leadRequestFromResult } from "./tools/capture-lead";
 import {
-  buildBookingAgentInstructions,
-  PLATFORM_INSTRUCTIONS,
-  type SchoolPromptInput,
-} from "./system-prompt";
+  type BookingIntent,
+  bookingIntentFromResult,
+} from "./tools/prepare-booking";
+
+export type { AssistantSchool, SchoolCatalog } from "./context";
+export type { LeadRequest } from "./tools/capture-lead";
+export type { BookingIntent } from "./tools/prepare-booking";
 
 const PLATFORM_INSTRUCTIONS_HASH = createHash("sha256")
   .update(PLATFORM_INSTRUCTIONS)
@@ -45,41 +41,15 @@ export type ReplyProvenance = {
   platformInstructionsHash: string;
 };
 
-/** The school's id plus the details its instructions show the model. */
-export type AssistantSchool = Pick<School, "id"> &
-  Omit<SchoolPromptInput, "faqs">;
-
-export type SchoolCatalog = {
-  offerings: Array<
-    Pick<
-      TrialOffering,
-      | "id"
-      | "name"
-      | "description"
-      | "minimumAge"
-      | "maximumAge"
-      | "attire"
-      | "expectations"
-      | "active"
-    >
-  >;
-  windows: SlotWindow[];
-  occurrences: SlotOccurrence[];
-  faqs: Array<Pick<Faq, "question" | "answer">>;
-};
-
-export type AssistantInput = {
-  school: AssistantSchool;
-  catalog: SchoolCatalog;
+export type AssistantInput = AssistantContext & {
   messages: UIMessage[];
-  now: Date;
   /** Defaults to `defaultLanguageModel()`, chosen when the reply is made. */
   model?: LanguageModel;
 };
 
 function createAssistant({
   school,
-  catalog: { offerings, windows, occurrences, faqs },
+  catalog,
   now,
   model = defaultLanguageModel(),
 }: Omit<AssistantInput, "messages">) {
@@ -87,7 +57,7 @@ function createAssistant({
     model,
     // The builder reads only its own fields, so the rest of a School row
     // never reaches the instructions.
-    instructions: buildBookingAgentInstructions({ ...school, faqs }),
+    instructions: assistantInstructions({ ...school, faqs: catalog.faqs }),
     stopWhen: isStepCount(MAX_AGENT_STEPS),
     providerOptions: {
       gateway: {
@@ -95,132 +65,7 @@ function createAssistant({
         user: school.id,
       },
     },
-    tools: {
-      list_trial_offerings: tool({
-        description:
-          "List trial offerings. Optionally filter by participant age in years.",
-        inputSchema: z.object({
-          participantAge: z.number().int().min(0).max(99).optional(),
-        }),
-        execute: async ({ participantAge }) => {
-          const filtered = offerings.filter((offering) => {
-            if (!offering.active) return false;
-            if (participantAge == null) return true;
-            return isAgeEligible(participantAge, offering);
-          });
-          return {
-            offerings: filtered.map((offering) => ({
-              id: offering.id,
-              name: offering.name,
-              description: offering.description,
-              minimumAge: offering.minimumAge,
-              maximumAge: offering.maximumAge,
-              attire: offering.attire,
-              expectations: offering.expectations,
-            })),
-            noMatch: filtered.length === 0,
-          };
-        },
-      }),
-      list_trial_slots: tool({
-        description: "List currently open trial slots for one offering.",
-        inputSchema: z.object({
-          offeringId: z.string().uuid(),
-        }),
-        execute: async ({ offeringId }) => {
-          const offering = offerings.find(
-            (row) => row.id === offeringId && row.active,
-          );
-          if (!offering) {
-            return { slots: [], noMatch: true, reason: "unknown_offering" };
-          }
-          const slots = listOpenSlots({
-            offeringId,
-            timezone: school.timezone,
-            windows,
-            occurrences,
-            now,
-          });
-          return {
-            slots: slots.map((slot) => ({
-              slotId: slot.slotId,
-              localDateLabel: slot.localDateLabel,
-              localTimeLabel: slot.localTimeLabel,
-              remaining: slot.remaining,
-              timezone: slot.timezone,
-            })),
-            noMatch: slots.length === 0,
-          };
-        },
-      }),
-      prepare_booking: tool({
-        description:
-          "Revalidate an offering and slot and return data for the booking confirmation flow. This does not create a booking. Collect the participant name and age first so the platform can book without asking again.",
-        inputSchema: z.object({
-          offeringId: z.string().uuid(),
-          slotId: z.string().min(1),
-          participantName: z.string().trim().min(1).max(80).optional(),
-          participantAge: z.number().int().min(0).max(99).optional(),
-        }),
-        execute: async ({
-          offeringId,
-          slotId,
-          participantName,
-          participantAge,
-        }) => {
-          const offering = offerings.find(
-            (row) => row.id === offeringId && row.active,
-          );
-          const parsed = parseSlotId(slotId);
-          if (!offering || !parsed) {
-            return { ok: false as const, reason: "invalid" as const };
-          }
-          const slots = listOpenSlots({
-            offeringId,
-            timezone: school.timezone,
-            windows,
-            occurrences,
-            now,
-          });
-          const slot = slots.find((candidate) => candidate.slotId === slotId);
-          if (!slot) {
-            return { ok: false as const, reason: "slot_unavailable" as const };
-          }
-          return {
-            ok: true as const,
-            offering: {
-              id: offering.id,
-              name: offering.name,
-            },
-            slot: {
-              slotId: slot.slotId,
-              localDateLabel: slot.localDateLabel,
-              localTimeLabel: slot.localTimeLabel,
-              timezone: slot.timezone,
-            },
-            participantName: participantName ?? null,
-            participantAge: participantAge ?? null,
-          };
-        },
-      }),
-      capture_lead: tool({
-        description:
-          "Record a prospect's request to be contacted when they cannot or do not want to book a trial now (no matching offering, no workable slot, or an explicit 'contact me'). This does NOT create a lead; the platform writes it after the prospect consents. Collect name, age, and need first.",
-        inputSchema: z.object({
-          participantName: z.string().trim().min(1).max(80).optional(),
-          participantAge: z.number().int().min(0).max(99).optional(),
-          offeringId: z.string().uuid().optional(),
-          statedNeed: z.string().trim().max(1000).optional(),
-        }),
-        execute: async (input) => ({
-          ok: true as const,
-          participantName: input.participantName ?? null,
-          participantAge: input.participantAge ?? null,
-          offeringId: input.offeringId ?? null,
-          statedNeed: input.statedNeed ?? null,
-        }),
-      }),
-    },
+    tools: assistantTools({ school, catalog, now }),
   });
   const provenance: ReplyProvenance = {
     modelId: typeof model === "string" ? model : model.modelId,
@@ -233,28 +78,6 @@ type Assistant = ReturnType<typeof createAssistant>["assistant"];
 
 /** A web chat message whose tool parts are typed by the assistant's tools. */
 export type AssistantUIMessage = InferAgentUIMessage<Assistant>;
-
-type AssistantTools = Assistant["tools"];
-type PrepareBookingOk = Extract<
-  InferToolOutput<AssistantTools["prepare_booking"]>,
-  { ok: true }
->;
-
-export type BookingIntent = {
-  trialOfferingId: PrepareBookingOk["offering"]["id"];
-  slotId: PrepareBookingOk["slot"]["slotId"];
-  participantName: PrepareBookingOk["participantName"];
-  participantAge: PrepareBookingOk["participantAge"];
-};
-
-type CaptureLeadOutput = InferToolOutput<AssistantTools["capture_lead"]>;
-
-export type LeadRequest = {
-  participantName: CaptureLeadOutput["participantName"];
-  participantAge: CaptureLeadOutput["participantAge"];
-  trialOfferingId: CaptureLeadOutput["offeringId"];
-  statedNeed: CaptureLeadOutput["statedNeed"];
-};
 
 export type CompletedReply = {
   text: string;
@@ -286,22 +109,8 @@ export async function completedReply({
   );
   return {
     text: result.text.trim(),
-    bookingIntent: lastPrepareBooking?.output.ok
-      ? {
-          trialOfferingId: lastPrepareBooking.output.offering.id,
-          slotId: lastPrepareBooking.output.slot.slotId,
-          participantName: lastPrepareBooking.output.participantName,
-          participantAge: lastPrepareBooking.output.participantAge,
-        }
-      : null,
-    leadRequest: lastCaptureLead
-      ? {
-          participantName: lastCaptureLead.output.participantName,
-          participantAge: lastCaptureLead.output.participantAge,
-          trialOfferingId: lastCaptureLead.output.offeringId,
-          statedNeed: lastCaptureLead.output.statedNeed,
-        }
-      : null,
+    bookingIntent: bookingIntentFromResult(lastPrepareBooking?.output),
+    leadRequest: leadRequestFromResult(lastCaptureLead?.output),
     provenance,
   };
 }
@@ -318,17 +127,6 @@ export type ReplyFinish = {
 type StreamEnd = Parameters<
   UIMessageStreamOnEndCallback<AssistantUIMessage>
 >[0];
-
-// A model error part mid-stream still reports a completed outcome, with an
-// error finish reason. A stream that ends without an outcome was cut short.
-function replyCompletion({
-  outcome,
-  isAborted,
-  finishReason,
-}: StreamEnd): ReplyCompletion {
-  if (outcome.status === "failed" || finishReason === "error") return "error";
-  return outcome.status === "completed" && !isAborted ? "complete" : "aborted";
-}
 
 /**
  * Streams the assistant's reply over the conversation (web chat) as a UI
@@ -352,10 +150,18 @@ export async function streamedReply({
     uiMessages: messages,
     generateMessageId: generateId,
     onEnd: async (end: StreamEnd) => {
+      // A model error part mid-stream can still report a completed outcome.
+      // A stream that ends without a completed outcome was cut short.
+      const completion: ReplyCompletion =
+        end.outcome.status === "failed" || end.finishReason === "error"
+          ? "error"
+          : end.outcome.status === "completed" && !end.isAborted
+            ? "complete"
+            : "aborted";
       try {
         await onFinish({
           reply: end.responseMessage,
-          completion: replyCompletion(end),
+          completion,
           provenance,
         });
       } catch (error) {

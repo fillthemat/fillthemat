@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   assertTenantCannotOverride,
-  buildBookingAgentInstructions,
+  assistantInstructions,
   PLATFORM_INSTRUCTIONS,
-} from "./system-prompt";
+} from "./instructions";
 
 describe("booking agent instructions", () => {
   it("keeps platform rules above delimited tenant data", () => {
-    const instructions = buildBookingAgentInstructions({
+    const instructions = assistantInstructions({
       name: "Tiger Dojo",
       timezone: "America/New_York",
       city: "Austin",
