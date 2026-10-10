@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
 import {
@@ -77,5 +77,39 @@ describe("a WhatsApp turn with no AI Gateway token", () => {
       .from(whatsappDeliveries)
       .where(eq(whatsappDeliveries.schoolId, schoolId));
     expect(sent).toEqual([{ body: reply }]);
+  });
+
+  it("processes an immediate message and sends its reply when the worker clock trails the database", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.now() - 60_000));
+      const recipient = "16505557778";
+      await POST(
+        post(
+          textInboundPayload({
+            phoneNumberId,
+            waId: recipient,
+            wamid: `wamid.clock.${suffix}`,
+            text: "What can my son try?",
+          }),
+        ),
+      );
+      await runWhatsAppWorkerOnce(randomUUID());
+      const sent = await db
+        .select({
+          body: whatsappDeliveries.body,
+          state: whatsappDeliveries.state,
+        })
+        .from(whatsappDeliveries)
+        .where(eq(whatsappDeliveries.recipientWaId, recipient));
+      expect(sent).toEqual([
+        {
+          body: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
+          state: "sent",
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
