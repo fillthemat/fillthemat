@@ -177,6 +177,7 @@ export async function createLead(input: CreateLeadInput) {
       kind: "owner_lead",
       recipient: input.school.notificationEmail,
       providerIdempotencyKey: `owner-lead/${row.id}`,
+      nextAttemptAt: new Date(),
       state: "pending",
     });
     await tx.insert(funnelEvents).values({

@@ -76,32 +76,18 @@ function wamidFrom(waId: string) {
 }
 
 async function sendText(waId: string, text: string, wamid = wamidFrom(waId)) {
-  await send(wamid, textInboundPayload({ phoneNumberId, waId, wamid, text }));
+  await send(textInboundPayload({ phoneNumberId, waId, wamid, text }));
 }
 
 async function pressButton(waId: string, buttonId: string) {
   const wamid = wamidFrom(waId);
-  await send(
-    wamid,
-    buttonReplyPayload({ phoneNumberId, waId, wamid, buttonId }),
-  );
+  await send(buttonReplyPayload({ phoneNumberId, waId, wamid, buttonId }));
 }
 
-// The message `wamid` in `payload` through the webhook, then the worker the
-// webhook would wake.
-async function send(wamid: string, payload: unknown) {
-  await receive(wamid, payload);
-  await runWhatsAppWorkerOnce(randomUUID());
-}
-
-// The message `wamid` in `payload` through the webhook, once its job is due.
-async function receive(wamid: string, payload: unknown) {
+// Delivers `payload` through the webhook, then runs the worker the webhook would wake.
+async function send(payload: unknown) {
   await POST(post(payload));
-  // Make only this fixture's message due; do not wait for the shared DB clock.
-  await db
-    .update(whatsappJobs)
-    .set({ nextAttemptAt: new Date(Date.now() - 1000) })
-    .where(eq(whatsappJobs.dedupeKey, wamid));
+  await runWhatsAppWorkerOnce(randomUUID());
 }
 
 // Whether a reply has been sent to `waId`.
@@ -307,14 +293,15 @@ describe("a WhatsApp worker run with several messages to answer", () => {
     const waIds = ["16505550141", "16505550142", "16505550143"];
     for (const waId of waIds) {
       const wamid = wamidFrom(waId);
-      await receive(
-        wamid,
-        textInboundPayload({
-          phoneNumberId,
-          waId,
-          wamid,
-          text: "What can my son try?",
-        }),
+      await POST(
+        post(
+          textInboundPayload({
+            phoneNumberId,
+            waId,
+            wamid,
+            text: "What can my son try?",
+          }),
+        ),
       );
     }
     const slowLangfuse = holdSpanExports();
@@ -657,10 +644,7 @@ describe("an inbound WhatsApp message that gets no reply", () => {
     const waId = "16505550122";
     const wamid = wamidFrom(waId);
 
-    await send(
-      wamid,
-      textInboundPayload({ phoneNumberId, waId, wamid, text: " " }),
-    );
+    await send(textInboundPayload({ phoneNumberId, waId, wamid, text: " " }));
 
     expect(await exportedTraces()).toEqual([]);
   });
@@ -670,7 +654,6 @@ describe("an inbound WhatsApp message that gets no reply", () => {
     const wamid = wamidFrom(waId);
 
     await send(
-      wamid,
       textInboundPayload({
         phoneNumberId: unusedPhoneNumberId,
         waId,
@@ -768,14 +751,15 @@ describe("a failed attempt at a WhatsApp turn", () => {
     const waId = "16505550131";
     const conversationId = await startConversation(waId);
     const wamid = wamidFrom(waId);
-    await receive(
-      wamid,
-      textInboundPayload({
-        phoneNumberId,
-        waId,
-        wamid,
-        text: "What can my son try?",
-      }),
+    await POST(
+      post(
+        textInboundPayload({
+          phoneNumberId,
+          waId,
+          wamid,
+          text: "What can my son try?",
+        }),
+      ),
     );
     let clock = Date.now();
     const pauses: number[] = [];

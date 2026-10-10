@@ -386,6 +386,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
         recipient: string;
         providerIdempotencyKey: string;
         state: "pending";
+        nextAttemptAt: Date;
       }> = [
         {
           schoolId: input.school.id,
@@ -394,6 +395,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
           recipient: input.school.notificationEmail,
           providerIdempotencyKey: `owner-booking/${saved.id}`,
           state: "pending",
+          nextAttemptAt: now,
         },
       ];
       if (email) {
@@ -404,6 +406,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
           recipient: email,
           providerIdempotencyKey: `booking-confirmation/${saved.id}`,
           state: "pending",
+          nextAttemptAt: now,
         });
       }
       await tx.insert(emailDeliveries).values(deliveryRows);
@@ -546,6 +549,7 @@ export async function cancelBooking({
       recipient: string;
       providerIdempotencyKey: string;
       state: "pending";
+      nextAttemptAt: Date;
     }> = [];
     if (booking.contactEmailSnapshot) {
       cancellationRows.push({
@@ -555,6 +559,7 @@ export async function cancelBooking({
         recipient: booking.contactEmailSnapshot,
         providerIdempotencyKey: `booking-cancellation/${booking.id}/${nextSequence}`,
         state: "pending",
+        nextAttemptAt: now,
       });
     }
     if (school?.notificationEmail) {
@@ -565,6 +570,7 @@ export async function cancelBooking({
         recipient: school.notificationEmail,
         providerIdempotencyKey: `owner-cancellation/${booking.id}/${nextSequence}`,
         state: "pending",
+        nextAttemptAt: now,
       });
     }
     if (cancellationRows.length > 0) {

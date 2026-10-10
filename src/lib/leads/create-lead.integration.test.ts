@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { getDb } from "@/db";
 import {
   contacts,
@@ -11,6 +19,8 @@ import {
   users,
 } from "@/db/schema";
 import { hashWaId } from "@/lib/crypto";
+import { attemptPendingForLead } from "@/lib/email/deliveries";
+import type { EmailMessage } from "@/lib/email/dependencies";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
 import { createLead } from "@/lib/leads/create-lead";
 import {
@@ -60,7 +70,40 @@ afterAll(async () => {
   await sql.end({ timeout: 5 });
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe("createLead (WhatsApp no-email path)", () => {
+  it("sends the owner lead alert inline when the app clock is behind the database", async () => {
+    const [schoolRow] = await db
+      .select()
+      .from(schools)
+      .where(eq(schools.id, schoolId));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() - 86_400_000));
+    const lead = await createLead({
+      school: requireRow(schoolRow, "school"),
+      contact: { name: "Clock Skew Contact", email: null, phone: waId },
+      source: { channel: "whatsapp", waId },
+    });
+    const send = vi.fn(async (_message: EmailMessage) => ({
+      ok: true as const,
+      kind: "accepted" as const,
+      providerId: randomUUID(),
+    }));
+    await attemptPendingForLead(lead.id, { transport: { send } });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0]).toMatchObject({
+      to: schoolRow?.notificationEmail,
+      idempotencyKey: `owner-lead/${lead.id}`,
+    });
+    const [delivery] = await db
+      .select()
+      .from(emailDeliveries)
+      .where(eq(emailDeliveries.leadId, lead.id));
+    expect(delivery?.state).toBe("sent");
+    expect(delivery?.nextAttemptAt).toEqual(new Date());
+  });
+
   it("creates a lead with a synthesized utm_source='whatsapp' session and phone-keyed contact", async () => {
     const [schoolRow] = await db
       .select()
