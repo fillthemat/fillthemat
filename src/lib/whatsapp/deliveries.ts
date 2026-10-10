@@ -1,4 +1,14 @@
-import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  lt,
+  lte,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   schools,
@@ -191,28 +201,45 @@ export async function claimDueWhatsAppDeliveries(
   const db = getDb();
   const now = opts?.now ?? new Date();
   const limit = opts?.limit ?? 25;
+  if (opts?.ids?.length === 0 || limit <= 0) return [];
   return db.transaction(async (tx) => {
-    const conditions = [
-      or(
-        eq(whatsappDeliveries.state, "pending"),
-        eq(whatsappDeliveries.state, "failed"),
-      ),
-      lte(whatsappDeliveries.nextAttemptAt, now),
-    ];
-    if (opts?.ids && opts.ids.length > 0) {
-      conditions.push(inArray(whatsappDeliveries.id, opts.ids));
+    const due: WhatsAppDelivery[] = [];
+    async function take(fresh: boolean, count: number) {
+      if (count <= 0) return;
+      const rows = await tx
+        .select()
+        .from(whatsappDeliveries)
+        .where(
+          and(
+            inArray(whatsappDeliveries.state, ["pending", "failed"]),
+            lte(whatsappDeliveries.nextAttemptAt, now),
+            fresh
+              ? eq(whatsappDeliveries.attempts, 0)
+              : gt(whatsappDeliveries.attempts, 0),
+            opts?.ids ? inArray(whatsappDeliveries.id, opts.ids) : undefined,
+            due.length
+              ? notInArray(
+                  whatsappDeliveries.id,
+                  due.map((row) => row.id),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(asc(whatsappDeliveries.createdAt), asc(whatsappDeliveries.id))
+        .for("update", { skipLocked: true })
+        .limit(count);
+      due.push(...rows);
     }
-    const due = await tx
-      .select()
-      .from(whatsappDeliveries)
-      .where(and(...conditions))
-      .for("update", { skipLocked: true })
-      .limit(limit);
+    const retrySlots = Math.floor(limit / 5);
+    await take(true, limit - retrySlots);
+    await take(false, retrySlots);
+    await take(true, limit - due.length);
+    await take(false, limit - due.length);
 
     if (due.length === 0) return [];
 
     const ids = due.map((row) => row.id);
-    return tx
+    const claimed = await tx
       .update(whatsappDeliveries)
       .set({
         state: "claimed",
@@ -222,6 +249,17 @@ export async function claimDueWhatsAppDeliveries(
       })
       .where(inArray(whatsappDeliveries.id, ids))
       .returning();
+    const byId = new Map(claimed.map((row) => [row.id, row]));
+    // UPDATE RETURNING is unordered; restore fresh-first, oldest-first order.
+    return due
+      .sort(
+        (a, b) =>
+          Number(a.attempts > 0) - Number(b.attempts > 0) ||
+          a.createdAt.getTime() - b.createdAt.getTime() ||
+          a.id.localeCompare(b.id),
+      )
+      .map((row) => byId.get(row.id))
+      .filter((row): row is WhatsAppDelivery => !!row);
   });
 }
 
