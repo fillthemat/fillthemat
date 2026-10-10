@@ -227,7 +227,7 @@ describe("WhatsApp worker dependencies", () => {
     });
   });
   it.each(["http", "text", "template", "interactive"])(
-    "records %s response failures and retains the existing minute backoff on the injected clock",
+    "records %s response failures with the shared short backoff on the injected clock",
     async (type) => {
       const id = await enqueueWhatsAppDelivery(
         {
@@ -281,7 +281,7 @@ describe("WhatsApp worker dependencies", () => {
         attempts: 1,
         providerId: null,
         sentAt: null,
-        nextAttemptAt: new Date("2020-01-01T12:01:00Z"),
+        nextAttemptAt: new Date("2020-01-01T12:00:10Z"),
         lastError:
           type === "http" ? "graph_http_503" : "graph_missing_message_id",
       });
@@ -348,7 +348,7 @@ describe("WhatsApp worker dependencies", () => {
     });
     expect(result).toEqual({
       jobs: { claimed: 1, done: 1, retrying: 0, dead: 0, deferred: 0 },
-      deliveries: { claimed: 1, sent: 1, failed: 0, windowClosed: 0 },
+      deliveries: { claimed: 1, sent: 1, retrying: 0, dead: 0, deferred: 0 },
     });
     expect(sent).toEqual(
       expect.arrayContaining([
@@ -370,6 +370,7 @@ describe("WhatsApp worker dependencies", () => {
       rows.every(
         (row) =>
           row.state === "sent" &&
+          row.attempts === 1 &&
           row.providerId?.startsWith("fake:") &&
           row.sentAt?.getTime() === now.getTime(),
       ),

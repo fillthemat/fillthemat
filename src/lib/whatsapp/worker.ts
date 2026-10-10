@@ -576,7 +576,11 @@ export async function runWhatsAppWorkerOnce(
       dependencies.now(),
       runId,
     );
-    await recoverStuckWhatsAppDeliveries(undefined, dependencies.now());
+    const recoveredDeliveries = await recoverStuckWhatsAppDeliveries(
+      undefined,
+      dependencies.now(),
+      runId,
+    );
     const jobs = await drainWhatsAppJobs(runId, 10, dependencies);
     jobs.dead += recovered.dead;
     const deliveries = await drainDueWhatsAppDeliveries(
@@ -584,6 +588,7 @@ export async function runWhatsAppWorkerOnce(
       25,
       dependencies,
     );
+    deliveries.dead += recoveredDeliveries.dead;
     return { jobs, deliveries };
   } finally {
     // Once, after every reply in the run, so a slow or unreachable Langfuse
