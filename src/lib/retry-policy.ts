@@ -78,7 +78,7 @@ export class InternalFailure extends Error {
     this.name = "InternalFailure";
   }
 }
-export type TerminalCause = "permanent" | "attempts_exhausted";
+export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 export type RetryDecision =
   | { action: "stop"; cause: TerminalCause }
   | { action: "retry"; at: Date };
@@ -89,6 +89,12 @@ export function retryDecision(
   now: Date,
   channel: "whatsapp" | "email" = "whatsapp",
 ): RetryDecision {
+  if (
+    failure.kind === "internal" &&
+    failure.reason === "booking_confirmation_stale"
+  ) {
+    return { action: "stop", cause: "stale" };
+  }
   if (permanentFailure(failure)) {
     return { action: "stop", cause: "permanent" };
   }

@@ -31,6 +31,7 @@ export const emailKindEnum = appSchema.enum("email_kind", [
   "owner_booking",
   "owner_cancellation",
   "owner_lead",
+  "owner_whatsapp_confirmation_failed",
 ]);
 
 export const emailStateEnum = appSchema.enum("email_state", [
@@ -634,9 +635,10 @@ export const whatsappDeliveries = appSchema.table(
     lastError: text("last_error"),
     failureReason: text("failure_reason"),
     failureCode: integer("failure_code"),
-    terminalCause: text("terminal_cause").$type<
-      "permanent" | "attempts_exhausted"
-    >(),
+    terminalCause:
+      text("terminal_cause").$type<
+        import("@/lib/retry-policy").TerminalCause
+      >(),
     ...timestamps,
   },
   (t) => [
@@ -678,9 +680,10 @@ export const whatsappJobs = appSchema.table(
     claimedBy: text("claimed_by"),
     lastError: text("last_error"),
     failureReason: text("failure_reason"),
-    terminalCause: text("terminal_cause").$type<
-      "permanent" | "attempts_exhausted"
-    >(),
+    terminalCause:
+      text("terminal_cause").$type<
+        import("@/lib/retry-policy").TerminalCause
+      >(),
     ...timestamps,
   },
   (t) => [
