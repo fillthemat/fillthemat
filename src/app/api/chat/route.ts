@@ -1,9 +1,9 @@
 import { CHAT_ERRORS, type ChatError } from "@/lib/chat/protocol";
-import { requestBodyTooLarge } from "@/lib/security/limits";
 import {
   chatRequestSchema,
   chatTranscriptRequestSchema,
 } from "@/lib/chat/requests";
+import { requestBodyTooLarge } from "@/lib/security/limits";
 import {
   loadWebTranscript,
   startWebTurn,
