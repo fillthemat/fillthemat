@@ -1,4 +1,14 @@
-import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  lt,
+  lte,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { getDb } from "@/db";
 import { type WhatsAppJob, whatsappJobs } from "@/db/schema";
 import { logDeadTransition } from "@/lib/retry-log";
@@ -56,26 +66,42 @@ export async function claimDueWhatsAppJobs(
   const db = getDb();
   const now = opts?.now ?? new Date();
   const limit = opts?.limit ?? 10;
+  if (limit <= 0) return [];
   return db.transaction(async (tx) => {
-    const due = await tx
-      .select()
-      .from(whatsappJobs)
-      .where(
-        and(
-          or(
-            eq(whatsappJobs.state, "pending"),
-            eq(whatsappJobs.state, "failed"),
+    const due: WhatsAppJob[] = [];
+    async function take(fresh: boolean, count: number) {
+      if (count <= 0) return;
+      const rows = await tx
+        .select()
+        .from(whatsappJobs)
+        .where(
+          and(
+            inArray(whatsappJobs.state, ["pending", "failed"]),
+            lte(whatsappJobs.nextAttemptAt, now),
+            fresh ? eq(whatsappJobs.attempts, 0) : gt(whatsappJobs.attempts, 0),
+            due.length
+              ? notInArray(
+                  whatsappJobs.id,
+                  due.map((row) => row.id),
+                )
+              : undefined,
           ),
-          lte(whatsappJobs.nextAttemptAt, now),
-        ),
-      )
-      .for("update", { skipLocked: true })
-      .limit(limit);
+        )
+        .orderBy(asc(whatsappJobs.createdAt), asc(whatsappJobs.id))
+        .for("update", { skipLocked: true })
+        .limit(count);
+      due.push(...rows);
+    }
+    const retrySlots = Math.floor(limit / 5);
+    await take(true, limit - retrySlots);
+    await take(false, retrySlots);
+    await take(true, limit - due.length);
+    await take(false, limit - due.length);
 
     if (due.length === 0) return [];
 
     const ids = due.map((row) => row.id);
-    return tx
+    const claimed = await tx
       .update(whatsappJobs)
       .set({
         state: "claimed",
@@ -85,6 +111,17 @@ export async function claimDueWhatsAppJobs(
       })
       .where(inArray(whatsappJobs.id, ids))
       .returning();
+    const byId = new Map(claimed.map((row) => [row.id, row]));
+    // UPDATE RETURNING is unordered; restore fresh-first, oldest-first order.
+    return due
+      .sort(
+        (a, b) =>
+          Number(a.attempts > 0) - Number(b.attempts > 0) ||
+          a.createdAt.getTime() - b.createdAt.getTime() ||
+          a.id.localeCompare(b.id),
+      )
+      .map((row) => byId.get(row.id))
+      .filter((row): row is WhatsAppJob => !!row);
   });
 }
 
