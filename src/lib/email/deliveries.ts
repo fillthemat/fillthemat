@@ -1,4 +1,4 @@
-import { and, eq, inArray, lte, or } from "drizzle-orm";
+import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   type Booking,
@@ -245,7 +245,7 @@ export async function claimDueDeliveries(runId: string, limit = 25) {
             eq(emailDeliveries.state, "pending"),
             eq(emailDeliveries.state, "failed"),
           ),
-          lte(emailDeliveries.nextAttemptAt, new Date()),
+          lte(emailDeliveries.nextAttemptAt, sql`now()`),
         ),
       )
       .for("update", { skipLocked: true })

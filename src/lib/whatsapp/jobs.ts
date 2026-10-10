@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt, lte, or } from "drizzle-orm";
+import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { whatsappJobs } from "@/db/schema";
 import type { InboundWhatsAppMessage } from "./parse";
@@ -26,8 +26,6 @@ export async function enqueueInboundJobs(
         kind: "inbound_message",
         payload: message,
         state: "pending",
-        // Immediate work uses the same clock as the worker's due-time cutoff.
-        nextAttemptAt: new Date(),
       })
       .onConflictDoNothing({ target: whatsappJobs.dedupeKey })
       .returning({ id: whatsappJobs.id });
@@ -52,7 +50,7 @@ export async function claimDueWhatsAppJobs(
             eq(whatsappJobs.state, "pending"),
             eq(whatsappJobs.state, "failed"),
           ),
-          lte(whatsappJobs.nextAttemptAt, new Date()),
+          lte(whatsappJobs.nextAttemptAt, sql`now()`),
         ),
       )
       .for("update", { skipLocked: true })

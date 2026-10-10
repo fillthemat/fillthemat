@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
 import { addDays } from "date-fns";
 import { and, eq, inArray } from "drizzle-orm";
 import {
@@ -73,34 +72,24 @@ function wamidFrom(waId: string) {
 }
 
 async function sendText(waId: string, text: string, wamid = wamidFrom(waId)) {
-  await send(wamid, textInboundPayload({ phoneNumberId, waId, wamid, text }));
+  await send(textInboundPayload({ phoneNumberId, waId, wamid, text }));
 }
 
 async function pressButton(waId: string, buttonId: string) {
   const wamid = wamidFrom(waId);
-  await send(
-    wamid,
-    buttonReplyPayload({ phoneNumberId, waId, wamid, buttonId }),
-  );
+  await send(buttonReplyPayload({ phoneNumberId, waId, wamid, buttonId }));
 }
 
-// The message `wamid` in `payload` through the webhook, then the worker the
+// The message in `payload` through the webhook, then the worker the
 // webhook would wake.
-async function send(wamid: string, payload: unknown) {
-  await receive(wamid, payload);
+async function send(payload: unknown) {
+  await receive(payload);
   await runWhatsAppWorkerOnce(randomUUID());
 }
 
-// The message `wamid` in `payload` through the webhook, once its job is due.
-async function receive(wamid: string, payload: unknown) {
+// The message in `payload` through the webhook; its job is immediately due.
+async function receive(payload: unknown) {
   await POST(post(payload));
-  // The database stamps the job's due time with its own clock, which can run
-  // a few ms ahead of this machine's, and the worker skips jobs not yet due.
-  const [job] = await db
-    .select({ dueAt: whatsappJobs.nextAttemptAt })
-    .from(whatsappJobs)
-    .where(eq(whatsappJobs.dedupeKey, wamid));
-  await sleep(Math.max(0, (job?.dueAt.getTime() ?? 0) + 1 - Date.now()));
 }
 
 // Whether a reply has been sent to `waId`.
@@ -307,7 +296,6 @@ describe("a WhatsApp worker run with several messages to answer", () => {
     for (const waId of waIds) {
       const wamid = wamidFrom(waId);
       await receive(
-        wamid,
         textInboundPayload({
           phoneNumberId,
           waId,
@@ -656,10 +644,7 @@ describe("an inbound WhatsApp message that gets no reply", () => {
     const waId = "16505550122";
     const wamid = wamidFrom(waId);
 
-    await send(
-      wamid,
-      textInboundPayload({ phoneNumberId, waId, wamid, text: " " }),
-    );
+    await send(textInboundPayload({ phoneNumberId, waId, wamid, text: " " }));
 
     expect(await exportedTraces()).toEqual([]);
   });
@@ -669,7 +654,6 @@ describe("an inbound WhatsApp message that gets no reply", () => {
     const wamid = wamidFrom(waId);
 
     await send(
-      wamid,
       textInboundPayload({
         phoneNumberId: unusedPhoneNumberId,
         waId,

@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt, lte, or } from "drizzle-orm";
+import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools, whatsappDeliveries } from "@/db/schema";
 import {
@@ -111,8 +111,6 @@ export async function enqueueWhatsAppDelivery(
       bookingId: input.bookingId ?? null,
       leadId: input.leadId ?? null,
       state: "pending",
-      // Inline delivery must be immediately due even if the DB clock is ahead.
-      nextAttemptAt: new Date(),
     })
     .onConflictDoNothing({
       target: whatsappDeliveries.providerIdempotencyKey,
@@ -133,7 +131,7 @@ export async function claimDueWhatsAppDeliveries(
         eq(whatsappDeliveries.state, "pending"),
         eq(whatsappDeliveries.state, "failed"),
       ),
-      lte(whatsappDeliveries.nextAttemptAt, new Date()),
+      lte(whatsappDeliveries.nextAttemptAt, sql`now()`),
     ];
     if (opts?.ids && opts.ids.length > 0) {
       conditions.push(inArray(whatsappDeliveries.id, opts.ids));
