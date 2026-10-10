@@ -26,7 +26,7 @@ import {
   rescheduleJob,
   startJobExecution,
 } from "./jobs";
-import { runWhatsAppWorkerOnce } from "./worker";
+import { drainWhatsAppJobs, runWhatsAppWorkerOnce } from "./worker";
 
 loadLocalEnv();
 const db = getDb();
@@ -119,7 +119,7 @@ describe("bounded WhatsApp job executions", () => {
       deferred: 0,
     });
   });
-  it("persists each started execution and exhausts transient failures on the fifth across runs", async () => {
+  it("persists each started execution and exhausts transient failures on the fifth across claim batches", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const waId = randomUUID();
     const conversation = await findOrCreateConversation({
@@ -150,7 +150,7 @@ describe("bounded WhatsApp job executions", () => {
       async () => {
         const retryTimes = ["12:00:10", "12:00:30", "12:01:10", "12:02:30"];
         for (let execution = 1; execution <= 5; execution++) {
-          const result = await runWhatsAppWorkerOnce(randomUUID(), {
+          const result = await drainWhatsAppJobs(randomUUID(), 10, {
             now: () => clock,
             transport: {
               sendText: async () => {
@@ -174,7 +174,7 @@ describe("bounded WhatsApp job executions", () => {
             claimedAt: null,
             claimedBy: null,
           });
-          expect(result.jobs).toEqual({
+          expect(result).toEqual({
             claimed: 1,
             done: 0,
             retrying: execution === 5 ? 0 : 1,
@@ -185,10 +185,10 @@ describe("bounded WhatsApp job executions", () => {
             expect(row.nextAttemptAt).toEqual(
               new Date(`1990-01-01T${retryTimes[execution - 1]}Z`),
             );
-            const beforeDue = await runWhatsAppWorkerOnce(randomUUID(), {
+            const beforeDue = await drainWhatsAppJobs(randomUUID(), 10, {
               now: () => clock,
             });
-            expect(beforeDue.jobs.claimed).toBe(0);
+            expect(beforeDue.claimed).toBe(0);
             clock = row.nextAttemptAt;
           }
         }

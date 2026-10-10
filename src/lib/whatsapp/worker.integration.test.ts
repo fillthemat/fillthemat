@@ -11,7 +11,10 @@ import {
   sendWhatsAppTemplate,
   sendWhatsAppText,
 } from "./client";
-import { enqueueWhatsAppDelivery } from "./deliveries";
+import {
+  attemptWhatsAppDeliveriesNow,
+  enqueueWhatsAppDelivery,
+} from "./deliveries";
 import { enqueueInboundJobs } from "./jobs";
 import { runWhatsAppWorkerOnce } from "./worker";
 
@@ -254,7 +257,7 @@ describe("WhatsApp worker dependencies", () => {
             ? new Response("Unavailable", { status: 503 })
             : Response.json({ success: true }),
       };
-      await runWhatsAppWorkerOnce(randomUUID(), {
+      await attemptWhatsAppDeliveriesNow([id], randomUUID(), {
         now: () => new Date(now),
         sleep: async () => {
           throw new Error("unexpected retry pause");
@@ -285,6 +288,7 @@ describe("WhatsApp worker dependencies", () => {
         lastError:
           type === "http" ? "graph_http_503" : "graph_missing_message_id",
       });
+      await db.delete(whatsappDeliveries).where(eq(whatsappDeliveries.id, id));
     },
   );
   it("uses the fake sender and clock for an inline assistant reply and the delivery sweep", async () => {

@@ -40,6 +40,7 @@ import {
   attemptWhatsAppDeliveriesNow,
   drainDueWhatsAppDeliveries,
   enqueueWhatsAppDelivery,
+  nextWhatsAppDeliveryRetryAt,
   recoverStuckWhatsAppDeliveries,
 } from "./deliveries";
 import {
@@ -56,7 +57,9 @@ import {
   claimDueWhatsAppJobs,
   failJob,
   markJobDone,
+  nextWhatsAppJobRetryAt,
   recoverStuckWhatsAppJobs,
+  releaseWhatsAppJobClaim,
   rescheduleJob,
   startJobExecution,
 } from "./jobs";
@@ -530,6 +533,7 @@ export async function drainWhatsAppJobs(
   runId: string,
   limit = 10,
   overrides: Partial<WhatsAppWorkerDependencies> = {},
+  opts: { retryOnly?: boolean; deadline?: Date } = {},
 ): Promise<{
   claimed: number;
   done: number;
@@ -538,10 +542,14 @@ export async function drainWhatsAppJobs(
   deferred: number;
 }> {
   const dependencies = whatsappWorkerDependencies(overrides);
-  const claimed = await claimDueWhatsAppJobs(runId, {
-    limit,
-    now: dependencies.now(),
-  });
+  const claimed =
+    opts.deadline && dependencies.now() >= opts.deadline
+      ? []
+      : await claimDueWhatsAppJobs(runId, {
+          limit,
+          now: dependencies.now(),
+          retryOnly: opts.retryOnly,
+        });
   const counts = {
     claimed: claimed.length,
     done: 0,
@@ -550,6 +558,11 @@ export async function drainWhatsAppJobs(
     deferred: 0,
   };
   for (const job of claimed) {
+    if (opts.deadline && dependencies.now() >= opts.deadline) {
+      await releaseWhatsAppJobClaim(job, dependencies.now());
+      counts.deferred += 1;
+      continue;
+    }
     const result = await processWhatsAppJob(job, runId, dependencies);
     counts[result] += 1;
   }
@@ -557,19 +570,16 @@ export async function drainWhatsAppJobs(
 }
 
 /**
- * One full worker tick: process due inbound jobs, then due outbound deliveries
- * (retries/backoff) — no infinite tail-chasing of freshly-claimed rows.
- *
- * The drain below only re-claims `pending`/`failed` rows whose `nextAttemptAt`
- * is due. Delivery rows sent inline above (in `processWhatsAppJob`) are already
- * `sent`, and failed inline rows have a future `nextAttemptAt`, so neither needs
- * re-picking-up here.
+ * Drain the fresh-first batches, then retry existing executions within four
+ * minutes of entry. Persisted policy due times also govern the daily sweeper;
+ * the loop never resets execution counts or chases new fresh arrivals.
  */
 export async function runWhatsAppWorkerOnce(
   runId: string,
   overrides: Partial<WhatsAppWorkerDependencies> = {},
 ) {
   const dependencies = whatsappWorkerDependencies(overrides);
+  const deadline = new Date(dependencies.now().getTime() + 4 * 60_000);
   try {
     const recovered = await recoverStuckWhatsAppJobs(
       undefined,
@@ -581,14 +591,56 @@ export async function runWhatsAppWorkerOnce(
       dependencies.now(),
       runId,
     );
-    const jobs = await drainWhatsAppJobs(runId, 10, dependencies);
+    const jobs = await drainWhatsAppJobs(runId, 10, dependencies, { deadline });
     jobs.dead += recovered.dead;
     const deliveries = await drainDueWhatsAppDeliveries(
       runId,
       25,
       dependencies,
+      { deadline },
     );
     deliveries.dead += recoveredDeliveries.dead;
+    while (dependencies.now() < deadline) {
+      // One claim per queue keeps a slow execution from reserving a whole
+      // retry batch that cannot be started before the deadline.
+      const retriedJobs = await drainWhatsAppJobs(runId, 1, dependencies, {
+        retryOnly: true,
+        deadline,
+      });
+      for (const key of Object.keys(jobs) as Array<keyof typeof jobs>) {
+        jobs[key] += retriedJobs[key];
+      }
+      if (dependencies.now() >= deadline) break;
+      const retriedDeliveries = await drainDueWhatsAppDeliveries(
+        runId,
+        1,
+        dependencies,
+        { retryOnly: true, deadline },
+      );
+      for (const key of Object.keys(deliveries) as Array<
+        keyof typeof deliveries
+      >) {
+        deliveries[key] += retriedDeliveries[key];
+      }
+      if (retriedJobs.claimed || retriedDeliveries.claimed) continue;
+
+      const now = dependencies.now();
+      if (now >= deadline) break;
+      const due = await Promise.all([
+        nextWhatsAppJobRetryAt(now, deadline),
+        nextWhatsAppDeliveryRetryAt(now, deadline),
+      ]);
+      const next = due
+        .filter((at): at is Date => at !== null)
+        .sort((a, b) => a.getTime() - b.getTime())[0];
+      if (!next) break;
+      // Time spent querying also consumes budget. Recheck after waking before
+      // claiming, since a real timer can fire late or another worker can win.
+      const current = dependencies.now();
+      if (current >= deadline) break;
+      const delay = next.getTime() - current.getTime();
+      if (delay > 0) await dependencies.sleep(delay);
+    }
     return { jobs, deliveries };
   } finally {
     // Once, after every reply in the run, so a slow or unreachable Langfuse

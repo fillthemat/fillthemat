@@ -761,41 +761,80 @@ describe("a failed attempt at a WhatsApp turn", () => {
     vi.restoreAllMocks();
   });
 
-  it("is exported as an error with the assistant's spans under it, and the retry is traced separately", async () => {
+  it("exports the failed attempt and successful in-run retry together after replying", async () => {
     // The worker logs the failed job.
     vi.spyOn(console, "error").mockImplementation(() => {});
     const waId = "16505550131";
     const conversationId = await startConversation(waId);
     const wamid = wamidFrom(waId);
+    await receive(
+      wamid,
+      textInboundPayload({
+        phoneNumberId,
+        waId,
+        wamid,
+        text: "What can my son try?",
+      }),
+    );
+    let clock = Date.now();
+    const pauses: number[] = [];
 
     await whileSavingMessages(
       sql,
       {
         conversationId,
         role: "user",
-        statement: "raise exception 'disk full'",
+        statement: `if (select attempts from app.whatsapp_jobs where dedupe_key = '${wamid}') = 1 then raise exception 'disk full'; end if`,
       },
-      () => sendText(waId, "What can my son try?", wamid),
+      async () => {
+        const result = await runWhatsAppWorkerOnce(randomUUID(), {
+          now: () => new Date(clock),
+          sleep: async (milliseconds) => {
+            // No per-attempt flush: the failed Turn is exported only after
+            // this run has finished its reply/retry work.
+            expect(spansExportedSoFar().filter(isRoot)).toEqual([]);
+            pauses.push(milliseconds);
+            clock += milliseconds;
+          },
+          transport: {
+            sendText: async () => ({
+              ok: true,
+              kind: "accepted",
+              providerId: `trace-${suffix}`,
+            }),
+            sendTemplate: async () => {
+              throw new Error("unexpected template");
+            },
+            sendInteractive: async () => {
+              throw new Error("unexpected interactive");
+            },
+          },
+        });
+        expect(result.jobs).toMatchObject({ claimed: 2, retrying: 1, done: 1 });
+      },
     );
+    expect(pauses).toEqual([10_000]);
 
     const exportedByWorker = spansExportedSoFar();
-    const failedAttempt = exportedByWorker.find(isRoot);
+    const failedAttempt = exportedByWorker.find(
+      (span) =>
+        isRoot(span) &&
+        span.attributes["langfuse.observation.level"] === "ERROR",
+    );
     expect(failedAttempt?.attributes).toMatchObject({
       "session.id": conversationId,
       "langfuse.observation.level": "ERROR",
       "langfuse.observation.status_message":
         expect.stringContaining("disk full"),
     });
-    const assistantRun = exportedByWorker.find(isAssistantRun);
+    const assistantRun = exportedByWorker.find(
+      (span) =>
+        isAssistantRun(span) &&
+        span.spanContext().traceId === failedAttempt?.spanContext().traceId,
+    );
     expect(assistantRun?.parentSpanContext?.spanId).toBe(
       failedAttempt?.spanContext().spanId,
     );
-
-    await db
-      .update(whatsappJobs)
-      .set({ nextAttemptAt: new Date(Date.now() - 1000) })
-      .where(eq(whatsappJobs.dedupeKey, wamid));
-    await runWhatsAppWorkerOnce(randomUUID());
 
     expect(await exportedTraces()).toEqual([
       expect.objectContaining({ sessionId: conversationId, level: "ERROR" }),

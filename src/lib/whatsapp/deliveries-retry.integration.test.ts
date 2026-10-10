@@ -15,7 +15,11 @@ import { schools, whatsappDeliveries } from "@/db/schema";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import type { WhatsAppSendFailure, WhatsAppSendOutcome } from "./client";
-import { applyWhatsAppStatuses, enqueueWhatsAppDelivery } from "./deliveries";
+import {
+  applyWhatsAppStatuses,
+  drainDueWhatsAppDeliveries,
+  enqueueWhatsAppDelivery,
+} from "./deliveries";
 import { runWhatsAppWorkerOnce } from "./worker";
 
 loadLocalEnv();
@@ -392,7 +396,7 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
       message: "missing id",
     },
   ] satisfies WhatsAppSendFailure[])(
-    "shares five executions across runs for $kind $message",
+    "shares five executions across claim batches for $kind $message",
     async (outcome) => {
       const id = await enqueue();
       const log = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -404,8 +408,9 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
         "2019-01-01T12:02:30Z",
       ];
       for (let execution = 1; execution <= 5; execution++) {
-        const result = await runWhatsAppWorkerOnce(
+        const result = await drainDueWhatsAppDeliveries(
           randomUUID(),
+          25,
           dependencies(send),
         );
         const row = await delivery(id);
@@ -417,14 +422,17 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
           claimedAt: null,
           claimedBy: null,
         });
-        expect(result.deliveries[execution === 5 ? "dead" : "retrying"]).toBe(
-          1,
-        );
+        expect(result[execution === 5 ? "dead" : "retrying"]).toBe(1);
         if (execution < 5) {
           expect(row.nextAttemptAt).toEqual(new Date(due[execution - 1]));
           expect(
-            (await runWhatsAppWorkerOnce(randomUUID(), dependencies(send)))
-              .deliveries.claimed,
+            (
+              await drainDueWhatsAppDeliveries(
+                randomUUID(),
+                25,
+                dependencies(send),
+              )
+            ).claimed,
           ).toBe(0);
           now = row.nextAttemptAt;
         }

@@ -60,7 +60,7 @@ export async function enqueueInboundJobs(
 
 export async function claimDueWhatsAppJobs(
   runId: string,
-  opts?: { limit?: number; now?: Date },
+  opts?: { limit?: number; now?: Date; retryOnly?: boolean },
 ) {
   const db = getDb();
   const now = opts?.now ?? new Date();
@@ -69,6 +69,7 @@ export async function claimDueWhatsAppJobs(
   return db.transaction(async (tx) => {
     const due: WhatsAppJob[] = [];
     async function take(fresh: boolean, count: number) {
+      if (fresh && opts?.retryOnly) return;
       if (count <= 0) return;
       const rows = await tx
         .select()
@@ -122,6 +123,24 @@ export async function claimDueWhatsAppJobs(
       .map((row) => byId.get(row.id))
       .filter((row): row is WhatsAppJob => !!row);
   });
+}
+
+/** Future retries only: already-due locked rows must not cause a busy loop. */
+export async function nextWhatsAppJobRetryAt(now: Date, before: Date) {
+  const [row] = await getDb()
+    .select({ at: whatsappJobs.nextAttemptAt })
+    .from(whatsappJobs)
+    .where(
+      and(
+        inArray(whatsappJobs.state, ["pending", "failed"]),
+        gt(whatsappJobs.attempts, 0),
+        gt(whatsappJobs.nextAttemptAt, now),
+        lt(whatsappJobs.nextAttemptAt, before),
+      ),
+    )
+    .orderBy(asc(whatsappJobs.nextAttemptAt))
+    .limit(1);
+  return row?.at ?? null;
 }
 
 export async function markJobDone(
@@ -213,6 +232,19 @@ export async function rescheduleJob(
     .set({
       state: "pending",
       nextAttemptAt: new Date(now.getTime() + delayMs),
+      claimedAt: null,
+      claimedBy: null,
+      updatedAt: now,
+    })
+    .where(ownedClaim(job));
+}
+
+/** Return untouched budget-limited work without consuming an execution. */
+export async function releaseWhatsAppJobClaim(job: WhatsAppJob, now: Date) {
+  await getDb()
+    .update(whatsappJobs)
+    .set({
+      state: job.attempts > 0 ? "failed" : "pending",
       claimedAt: null,
       claimedBy: null,
       updatedAt: now,

@@ -197,7 +197,7 @@ export async function enqueueWhatsAppDelivery(
 
 export async function claimDueWhatsAppDeliveries(
   runId: string,
-  opts?: { ids?: string[]; limit?: number; now?: Date },
+  opts?: { ids?: string[]; limit?: number; now?: Date; retryOnly?: boolean },
 ) {
   const db = getDb();
   const now = opts?.now ?? new Date();
@@ -206,6 +206,7 @@ export async function claimDueWhatsAppDeliveries(
   return db.transaction(async (tx) => {
     const due: WhatsAppDelivery[] = [];
     async function take(fresh: boolean, count: number) {
+      if (fresh && opts?.retryOnly) return;
       if (count <= 0) return;
       const rows = await tx
         .select()
@@ -423,16 +424,39 @@ export async function attemptWhatsAppDeliveriesNow(
   return counts;
 }
 
+/** Ignore fresh and claimed work when choosing an in-run retry wake-up. */
+export async function nextWhatsAppDeliveryRetryAt(now: Date, before: Date) {
+  const [row] = await getDb()
+    .select({ at: whatsappDeliveries.nextAttemptAt })
+    .from(whatsappDeliveries)
+    .where(
+      and(
+        inArray(whatsappDeliveries.state, ["pending", "failed"]),
+        gt(whatsappDeliveries.attempts, 0),
+        gt(whatsappDeliveries.nextAttemptAt, now),
+        lt(whatsappDeliveries.nextAttemptAt, before),
+      ),
+    )
+    .orderBy(asc(whatsappDeliveries.nextAttemptAt))
+    .limit(1);
+  return row?.at ?? null;
+}
+
 export async function drainDueWhatsAppDeliveries(
   runId: string,
   limit = 25,
   overrides: Partial<WhatsAppWorkerDependencies> = {},
+  opts: { retryOnly?: boolean; deadline?: Date } = {},
 ) {
   const dependencies = whatsappWorkerDependencies(overrides);
-  const claimed = await claimDueWhatsAppDeliveries(runId, {
-    limit,
-    now: dependencies.now(),
-  });
+  const claimed =
+    opts.deadline && dependencies.now() >= opts.deadline
+      ? []
+      : await claimDueWhatsAppDeliveries(runId, {
+          limit,
+          now: dependencies.now(),
+          retryOnly: opts.retryOnly,
+        });
   const counts = {
     claimed: claimed.length,
     sent: 0,
@@ -441,6 +465,19 @@ export async function drainDueWhatsAppDeliveries(
     deferred: 0,
   };
   for (const row of claimed) {
+    if (opts.deadline && dependencies.now() >= opts.deadline) {
+      await getDb()
+        .update(whatsappDeliveries)
+        .set({
+          state: row.attempts > 0 ? "failed" : "pending",
+          claimedAt: null,
+          claimedBy: null,
+          updatedAt: dependencies.now(),
+        })
+        .where(ownedClaim(row));
+      counts.deferred += 1;
+      continue;
+    }
     const result = await sendWhatsAppDelivery(row, dependencies);
     counts[result] += 1;
   }
