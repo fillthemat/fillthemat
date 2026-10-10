@@ -21,7 +21,7 @@ import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
   attemptPendingForLead,
-  runEmailSendOnce,
+  runEmailSendOnce as runEmailWorker,
   sendDelivery,
 } from "./deliveries";
 import { recordResendDeliveryEvent } from "./delivery-event";
@@ -31,6 +31,20 @@ const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
 let schoolId = "";
+async function runEmailSendOnce(
+  ...[runId, dependencies, options]: Parameters<typeof runEmailWorker>
+) {
+  const owned = await db
+    .select({ id: emailDeliveries.id })
+    .from(emailDeliveries)
+    .where(eq(emailDeliveries.schoolId, schoolId));
+  return runEmailWorker(runId, dependencies, {
+    ...options,
+    ids: owned
+      .map((row) => row.id)
+      .filter((id) => !options?.ids || options.ids.includes(id)),
+  });
+}
 let leadId = "";
 const now = new Date("2020-01-01T00:00:00Z");
 beforeAll(async () => {
@@ -341,7 +355,7 @@ describe("bounded email send run", () => {
       });
     expect((await stored(row.id)).state).toBe("dead");
   });
-  it("reserves 20 fresh and 5 retry slots and sends oldest first within each lane", async () => {
+  it("reserves fresh lane capacity of 20 and retry capacity of 5 and sends oldest first within each lane", async () => {
     const retry = [];
     const fresh = [];
     for (let index = 0; index < 30; index++) {

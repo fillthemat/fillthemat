@@ -22,7 +22,11 @@ import {
 } from "@/lib/conversations/conversation-store";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
-import { InternalFailure, MAX_EXECUTIONS } from "@/lib/retry-policy";
+import {
+  InternalFailure,
+  internalFailureReasonFrom,
+  MAX_EXECUTIONS,
+} from "@/lib/retry-policy";
 import { loadSchoolCatalog } from "@/lib/schools/public";
 import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
 import {
@@ -40,6 +44,7 @@ import {
 import {
   attemptWhatsAppDeliveriesNow,
   drainDueWhatsAppDeliveries,
+  enqueueAndAttemptWhatsAppDelivery,
   enqueueWhatsAppDelivery,
   nextWhatsAppDeliveryRetryAt,
   recoverStuckWhatsAppDeliveries,
@@ -103,7 +108,7 @@ async function sendNotice(
   ctx: Pick<InboundContext, "schoolId" | "message" | "runId" | "dependencies">,
   text: string,
 ): Promise<TurnReply> {
-  const deliveryId = await enqueueWhatsAppDelivery(
+  await enqueueAndAttemptWhatsAppDelivery(
     {
       schoolId: ctx.schoolId,
       recipientWaId: ctx.message.waId,
@@ -112,14 +117,9 @@ async function sendNotice(
       body: text,
       windowExpiresAt: addHours(ctx.dependencies.now(), 24),
     },
-    ctx.dependencies.now(),
+    ctx.runId,
+    ctx.dependencies,
   );
-  if (deliveryId)
-    await attemptWhatsAppDeliveriesNow(
-      [deliveryId],
-      ctx.runId,
-      ctx.dependencies,
-    );
   return { text };
 }
 
@@ -253,7 +253,7 @@ async function handleAssistantTurn(
       parts: body ? [{ type: "text", text: body }] : [],
     });
 
-    const deliveryId = await enqueueWhatsAppDelivery(
+    await enqueueAndAttemptWhatsAppDelivery(
       {
         schoolId: ctx.schoolId,
         recipientWaId: ctx.message.waId,
@@ -266,15 +266,9 @@ async function handleAssistantTurn(
         ],
         windowExpiresAt,
       },
-      ctx.dependencies.now(),
+      ctx.runId,
+      ctx.dependencies,
     );
-    if (deliveryId) {
-      await attemptWhatsAppDeliveriesNow(
-        [deliveryId],
-        ctx.runId,
-        ctx.dependencies,
-      );
-    }
     return { text: body, messageId: replyMessageId, provenance };
   }
 
@@ -404,8 +398,14 @@ export async function processWhatsAppJob(
     if (job.attempts >= MAX_EXECUTIONS) {
       return await failJob(
         job,
-        { kind: "internal", reason: job.failureReason ?? "execution_limit" },
-        job.lastError ?? "execution_limit",
+        {
+          kind: "internal",
+          reason: internalFailureReasonFrom(
+            job.failureReason,
+            "attempts_exhausted",
+          ),
+        },
+        job.lastError ?? "attempts_exhausted",
         dependencies.now(),
       );
     }
@@ -525,7 +525,7 @@ export async function processWhatsAppJob(
     const failure =
       error instanceof InternalFailure
         ? error
-        : { kind: "internal" as const, reason: "whatsapp_job_failed" };
+        : { kind: "internal" as const, reason: "whatsapp_job_failed" as const };
     return failJob(job, failure, message, dependencies.now());
   }
 }
@@ -550,6 +550,7 @@ export async function drainWhatsAppJobs(
           limit,
           now: dependencies.now(),
           retryOnly: opts.retryOnly,
+          phoneNumberIds: dependencies.phoneNumberIds,
         });
   const counts = {
     claimed: claimed.length,
@@ -614,11 +615,13 @@ export async function runWhatsAppWorkerOnce(
       undefined,
       dependencies.now(),
       runId,
+      dependencies.phoneNumberIds,
     );
     const recoveredDeliveries = await recoverStuckWhatsAppDeliveries(
       undefined,
       dependencies.now(),
       runId,
+      dependencies.phoneNumberIds,
     );
     const jobs = await drainWhatsAppJobs(runId, 10, dependencies, { deadline });
     jobs.dead += recovered.dead;
@@ -656,8 +659,8 @@ export async function runWhatsAppWorkerOnce(
       const now = dependencies.now();
       if (now >= deadline) break;
       const due = await Promise.all([
-        nextWhatsAppJobRetryAt(now, deadline),
-        nextWhatsAppDeliveryRetryAt(now, deadline),
+        nextWhatsAppJobRetryAt(now, deadline, dependencies.phoneNumberIds),
+        nextWhatsAppDeliveryRetryAt(now, deadline, dependencies.phoneNumberIds),
       ]);
       const next = due
         .filter((at): at is Date => at !== null)

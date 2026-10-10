@@ -17,8 +17,6 @@ import {
   WHATSAPP_MAX_BODY_BYTES,
   WHATSAPP_STUB_VERIFY_TOKEN,
 } from "@/lib/whatsapp/config";
-import { drainDueWhatsAppDeliveries } from "@/lib/whatsapp/deliveries";
-import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import {
   authSql,
   deleteAuthUser,
@@ -27,6 +25,7 @@ import {
   requireRow,
 } from "@/test/integration-env";
 import { post, sign, textInboundPayload } from "@/test/whatsapp-webhook";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import { GET, POST } from "./route";
 
 loadLocalEnv();
@@ -36,6 +35,8 @@ const sql = authSql();
 const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
 const phoneNumberId = `199${Date.now().toString().slice(-9)}`;
+const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } =
+  scopedWhatsAppRunner(() => [phoneNumberId]);
 const slug = `wa-${suffix}`;
 const waId = "16505551234";
 let schoolId = "";

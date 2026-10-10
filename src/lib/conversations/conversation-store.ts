@@ -235,8 +235,7 @@ export async function claimGeneration(
   {
     wait = false,
     now = new Date(),
-    sleep = (milliseconds: number) =>
-      new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+    sleep = defaultSleep,
   }: {
     wait?: boolean;
     now?: Date;
@@ -403,3 +402,5 @@ export async function attachConversationContact(
     .returning({ id: conversations.id });
   return conversation?.id;
 }
+
+import { sleep as defaultSleep } from "@/lib/sleep";

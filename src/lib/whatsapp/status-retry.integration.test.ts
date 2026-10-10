@@ -13,11 +13,11 @@ import { getDb } from "@/db";
 import { whatsappDeliveries } from "@/db/schema";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import type { WhatsAppSendOutcome } from "./client";
 import {
   applyWhatsAppStatuses,
   claimDueWhatsAppDeliveries,
-  drainDueWhatsAppDeliveries,
   enqueueWhatsAppDelivery,
   sendWhatsAppDelivery,
 } from "./deliveries";
@@ -28,7 +28,10 @@ const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
 const suffix = randomUUID();
-// Earlier than other worktrees' historical fixtures: the worker claims globally.
+const { drainDueWhatsAppDeliveries } = scopedWhatsAppRunner(() => [
+  `callback-${suffix}`,
+]);
+// Fixed time for deterministic due gates; the runner scopes claims explicitly.
 const initialNow = new Date("2000-01-01T12:00:00Z");
 let now = initialNow;
 let schoolId: string;

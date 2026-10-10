@@ -23,18 +23,16 @@ import { runEmailSendOnce } from "@/lib/email/deliveries";
 import type { EmailMessage, EmailSendOutcome } from "@/lib/email/dependencies";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import type { WhatsAppSendOutcome } from "./client";
-import {
-  applyWhatsAppStatuses,
-  drainDueWhatsAppDeliveries,
-  enqueueWhatsAppDelivery,
-} from "./deliveries";
-import { runWhatsAppWorkerOnce } from "./worker";
+import { applyWhatsAppStatuses, enqueueWhatsAppDelivery } from "./deliveries";
 
 loadLocalEnv();
 const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
+const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } =
+  scopedWhatsAppRunner(() => [`confirmation-${ownerId}`]);
 const classStart = new Date("2018-01-01T18:00:00Z");
 let now = classStart;
 let schoolId = "";
@@ -177,6 +175,38 @@ function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
   };
 }
 describe("booking confirmation delivery through the worker", () => {
+  it.each([131026, 131000])(
+    "marks a callback after class start stale even for failure %i",
+    async (code) => {
+      now = classStart;
+      const wamid = `late-confirmation/${randomUUID()}`;
+      const id = await enqueue({
+        state: "sent",
+        providerId: wamid,
+        attempts: 5,
+      });
+      await applyWhatsAppStatuses(
+        [
+          {
+            wamid,
+            recipientId: null,
+            status: "failed",
+            timestamp: now.getTime() / 1000,
+            errorCode: String(code),
+            errorMessage: "undeliverable",
+          },
+        ],
+        { now: () => now },
+      );
+      expect(await stored(id)).toMatchObject({
+        state: "dead",
+        terminalCause: "stale",
+        failureReason: "booking_confirmation_stale",
+        attempts: 5,
+      });
+      expect(await emails()).toEqual([]);
+    },
+  );
   it("enqueues one owner email when duplicate failure callbacks stop an accepted confirmation", async () => {
     now = new Date("2018-01-01T17:59:00Z");
     const id = await enqueue();

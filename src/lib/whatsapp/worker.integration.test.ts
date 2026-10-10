@@ -6,6 +6,7 @@ import { conversations, whatsappDeliveries, whatsappJobs } from "@/db/schema";
 import { findOrCreateConversation } from "@/lib/conversations/conversation-store";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import {
   sendWhatsAppInteractive,
   sendWhatsAppTemplate,
@@ -16,7 +17,6 @@ import {
   enqueueWhatsAppDelivery,
 } from "./deliveries";
 import { enqueueInboundJobs } from "./jobs";
-import { runWhatsAppWorkerOnce } from "./worker";
 
 loadLocalEnv();
 const db = getDb();
@@ -24,7 +24,8 @@ const sql = authSql();
 const ownerId = randomUUID();
 const suffix = randomUUID();
 const phoneNumberId = `worker-${suffix}`;
-// Historical time keeps these runs from claiming other worktrees' due rows.
+const { runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [phoneNumberId]);
+// Fixed time for deterministic due gates; the runner scopes claims explicitly.
 const now = new Date("2020-01-01T12:00:00Z");
 let schoolId: string;
 

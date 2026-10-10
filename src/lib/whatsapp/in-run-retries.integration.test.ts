@@ -18,16 +18,18 @@ import {
   whileSavingMessages,
 } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import type { WhatsAppSendOutcome } from "./client";
 import { enqueueWhatsAppDelivery } from "./deliveries";
 import type { WhatsAppWorkerDependencies } from "./dependencies";
-import { runWhatsAppWorkerOnce } from "./worker";
+import { runWhatsAppWorkerOnce as runScopedWorker } from "./worker";
 
 loadLocalEnv();
 const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
 const phoneNumberId = `in-run-${randomUUID()}`;
+const { runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [phoneNumberId]);
 const start = new Date("1890-01-01T12:00:00Z");
 const jobIds: string[] = [];
 let schoolId: string;
@@ -129,6 +131,123 @@ async function readDelivery(id: string) {
 }
 
 describe("bounded in-run WhatsApp retries", () => {
+  it("does not claim or recover another phone number's work, including earlier retries", async () => {
+    const foreignPhone = `foreign-${randomUUID()}`;
+    const [foreign] = await db
+      .insert(whatsappJobs)
+      .values({
+        phoneNumberId: foreignPhone,
+        dedupeKey: randomUUID(),
+        kind: "inbound_message",
+        payload: { text: "" },
+        attempts: 2,
+        nextAttemptAt: start,
+        createdAt: new Date(start.getTime() - 10_000),
+      })
+      .returning();
+    jobIds.push(foreign.id);
+    const [foreignClaim, foreignFuture] = await db
+      .insert(whatsappJobs)
+      .values([
+        {
+          phoneNumberId: foreignPhone,
+          dedupeKey: randomUUID(),
+          kind: "inbound_message",
+          payload: { text: "" },
+          state: "claimed",
+          attempts: 5,
+          claimedBy: "foreign-worker",
+          claimedAt: new Date(start.getTime() - 600_000),
+          nextAttemptAt: start,
+        },
+        {
+          phoneNumberId: foreignPhone,
+          dedupeKey: randomUUID(),
+          kind: "inbound_message",
+          payload: { text: "" },
+          state: "failed",
+          attempts: 1,
+          nextAttemptAt: new Date(start.getTime() + 10_000),
+        },
+      ])
+      .returning();
+    jobIds.push(foreignClaim.id, foreignFuture.id);
+    const [foreignDelivery, foreignRetry] = await db
+      .insert(whatsappDeliveries)
+      .values([
+        {
+          schoolId,
+          phoneNumberId: foreignPhone,
+          recipientWaId: "foreign",
+          providerIdempotencyKey: randomUUID(),
+          state: "claimed",
+          attempts: 5,
+          claimedBy: "foreign-worker",
+          claimedAt: new Date(start.getTime() - 600_000),
+          nextAttemptAt: start,
+        },
+        {
+          schoolId,
+          phoneNumberId: foreignPhone,
+          recipientWaId: "foreign",
+          providerIdempotencyKey: randomUUID(),
+          state: "failed",
+          attempts: 1,
+          nextAttemptAt: new Date(start.getTime() + 10_000),
+        },
+      ])
+      .returning();
+    const id = await insertDelivery();
+    const fake = fakeRun(async () => ({
+      ok: true,
+      kind: "accepted",
+      providerId: randomUUID(),
+    }));
+    const result = await runScopedWorker(randomUUID(), {
+      ...fake.dependencies,
+      phoneNumberIds: [phoneNumberId],
+    });
+    expect(result.jobs.claimed).toBe(0);
+    expect(result.jobs.dead).toBe(0);
+    expect(result.deliveries.claimed).toBe(1);
+    expect(result.deliveries.dead).toBe(0);
+    expect(await readDelivery(id)).toMatchObject({
+      state: "sent",
+      attempts: 1,
+    });
+    expect(
+      (
+        await db
+          .select()
+          .from(whatsappJobs)
+          .where(eq(whatsappJobs.id, foreign.id))
+      )[0],
+    ).toMatchObject({ state: "pending", attempts: 2, claimedBy: null });
+    const untouchedJobs = await db
+      .select()
+      .from(whatsappJobs)
+      .where(inArray(whatsappJobs.id, [foreignClaim.id, foreignFuture.id]));
+    expect(
+      untouchedJobs.find((row) => row.id === foreignClaim.id),
+    ).toMatchObject({
+      state: "claimed",
+      attempts: 5,
+      claimedBy: "foreign-worker",
+    });
+    expect(
+      untouchedJobs.find((row) => row.id === foreignFuture.id),
+    ).toMatchObject({ state: "failed", attempts: 1 });
+    expect(await readDelivery(foreignDelivery.id)).toMatchObject({
+      state: "claimed",
+      attempts: 5,
+      claimedBy: "foreign-worker",
+    });
+    expect(await readDelivery(foreignRetry.id)).toMatchObject({
+      state: "failed",
+      attempts: 1,
+    });
+    expect(fake.sleeps).toEqual([]);
+  });
   it("delivers in one run after two transient failures with 10s and 20s waits", async () => {
     const id = await insertDelivery();
     let executions = 0;

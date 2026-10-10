@@ -9,10 +9,7 @@ import { InternalFailure } from "@/lib/retry-policy";
 import { bookSlot } from "@/lib/schedule/book-slot";
 import { whatsappBookingQuotaExceeded } from "@/lib/security/limits";
 import { bookingConfirmationIdempotencyKey } from "./confirmation";
-import {
-  attemptWhatsAppDeliveriesNow,
-  enqueueWhatsAppDelivery,
-} from "./deliveries";
+import { enqueueAndAttemptWhatsAppDelivery } from "./deliveries";
 import {
   type WhatsAppWorkerDependencies,
   whatsappWorkerDependencies,
@@ -51,7 +48,7 @@ async function sendNotice({
   idempotencyKey: string;
   dependencies: WhatsAppWorkerDependencies;
 }): Promise<BookingReply> {
-  const deliveryId = await enqueueWhatsAppDelivery(
+  await enqueueAndAttemptWhatsAppDelivery(
     {
       schoolId,
       recipientWaId: waId,
@@ -60,10 +57,9 @@ async function sendNotice({
       body: text,
       windowExpiresAt,
     },
-    dependencies.now(),
+    runId,
+    dependencies,
   );
-  if (deliveryId)
-    await attemptWhatsAppDeliveriesNow([deliveryId], runId, dependencies);
   return { text };
 }
 
@@ -196,7 +192,7 @@ export async function confirmWhatsAppBooking(
 
   // No-email prospect confirmation → WhatsApp template (decision B / D8). The
   // owner notification stays email and was enqueued by `bookSlot` already.
-  const templateDeliveryId = await enqueueWhatsAppDelivery(
+  await enqueueAndAttemptWhatsAppDelivery(
     {
       schoolId,
       recipientWaId: waId,
@@ -211,15 +207,9 @@ export async function confirmWhatsAppBooking(
       ],
       bookingId: booking.id,
     },
-    dependencies.now(),
+    runId,
+    dependencies,
   );
-  if (templateDeliveryId) {
-    await attemptWhatsAppDeliveriesNow(
-      [templateDeliveryId],
-      runId,
-      dependencies,
-    );
-  }
   if (!result.idempotent) {
     await attemptPendingForBooking(booking.id);
   }

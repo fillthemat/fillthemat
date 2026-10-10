@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { retryDecision } from "@/lib/retry-policy";
+import { emailRetryDecision as retryDecision } from "@/lib/retry-policy";
 
 const now = new Date("2025-01-01T00:00:00Z");
 describe("email retry policy", () => {
@@ -9,7 +9,6 @@ describe("email retry policy", () => {
         { kind: "email_error", name: "validation_error", status: 422 },
         1,
         now,
-        "email",
       ),
     ).toEqual({ action: "stop", cause: "permanent" });
   });
@@ -32,12 +31,7 @@ describe("email retry policy", () => {
     "stops named permanent email error %s even without HTTP status",
     (name) => {
       expect(
-        retryDecision(
-          { kind: "email_error", name, status: null },
-          1,
-          now,
-          "email",
-        ),
+        retryDecision({ kind: "email_error", name, status: null }, 1, now),
       ).toEqual({ action: "stop", cause: "permanent" });
     },
   );
@@ -49,7 +43,6 @@ describe("email retry policy", () => {
           { kind: "email_error", name: "unrecognised", status },
           1,
           now,
-          "email",
         ),
       ).toEqual({ action: "stop", cause: "permanent" });
     },
@@ -71,15 +64,15 @@ describe("email retry policy", () => {
         name: String(name),
         status: typeof status === "number" ? status : null,
       };
-      expect(retryDecision(failure, 1, now, "email")).toEqual({
+      expect(retryDecision(failure, 1, now)).toEqual({
         action: "retry",
         at: new Date("2025-01-01T00:01:00Z"),
       });
-      expect(retryDecision(failure, 4, now, "email")).toEqual({
+      expect(retryDecision(failure, 4, now)).toEqual({
         action: "retry",
         at: new Date("2025-01-01T00:08:00Z"),
       });
-      expect(retryDecision(failure, 5, now, "email")).toEqual({
+      expect(retryDecision(failure, 5, now)).toEqual({
         action: "stop",
         cause: "attempts_exhausted",
       });

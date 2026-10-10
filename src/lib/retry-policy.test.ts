@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { InternalFailure, retryDecision } from "./retry-policy";
+import {
+  InternalFailure,
+  whatsappRetryDecision as retryDecision,
+} from "./retry-policy";
 
 const now = new Date("2020-01-01T12:00:00Z");
 
@@ -48,15 +51,16 @@ describe("Meta send retry policy (§1 decision matrix)", () => {
       cause: "attempts_exhausted",
     });
   });
-  it.each(["school_not_approved", "window_closed", "missing_credentials"])(
-    "stops delivery preflight %s",
-    (reason) => {
-      expect(retryDecision({ kind: "internal", reason }, 0, now)).toEqual({
-        action: "stop",
-        cause: "permanent",
-      });
-    },
-  );
+  it.each([
+    "school_not_approved",
+    "window_closed",
+    "missing_credentials",
+  ] as const)("stops delivery preflight %s", (reason) => {
+    expect(retryDecision({ kind: "internal", reason }, 0, now)).toEqual({
+      action: "stop",
+      cause: "permanent",
+    });
+  });
   it("stops missing credentials but bounds HTTP, malformed and network outcomes", () => {
     expect(
       retryDecision(
@@ -160,17 +164,14 @@ describe("Meta send retry policy (§1 decision matrix)", () => {
 
 describe("retry policy", () => {
   it.each([
-    "whatsapp_booking_intent_insert_failed",
-    "contact_failed",
-    "landing_session_failed",
-    "lead_failed",
-    "contact_upsert_failed",
-    "participant_upsert_failed",
-    "occurrence_missing",
-    "booking_insert_failed",
+    "whatsapp_job_failed",
+    "email_send_failed",
+    "send_failed",
+    "network_error",
+    "malformed_response",
+    "invalid_conversation",
     "worker_crashed",
-    "unrecognised_reason",
-  ])("keeps %s retryable within the shared cap", (reason) => {
+  ] as const)("keeps %s retryable within the shared cap", (reason) => {
     expect(retryDecision({ kind: "internal", reason }, 1, now)).toEqual({
       action: "retry",
       at: new Date("2020-01-01T12:00:10Z"),
@@ -192,8 +193,8 @@ describe("retry policy", () => {
     });
   });
   it.each([
-    ["new_internal_reason", 1, "2020-01-01T12:00:10Z"],
-    ["whatsapp_conversation_resolution_failed", 2, "2020-01-01T12:00:20Z"],
+    ["worker_crashed", 1, "2020-01-01T12:00:10Z"],
+    ["invalid_conversation", 2, "2020-01-01T12:00:20Z"],
     ["whatsapp_job_failed", 3, "2020-01-01T12:00:40Z"],
     ["whatsapp_job_failed", 4, "2020-01-01T12:01:20Z"],
   ] as const)(
@@ -212,7 +213,7 @@ describe("retry policy", () => {
     ["school_missing", 1, "permanent"],
     ["unknown_phone_number", 5, "permanent"],
     ["whatsapp_job_failed", 5, "attempts_exhausted"],
-    ["new_internal_reason", 6, "attempts_exhausted"],
+    ["worker_crashed", 6, "attempts_exhausted"],
   ] as const)(
     "stops %s at execution %i with cause %s",
     (reason, executions, cause) => {

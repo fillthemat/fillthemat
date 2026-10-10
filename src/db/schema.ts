@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const appSchema = pgSchema("app");
+export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 
 export const bookingStatusEnum = appSchema.enum("booking_status", [
   "booked",
@@ -571,10 +572,7 @@ export const emailDeliveries = appSchema.table(
     providerId: text("provider_id"),
     lastError: text("last_error"),
     failureReason: text("failure_reason"),
-    terminalCause:
-      text("terminal_cause").$type<
-        import("@/lib/retry-policy").TerminalCause
-      >(),
+    terminalCause: text("terminal_cause").$type<TerminalCause>(),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -635,10 +633,7 @@ export const whatsappDeliveries = appSchema.table(
     lastError: text("last_error"),
     failureReason: text("failure_reason"),
     failureCode: integer("failure_code"),
-    terminalCause:
-      text("terminal_cause").$type<
-        import("@/lib/retry-policy").TerminalCause
-      >(),
+    terminalCause: text("terminal_cause").$type<TerminalCause>(),
     ...timestamps,
   },
   (t) => [
@@ -680,10 +675,7 @@ export const whatsappJobs = appSchema.table(
     claimedBy: text("claimed_by"),
     lastError: text("last_error"),
     failureReason: text("failure_reason"),
-    terminalCause:
-      text("terminal_cause").$type<
-        import("@/lib/retry-policy").TerminalCause
-      >(),
+    terminalCause: text("terminal_cause").$type<TerminalCause>(),
     ...timestamps,
   },
   (t) => [

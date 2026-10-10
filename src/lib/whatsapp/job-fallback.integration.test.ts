@@ -18,14 +18,15 @@ import {
   whileSavingMessages,
 } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import type { WhatsAppTransport } from "./dependencies";
-import { runWhatsAppWorkerOnce } from "./worker";
 
 loadLocalEnv();
 const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
 const phoneNumberId = `job-fallback-${randomUUID()}`;
+const { runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [phoneNumberId]);
 const receivedAt = new Date("1987-01-01T12:00:00Z");
 const jobIds: string[] = [];
 let schoolId: string;

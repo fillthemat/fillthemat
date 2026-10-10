@@ -1,11 +1,42 @@
+import type { TerminalCause } from "@/db/schema";
 import type { WhatsAppSendFailure } from "./whatsapp/client";
 
 /** Started executions, including crashed work, share one budget across runs. */
 export const MAX_EXECUTIONS = 5;
 
 // Extend this discriminated union with provider outcomes, not error prose.
+const internalFailureReasons = [
+  "unknown_phone_number",
+  "school_missing",
+  "school_not_approved",
+  "window_closed",
+  "missing_credentials",
+  "missing_booking",
+  "missing_lead",
+  "missing_contact",
+  "unknown_email_kind",
+  "booking_confirmation_stale",
+  "worker_crashed",
+  "attempts_exhausted",
+  "invalid_conversation",
+  "whatsapp_job_failed",
+  "send_failed",
+  "email_send_failed",
+  "malformed_response",
+  "network_error",
+] as const;
+export type InternalFailureReason = (typeof internalFailureReasons)[number];
+
+/** Stored diagnostics may be provider reasons or legacy values, not internal sentinels. */
+export function internalFailureReasonFrom(
+  reason: string | null,
+  fallback: InternalFailureReason,
+): InternalFailureReason {
+  return internalFailureReasons.find((known) => known === reason) ?? fallback;
+}
+
 export type RetryFailure =
-  | { kind: "internal"; reason: string }
+  | { kind: "internal"; reason: InternalFailureReason }
   | { kind: "email_error"; name: string; status: number | null }
   | WhatsAppSendFailure;
 
@@ -71,23 +102,22 @@ function permanentFailure(failure: RetryFailure): boolean {
 export class InternalFailure extends Error {
   readonly kind = "internal";
   constructor(
-    readonly reason: string,
-    message = reason,
+    readonly reason: InternalFailureReason,
+    message: string = reason,
   ) {
     super(message);
     this.name = "InternalFailure";
   }
 }
-export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 export type RetryDecision =
   | { action: "stop"; cause: TerminalCause }
   | { action: "retry"; at: Date };
 
-export function retryDecision(
+function retryDecision(
   failure: RetryFailure,
   executions: number,
   now: Date,
-  channel: "whatsapp" | "email" = "whatsapp",
+  backoff: (executions: number) => number,
 ): RetryDecision {
   if (
     failure.kind === "internal" &&
@@ -101,9 +131,32 @@ export function retryDecision(
   if (executions >= MAX_EXECUTIONS) {
     return { action: "stop", cause: "attempts_exhausted" };
   }
-  const delayMs =
-    channel === "email"
-      ? Math.min(60, 2 ** Math.max(0, executions - 1)) * 60_000
-      : 10_000 * 2 ** Math.max(0, executions - 1);
+  const delayMs = backoff(executions);
   return { action: "retry", at: new Date(now.getTime() + delayMs) };
+}
+
+export function whatsappRetryDecision(
+  failure: RetryFailure,
+  executions: number,
+  now: Date,
+): RetryDecision {
+  return retryDecision(
+    failure,
+    executions,
+    now,
+    (count) => 10_000 * 2 ** Math.max(0, count - 1),
+  );
+}
+
+export function emailRetryDecision(
+  failure: Extract<RetryFailure, { kind: "internal" | "email_error" }>,
+  executions: number,
+  now: Date,
+): RetryDecision {
+  return retryDecision(
+    failure,
+    executions,
+    now,
+    (count) => Math.min(60, 2 ** Math.max(0, count - 1)) * 60_000,
+  );
 }

@@ -21,12 +21,19 @@ import {
   type School,
   schools,
 } from "@/db/schema";
-import { logDeadTransition } from "@/lib/retry-log";
+import {
+  orderClaimedRows,
+  ownedQueueClaim,
+  recoverClaimedRows,
+  takeClaimLanes,
+} from "@/lib/queue-claims";
+import { deadEventFrom, logDeadTransition } from "@/lib/retry-log";
 import {
   InternalFailure,
+  internalFailureReasonFrom,
   MAX_EXECUTIONS,
   type RetryFailure,
-  retryDecision,
+  emailRetryDecision as retryDecision,
 } from "@/lib/retry-policy";
 import {
   type EmailSendDependencies,
@@ -137,15 +144,7 @@ async function renderDelivery(
 }
 
 function ownedClaim(delivery: EmailDelivery) {
-  return and(
-    eq(emailDeliveries.id, delivery.id),
-    eq(emailDeliveries.state, "claimed"),
-    eq(emailDeliveries.claimedBy, delivery.claimedBy ?? ""),
-    delivery.claimedAt
-      ? eq(emailDeliveries.claimedAt, delivery.claimedAt)
-      : sql`false`,
-    eq(emailDeliveries.attempts, delivery.attempts),
-  );
+  return ownedQueueClaim(emailDeliveries, delivery);
 }
 type SendResult = "sent" | "retrying" | "dead" | "deferred";
 async function failDelivery(
@@ -154,8 +153,13 @@ async function failDelivery(
   message: string,
   now: Date,
 ): Promise<SendResult> {
-  const decision = retryDecision(failure, delivery.attempts, now, "email");
-  const reason = failure.kind === "internal" ? failure.reason : failure.name;
+  const decision = retryDecision(failure, delivery.attempts, now);
+  const reason =
+    failure.kind === "internal"
+      ? failure.reason === "attempts_exhausted"
+        ? (delivery.failureReason ?? failure.reason)
+        : failure.reason
+      : failure.name;
   const [row] = await getDb()
     .update(emailDeliveries)
     .set({
@@ -172,15 +176,9 @@ async function failDelivery(
     .returning();
   if (!row) return "deferred";
   if (decision.action === "stop")
-    logDeadTransition({
-      queue: "email_delivery",
-      id: row.id,
-      schoolId: row.schoolId,
-      reason,
-      terminalCause: decision.cause,
-      executions: row.attempts,
-      runId: delivery.claimedBy ?? "unknown",
-    });
+    logDeadTransition(
+      deadEventFrom(row, "email_delivery", delivery.claimedBy ?? "unknown"),
+    );
   return decision.action === "stop" ? "dead" : "retrying";
 }
 
@@ -206,7 +204,10 @@ export async function sendDelivery(
       delivery,
       {
         kind: "internal",
-        reason: delivery.failureReason ?? "attempts_exhausted",
+        reason: internalFailureReasonFrom(
+          delivery.failureReason,
+          "attempts_exhausted",
+        ),
       },
       delivery.lastError ?? "attempts_exhausted",
       dependencies.now(),
@@ -239,7 +240,9 @@ export async function sendDelivery(
             .limit(1)
         )[0]
       : null;
-    // Keep ICS DTSTAMP stable when reusing Resend's idempotency key on retry.
+    // Keep ICS DTSTAMP stable when reusing Resend's idempotency key on retry:
+    // changing attachment bytes would cause invalid_idempotent_request (409).
+    // https://resend.com/docs/dashboard/emails/idempotency-keys
     const rendered = await renderDelivery(
       executing,
       school,
@@ -341,13 +344,11 @@ export async function recoverStuckEmailDeliveries(
         ),
       )
       .for("update", { skipLocked: true });
-    const dead: EmailDelivery[] = [];
-    for (const delivery of stale) {
+    return recoverClaimedRows(stale, async (delivery) => {
       const decision = retryDecision(
         { kind: "internal", reason: "worker_crashed" },
         delivery.attempts,
         now,
-        "email",
       );
       const [row] = await tx
         .update(emailDeliveries)
@@ -368,20 +369,11 @@ export async function recoverStuckEmailDeliveries(
         })
         .where(ownedClaim(delivery))
         .returning();
-      if (row?.state === "dead") dead.push(row);
-    }
-    return { recovered: stale.length, dead };
+      return row;
+    });
   });
   for (const row of result.dead)
-    logDeadTransition({
-      queue: "email_delivery",
-      id: row.id,
-      schoolId: row.schoolId,
-      reason: row.failureReason ?? "worker_crashed",
-      terminalCause: row.terminalCause ?? "attempts_exhausted",
-      executions: row.attempts,
-      runId,
-    });
+    logDeadTransition(deadEventFrom(row, "email_delivery", runId));
   return { recovered: result.recovered, dead: result.dead.length };
 }
 
@@ -422,38 +414,31 @@ export async function claimDueDeliveries(
   const now = opts.now ?? new Date();
   if (opts.ids?.length === 0 || limit <= 0) return [];
   return db.transaction(async (tx) => {
-    const due: EmailDelivery[] = [];
-    async function take(fresh: boolean, count: number) {
-      if (count <= 0) return;
-      const rows = await tx
-        .select()
-        .from(emailDeliveries)
-        .where(
-          and(
-            inArray(emailDeliveries.state, ["pending", "failed"]),
-            lte(emailDeliveries.nextAttemptAt, now),
-            fresh
-              ? eq(emailDeliveries.attempts, 0)
-              : gt(emailDeliveries.attempts, 0),
-            opts.ids ? inArray(emailDeliveries.id, opts.ids) : undefined,
-            due.length
-              ? notInArray(
-                  emailDeliveries.id,
-                  due.map((row) => row.id),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(asc(emailDeliveries.createdAt), asc(emailDeliveries.id))
-        .for("update", { skipLocked: true })
-        .limit(count);
-      due.push(...rows);
-    }
-    const retrySlots = Math.floor(limit / 5);
-    await take(true, limit - retrySlots);
-    await take(false, retrySlots);
-    await take(true, limit - due.length);
-    await take(false, limit - due.length);
+    const due = await takeClaimLanes(
+      limit,
+      async (fresh, count, excludedIds) => {
+        const rows = await tx
+          .select()
+          .from(emailDeliveries)
+          .where(
+            and(
+              inArray(emailDeliveries.state, ["pending", "failed"]),
+              lte(emailDeliveries.nextAttemptAt, now),
+              fresh
+                ? eq(emailDeliveries.attempts, 0)
+                : gt(emailDeliveries.attempts, 0),
+              opts.ids ? inArray(emailDeliveries.id, opts.ids) : undefined,
+              excludedIds.length
+                ? notInArray(emailDeliveries.id, excludedIds)
+                : undefined,
+            ),
+          )
+          .orderBy(asc(emailDeliveries.createdAt), asc(emailDeliveries.id))
+          .for("update", { skipLocked: true })
+          .limit(count);
+        return rows;
+      },
+    );
 
     if (due.length === 0) return [];
 
@@ -468,16 +453,6 @@ export async function claimDueDeliveries(
       })
       .where(inArray(emailDeliveries.id, ids))
       .returning();
-    const byId = new Map(claimed.map((row) => [row.id, row]));
-    // UPDATE RETURNING has no ordering guarantee; retain fresh-first selection.
-    return due
-      .sort(
-        (a, b) =>
-          Number(a.attempts > 0) - Number(b.attempts > 0) ||
-          a.createdAt.getTime() - b.createdAt.getTime() ||
-          a.id.localeCompare(b.id),
-      )
-      .map((row) => byId.get(row.id))
-      .filter((row): row is EmailDelivery => !!row);
+    return orderClaimedRows(due, claimed);
   });
 }

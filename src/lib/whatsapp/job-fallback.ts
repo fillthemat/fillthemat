@@ -6,6 +6,7 @@ import {
   whatsappDeliveries,
   whatsappJobs,
 } from "@/db/schema";
+import { jobRecipientWaId } from "./parse";
 
 /** Enqueue in the job-death transaction: a crash cannot strand a dead job without its apology. */
 export async function enqueueJobFallback(
@@ -19,15 +20,8 @@ export async function enqueueJobFallback(
     job.kind !== "inbound_message"
   )
     return;
-  const payload = job.payload;
-  if (
-    !payload ||
-    typeof payload !== "object" ||
-    !("waId" in payload) ||
-    typeof payload.waId !== "string" ||
-    !payload.waId.trim()
-  )
-    return;
+  const waId = jobRecipientWaId(job.payload);
+  if (!waId) return;
 
   // No persisted service-window deadline exists yet. Use the latest inbound
   // receipt for this school number/prospect, never a retry's processing time or
@@ -40,7 +34,7 @@ export async function enqueueJobFallback(
       and(
         eq(whatsappJobs.kind, "inbound_message"),
         eq(whatsappJobs.phoneNumberId, job.phoneNumberId),
-        eq(sql<string>`${whatsappJobs.payload}->>'waId'`, payload.waId),
+        eq(sql<string>`${whatsappJobs.payload}->>'waId'`, waId),
         lte(whatsappJobs.createdAt, now),
       ),
     )
@@ -67,7 +61,7 @@ export async function enqueueJobFallback(
     .values({
       schoolId: school.id,
       phoneNumberId: job.phoneNumberId,
-      recipientWaId: payload.waId,
+      recipientWaId: waId,
       providerIdempotencyKey: `job-fallback/${job.id}`,
       body: "Sorry, we're having trouble replying right now. Please message us again in a bit.",
       windowExpiresAt,

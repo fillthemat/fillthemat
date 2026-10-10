@@ -1,4 +1,28 @@
-import type { TerminalCause } from "./retry-policy";
+import type { TerminalCause } from "@/db/schema";
+
+export function deadEventFrom(
+  row: {
+    id: string;
+    schoolId: string | null;
+    failureReason: string | null;
+    failureCode?: number | null;
+    terminalCause: TerminalCause | null;
+    attempts: number;
+  },
+  queue: "whatsapp_job" | "whatsapp_delivery" | "email_delivery",
+  runId: string,
+) {
+  return {
+    queue,
+    id: row.id,
+    schoolId: row.schoolId,
+    reason: row.failureReason ?? "unknown_failure",
+    code: row.failureCode,
+    terminalCause: row.terminalCause ?? "attempts_exhausted",
+    executions: row.attempts,
+    runId,
+  };
+}
 
 /** Call only after an atomic transition returned a changed row. Never pass error prose. */
 export function logDeadTransition(event: {

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
 import { addDays } from "date-fns";
 import { and, eq, inArray } from "drizzle-orm";
 import {
@@ -30,7 +29,6 @@ import {
 } from "@/lib/security/limits";
 import { confirmBookingButtonId } from "@/lib/whatsapp/confirmation";
 import { upsertPendingBookingIntent } from "@/lib/whatsapp/intents";
-import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import {
   authSql,
   loadLocalEnv,
@@ -52,6 +50,7 @@ import {
   post,
   textInboundPayload,
 } from "@/test/whatsapp-webhook";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 
 loadLocalEnv();
 
@@ -61,6 +60,10 @@ const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
 const phoneNumberId = `499${Date.now().toString().slice(-9)}`;
 const unusedPhoneNumberId = `599${Date.now().toString().slice(-9)}`;
+const { runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [
+  phoneNumberId,
+  unusedPhoneNumberId,
+]);
 const scriptedReply =
   "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.";
 let schoolId = "";
@@ -94,13 +97,11 @@ async function send(wamid: string, payload: unknown) {
 // The message `wamid` in `payload` through the webhook, once its job is due.
 async function receive(wamid: string, payload: unknown) {
   await POST(post(payload));
-  // The database stamps the job's due time with its own clock, which can run
-  // a few ms ahead of this machine's, and the worker skips jobs not yet due.
-  const [job] = await db
-    .select({ dueAt: whatsappJobs.nextAttemptAt })
-    .from(whatsappJobs)
+  // Make only this fixture's message due; do not wait for the shared DB clock.
+  await db
+    .update(whatsappJobs)
+    .set({ nextAttemptAt: new Date(Date.now() - 1000) })
     .where(eq(whatsappJobs.dedupeKey, wamid));
-  await sleep(Math.max(0, (job?.dueAt.getTime() ?? 0) + 1 - Date.now()));
 }
 
 // Whether a reply has been sent to `waId`.

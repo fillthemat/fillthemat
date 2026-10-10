@@ -32,7 +32,6 @@ import {
   type BookingIntentInput,
   upsertPendingBookingIntent,
 } from "@/lib/whatsapp/intents";
-import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import {
   authSql,
   deleteAuthUser,
@@ -40,6 +39,7 @@ import {
   loadLocalEnv,
   requireRow,
 } from "@/test/integration-env";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 
 loadLocalEnv();
 
@@ -48,6 +48,7 @@ const sql = authSql();
 const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
 const phoneNumberId = `299${Date.now().toString().slice(-9)}`;
+const { runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [phoneNumberId]);
 const slug = `wa-bk-${suffix}`;
 const waA = "16505551234";
 const waB = "16505559999";

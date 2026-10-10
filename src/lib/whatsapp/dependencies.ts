@@ -17,6 +17,8 @@ export type WhatsAppTransport = {
 };
 
 export type WhatsAppWorkerDependencies = {
+  /** Optional tenant-number scope for isolated queue runners. Undefined sweeps all. */
+  phoneNumberIds?: string[];
   transport: WhatsAppTransport;
   now: () => Date;
   sleep: (milliseconds: number) => Promise<void>;
@@ -32,8 +34,9 @@ export function whatsappWorkerDependencies(
       sendInteractive: sendWhatsAppInteractive,
     },
     now: () => new Date(),
-    sleep: (milliseconds) =>
-      new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    sleep,
     ...overrides,
   };
 }
+
+import { sleep } from "@/lib/sleep";

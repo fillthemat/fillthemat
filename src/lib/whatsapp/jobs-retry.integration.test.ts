@@ -18,6 +18,7 @@ import {
   whileSavingMessages,
 } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import {
   claimDueWhatsAppJobs,
   failJob,
@@ -26,13 +27,15 @@ import {
   rescheduleJob,
   startJobExecution,
 } from "./jobs";
-import { drainWhatsAppJobs, runWhatsAppWorkerOnce } from "./worker";
 
 loadLocalEnv();
 const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
 const phoneNumberId = `job-retry-${randomUUID()}`;
+const { drainWhatsAppJobs, runWhatsAppWorkerOnce } = scopedWhatsAppRunner(
+  () => [phoneNumberId],
+);
 const now = new Date("1990-01-01T12:00:00Z");
 const ids: string[] = [];
 let schoolId: string;
@@ -204,7 +207,11 @@ describe("bounded WhatsApp job executions", () => {
 
   it("fences every old-owner write after recovery and reclaim, even with a reused run id", async () => {
     const job = await insertJob();
-    const [claim] = await claimDueWhatsAppJobs("reused-run", { now, limit: 1 });
+    const [claim] = await claimDueWhatsAppJobs("reused-run", {
+      now,
+      limit: 1,
+      phoneNumberIds: [phoneNumberId],
+    });
     const execution = await startJobExecution(claim, schoolId, now);
     if (!execution) throw new Error("execution not reserved");
     expect(await readJob(job.id)).toMatchObject({
@@ -213,8 +220,11 @@ describe("bounded WhatsApp job executions", () => {
     });
     const later = new Date("1990-01-01T12:06:00Z");
     // Recover and immediately claim the same job with the same run identifier.
-    await recoverStuckWhatsAppJobs(undefined, later, "recovery-run");
+    await recoverStuckWhatsAppJobs(undefined, later, "recovery-run", [
+      phoneNumberId,
+    ]);
     const [newClaim] = await claimDueWhatsAppJobs("reused-run", {
+      phoneNumberIds: [phoneNumberId],
       now: later,
       limit: 1,
     });

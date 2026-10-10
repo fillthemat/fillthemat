@@ -11,24 +11,25 @@ import {
 } from "drizzle-orm";
 import { getDb } from "@/db";
 import { type WhatsAppJob, whatsappJobs } from "@/db/schema";
-import { logDeadTransition } from "@/lib/retry-log";
 import {
+  orderClaimedRows,
+  ownedQueueClaim,
+  recoverClaimedRows,
+  takeClaimLanes,
+} from "@/lib/queue-claims";
+import { deadEventFrom, logDeadTransition } from "@/lib/retry-log";
+import {
+  internalFailureReasonFrom,
   MAX_EXECUTIONS,
   type RetryFailure,
-  retryDecision,
+  whatsappRetryDecision as retryDecision,
 } from "@/lib/retry-policy";
 import { enqueueJobFallback } from "./job-fallback";
 import type { InboundWhatsAppMessage } from "./parse";
 
 /** A claim is fenced by owner, timestamp and execution count, not just row ID. */
 function ownedClaim(job: WhatsAppJob) {
-  return and(
-    eq(whatsappJobs.id, job.id),
-    eq(whatsappJobs.state, "claimed"),
-    eq(whatsappJobs.claimedBy, job.claimedBy ?? ""),
-    job.claimedAt ? eq(whatsappJobs.claimedAt, job.claimedAt) : sql`false`,
-    eq(whatsappJobs.attempts, job.attempts),
-  );
+  return ownedQueueClaim(whatsappJobs, job);
 }
 
 /**
@@ -61,43 +62,46 @@ export async function enqueueInboundJobs(
 
 export async function claimDueWhatsAppJobs(
   runId: string,
-  opts?: { limit?: number; now?: Date; retryOnly?: boolean },
+  opts?: {
+    limit?: number;
+    now?: Date;
+    retryOnly?: boolean;
+    phoneNumberIds?: string[];
+  },
 ) {
   const db = getDb();
   const now = opts?.now ?? new Date();
   const limit = opts?.limit ?? 10;
-  if (limit <= 0) return [];
+  if (limit <= 0 || opts?.phoneNumberIds?.length === 0) return [];
   return db.transaction(async (tx) => {
-    const due: WhatsAppJob[] = [];
-    async function take(fresh: boolean, count: number) {
-      if (fresh && opts?.retryOnly) return;
-      if (count <= 0) return;
-      const rows = await tx
-        .select()
-        .from(whatsappJobs)
-        .where(
-          and(
-            inArray(whatsappJobs.state, ["pending", "failed"]),
-            lte(whatsappJobs.nextAttemptAt, now),
-            fresh ? eq(whatsappJobs.attempts, 0) : gt(whatsappJobs.attempts, 0),
-            due.length
-              ? notInArray(
-                  whatsappJobs.id,
-                  due.map((row) => row.id),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(asc(whatsappJobs.createdAt), asc(whatsappJobs.id))
-        .for("update", { skipLocked: true })
-        .limit(count);
-      due.push(...rows);
-    }
-    const retrySlots = Math.floor(limit / 5);
-    await take(true, limit - retrySlots);
-    await take(false, retrySlots);
-    await take(true, limit - due.length);
-    await take(false, limit - due.length);
+    const due = await takeClaimLanes(
+      limit,
+      async (fresh, count, excludedIds) => {
+        const rows = await tx
+          .select()
+          .from(whatsappJobs)
+          .where(
+            and(
+              inArray(whatsappJobs.state, ["pending", "failed"]),
+              lte(whatsappJobs.nextAttemptAt, now),
+              opts?.phoneNumberIds
+                ? inArray(whatsappJobs.phoneNumberId, opts.phoneNumberIds)
+                : undefined,
+              fresh
+                ? eq(whatsappJobs.attempts, 0)
+                : gt(whatsappJobs.attempts, 0),
+              excludedIds.length
+                ? notInArray(whatsappJobs.id, excludedIds)
+                : undefined,
+            ),
+          )
+          .orderBy(asc(whatsappJobs.createdAt), asc(whatsappJobs.id))
+          .for("update", { skipLocked: true })
+          .limit(count);
+        return rows;
+      },
+      opts?.retryOnly,
+    );
 
     if (due.length === 0) return [];
 
@@ -112,22 +116,17 @@ export async function claimDueWhatsAppJobs(
       })
       .where(inArray(whatsappJobs.id, ids))
       .returning();
-    const byId = new Map(claimed.map((row) => [row.id, row]));
-    // UPDATE RETURNING is unordered; restore fresh-first, oldest-first order.
-    return due
-      .sort(
-        (a, b) =>
-          Number(a.attempts > 0) - Number(b.attempts > 0) ||
-          a.createdAt.getTime() - b.createdAt.getTime() ||
-          a.id.localeCompare(b.id),
-      )
-      .map((row) => byId.get(row.id))
-      .filter((row): row is WhatsAppJob => !!row);
+    return orderClaimedRows(due, claimed);
   });
 }
 
 /** Future retries only: already-due locked rows must not cause a busy loop. */
-export async function nextWhatsAppJobRetryAt(now: Date, before: Date) {
+export async function nextWhatsAppJobRetryAt(
+  now: Date,
+  before: Date,
+  phoneNumberIds?: string[],
+) {
+  if (phoneNumberIds?.length === 0) return null;
   const [row] = await getDb()
     .select({ at: whatsappJobs.nextAttemptAt })
     .from(whatsappJobs)
@@ -137,6 +136,9 @@ export async function nextWhatsAppJobRetryAt(now: Date, before: Date) {
         gt(whatsappJobs.attempts, 0),
         gt(whatsappJobs.nextAttemptAt, now),
         lt(whatsappJobs.nextAttemptAt, before),
+        phoneNumberIds
+          ? inArray(whatsappJobs.phoneNumberId, phoneNumberIds)
+          : undefined,
       ),
     )
     .orderBy(asc(whatsappJobs.nextAttemptAt))
@@ -213,15 +215,9 @@ export async function failJob(
   });
   if (rows.length === 0) return "deferred";
   if (decision.action === "stop") {
-    logDeadTransition({
-      queue: "whatsapp_job",
-      id: job.id,
-      schoolId: rows[0].schoolId,
-      reason: failure.reason,
-      terminalCause: decision.cause,
-      executions: job.attempts,
-      runId: job.claimedBy ?? "unknown",
-    });
+    logDeadTransition(
+      deadEventFrom(rows[0], "whatsapp_job", job.claimedBy ?? "unknown"),
+    );
   }
   return decision.action === "stop" ? "dead" : "retrying";
 }
@@ -266,7 +262,9 @@ export async function recoverStuckWhatsAppJobs(
   staleBeforeMs = 5 * 60_000,
   now = new Date(),
   runId = "recovery",
+  phoneNumberIds?: string[],
 ): Promise<{ recovered: number; dead: number }> {
+  if (phoneNumberIds?.length === 0) return { recovered: 0, dead: 0 };
   const db = getDb();
   const recovered = await db.transaction(async (tx) => {
     const stale = await tx
@@ -276,12 +274,17 @@ export async function recoverStuckWhatsAppJobs(
         and(
           eq(whatsappJobs.state, "claimed"),
           lt(whatsappJobs.claimedAt, new Date(now.getTime() - staleBeforeMs)),
+          phoneNumberIds
+            ? inArray(whatsappJobs.phoneNumberId, phoneNumberIds)
+            : undefined,
         ),
       )
       .for("update", { skipLocked: true });
-    const dead: WhatsAppJob[] = [];
-    for (const job of stale) {
-      const reason = job.failureReason ?? "worker_crashed";
+    return recoverClaimedRows(stale, async (job) => {
+      const reason = internalFailureReasonFrom(
+        job.failureReason,
+        "worker_crashed",
+      );
       const decision = retryDecision(
         { kind: "internal", reason },
         job.attempts,
@@ -296,7 +299,9 @@ export async function recoverStuckWhatsAppJobs(
           updatedAt: now,
           // Keep the previous diagnostic; crash recovery must not erase it.
           failureReason:
-            decision.action === "stop" ? reason : job.failureReason,
+            decision.action === "stop"
+              ? (job.failureReason ?? reason)
+              : job.failureReason,
           lastError:
             decision.action === "stop"
               ? (job.lastError ?? "worker_crashed")
@@ -307,21 +312,12 @@ export async function recoverStuckWhatsAppJobs(
         .returning();
       if (row?.state === "dead") {
         await enqueueJobFallback(tx, row, now);
-        dead.push(row);
       }
-    }
-    return { recovered: stale.length, dead };
+      return row;
+    });
   });
   for (const job of recovered.dead) {
-    logDeadTransition({
-      queue: "whatsapp_job",
-      id: job.id,
-      schoolId: job.schoolId,
-      reason: job.failureReason ?? "worker_crashed",
-      terminalCause: job.terminalCause ?? "attempts_exhausted",
-      executions: job.attempts,
-      runId,
-    });
+    logDeadTransition(deadEventFrom(job, "whatsapp_job", runId));
   }
   return { recovered: recovered.recovered, dead: recovered.dead.length };
 }

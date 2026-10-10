@@ -15,7 +15,7 @@ const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
 const phoneNumberId = `claim-lanes-${randomUUID()}`;
-// Older than other suites' fixtures: global claims cannot crowd out our rows.
+// Fixed time for deterministic due gates; every claim is explicitly scoped.
 const now = new Date("1901-01-01T12:00:00Z");
 const jobIds: string[] = [];
 const deliveryIds: string[] = [];
@@ -87,26 +87,34 @@ const queues = [
     name: "jobs",
     insert: job,
     limit: 10,
-    freshSlots: 8,
-    retrySlots: 2,
+    freshCapacity: 8,
+    retryCapacity: 2,
     claim: (runId: string, limit = 10) =>
-      claimDueWhatsAppJobs(runId, { now, limit }),
+      claimDueWhatsAppJobs(runId, {
+        now,
+        limit,
+        phoneNumberIds: [phoneNumberId],
+      }),
   },
   {
     name: "deliveries",
     insert: delivery,
     limit: 25,
-    freshSlots: 20,
-    retrySlots: 5,
+    freshCapacity: 20,
+    retryCapacity: 5,
     claim: (runId: string, limit = 25) =>
-      claimDueWhatsAppDeliveries(runId, { now, limit }),
+      claimDueWhatsAppDeliveries(runId, {
+        now,
+        limit,
+        phoneNumberIds: [phoneNumberId],
+      }),
   },
   {
     name: "explicit-ID deliveries",
     insert: delivery,
     limit: 25,
-    freshSlots: 20,
-    retrySlots: 5,
+    freshCapacity: 20,
+    retryCapacity: 5,
     claim: (runId: string, limit = 25) =>
       claimDueWhatsAppDeliveries(runId, { now, limit, ids: [...deliveryIds] }),
   },
@@ -148,9 +156,9 @@ describe.each(queues)("$name lane behavior", (queue) => {
     const prefix = randomUUID().slice(0, 24);
     const id = (n: number) => `${prefix}${n.toString().padStart(12, "0")}`;
     // Insert in reverse age/ID order so neither insertion nor UPDATE order wins.
-    for (let i = queue.freshSlots + 1; i >= 1; i--)
+    for (let i = queue.freshCapacity + 1; i >= 1; i--)
       await queue.insert({ id: id(i), attempts: 0 });
-    for (let i = queue.retrySlots + 1; i >= 1; i--)
+    for (let i = queue.retryCapacity + 1; i >= 1; i--)
       await queue.insert({ id: id(100 + i), attempts: 1 });
     const oldestFresh = await queue.insert({
       id: id(99),
@@ -165,9 +173,9 @@ describe.each(queues)("$name lane behavior", (queue) => {
     const claimed = await queue.claim("ordered");
     expect(claimed.map((row) => row.id)).toEqual([
       oldestFresh.id,
-      ...Array.from({ length: queue.freshSlots - 1 }, (_, i) => id(i + 1)),
+      ...Array.from({ length: queue.freshCapacity - 1 }, (_, i) => id(i + 1)),
       oldestRetry.id,
-      ...Array.from({ length: queue.retrySlots - 1 }, (_, i) => id(101 + i)),
+      ...Array.from({ length: queue.retryCapacity - 1 }, (_, i) => id(101 + i)),
     ]);
   });
 
@@ -203,6 +211,7 @@ describe.each(queues)("$name lane behavior", (queue) => {
     const claim = isJob ? "claimDueWhatsAppJobs" : "claimDueWhatsAppDeliveries";
     const opts = {
       limit: queue.limit,
+      phoneNumberIds: [phoneNumberId],
       ...(queue.name === "explicit-ID deliveries" ? { ids: deliveryIds } : {}),
     };
     // getDb has max:1, so two calls in this process would merely serialize.
@@ -264,12 +273,15 @@ it("inline explicit IDs never claim unrelated rows or broaden an empty list", as
     ids: [inside.id],
   });
   expect(claimed.map((row) => row.id)).toEqual([inside.id]);
-  const remaining = await claimDueWhatsAppDeliveries("outside", { now });
+  const remaining = await claimDueWhatsAppDeliveries("outside", {
+    now,
+    phoneNumberIds: [phoneNumberId],
+  });
   expect(remaining.map((row) => row.id)).toEqual([outside.id]);
 });
 
 describe("WhatsApp fresh-first claim lanes", () => {
-  it("reserves twenty fresh delivery slots and five retry slots despite an older retry backlog", async () => {
+  it("reserves fresh delivery lane capacity of twenty and retry capacity of five despite an older retry backlog", async () => {
     for (let i = 0; i < 30; i++)
       await delivery({
         attempts: 2,
@@ -278,7 +290,10 @@ describe("WhatsApp fresh-first claim lanes", () => {
       });
     for (let i = 0; i < 25; i++)
       await delivery({ attempts: 0, state: "failed" });
-    const claimed = await claimDueWhatsAppDeliveries("delivery-lanes", { now });
+    const claimed = await claimDueWhatsAppDeliveries("delivery-lanes", {
+      now,
+      phoneNumberIds: [phoneNumberId],
+    });
     expect(claimed).toHaveLength(25);
     expect(claimed.slice(0, 20).every((row) => row.attempts === 0)).toBe(true);
     expect(claimed.slice(20).map((row) => row.attempts)).toEqual([
@@ -292,7 +307,7 @@ describe("WhatsApp fresh-first claim lanes", () => {
         updatedAt: now,
       });
   });
-  it("reserves eight fresh job slots and two retry slots despite an older retry backlog", async () => {
+  it("reserves fresh job lane capacity of eight and retry capacity of two despite an older retry backlog", async () => {
     for (let i = 0; i < 20; i++)
       await job({
         attempts: 1,
@@ -300,7 +315,10 @@ describe("WhatsApp fresh-first claim lanes", () => {
         createdAt: new Date(now.getTime() - 1_000),
       });
     for (let i = 0; i < 12; i++) await job({ attempts: 0, state: "failed" });
-    const claimed = await claimDueWhatsAppJobs("job-lanes", { now });
+    const claimed = await claimDueWhatsAppJobs("job-lanes", {
+      now,
+      phoneNumberIds: [phoneNumberId],
+    });
     expect(claimed).toHaveLength(10);
     expect(claimed.map((row) => row.attempts)).toEqual([
       0, 0, 0, 0, 0, 0, 0, 0, 1, 1,

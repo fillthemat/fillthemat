@@ -14,13 +14,9 @@ import { getDb } from "@/db";
 import { schools, whatsappDeliveries } from "@/db/schema";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
+import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import type { WhatsAppSendFailure, WhatsAppSendOutcome } from "./client";
-import {
-  applyWhatsAppStatuses,
-  drainDueWhatsAppDeliveries,
-  enqueueWhatsAppDelivery,
-} from "./deliveries";
-import { runWhatsAppWorkerOnce } from "./worker";
+import { applyWhatsAppStatuses, enqueueWhatsAppDelivery } from "./deliveries";
 
 loadLocalEnv();
 const db = getDb();
@@ -28,6 +24,8 @@ const sql = authSql();
 const ownerId = randomUUID();
 const suffix = randomUUID();
 const phoneNumberId = `delivery-retry-${suffix}`;
+const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } =
+  scopedWhatsAppRunner(() => [phoneNumberId]);
 const initialNow = new Date("2019-01-01T12:00:00Z");
 let now = initialNow;
 let schoolId: string;
