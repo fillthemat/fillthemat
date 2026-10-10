@@ -36,7 +36,7 @@ export async function enqueueInboundJobs(
 
 export async function claimDueWhatsAppJobs(
   runId: string,
-  opts?: { limit?: number },
+  opts?: { ids?: string[]; limit?: number },
 ) {
   const db = getDb();
   const limit = opts?.limit ?? 10;
@@ -51,6 +51,7 @@ export async function claimDueWhatsAppJobs(
             eq(whatsappJobs.state, "failed"),
           ),
           lte(whatsappJobs.nextAttemptAt, sql`now()`),
+          opts?.ids ? inArray(whatsappJobs.id, opts.ids) : undefined,
         ),
       )
       .for("update", { skipLocked: true })

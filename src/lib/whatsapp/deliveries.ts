@@ -133,7 +133,7 @@ export async function claimDueWhatsAppDeliveries(
       ),
       lte(whatsappDeliveries.nextAttemptAt, sql`now()`),
     ];
-    if (opts?.ids && opts.ids.length > 0) {
+    if (opts?.ids) {
       conditions.push(inArray(whatsappDeliveries.id, opts.ids));
     }
     const due = await tx

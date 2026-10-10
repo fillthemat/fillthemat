@@ -17,7 +17,7 @@ import {
   enqueueWhatsAppDelivery,
 } from "@/lib/whatsapp/deliveries";
 import { claimDueWhatsAppJobs, enqueueInboundJobs } from "@/lib/whatsapp/jobs";
-import { authSql, loadLocalEnv } from "@/test/integration-env";
+import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 
 loadLocalEnv();
@@ -51,6 +51,88 @@ afterAll(async () => {
   await auth.end({ timeout: 5 });
 });
 
+it("scopes WhatsApp job claims to the requested IDs, including an empty list", async () => {
+  const [target, excluded] = await db
+    .insert(whatsappJobs)
+    .values(
+      [1, 2].map(() => ({
+        phoneNumberId: ownerId,
+        dedupeKey: randomUUID(),
+        payload: {},
+      })),
+    )
+    .returning();
+  const ids = [requireRow(target, "target job").id];
+  expect(await claimDueWhatsAppJobs(randomUUID(), { ids: [] })).toEqual([]);
+  expect(
+    (await claimDueWhatsAppJobs(randomUUID(), { ids })).map(({ id }) => id),
+  ).toEqual(ids);
+  const [untouched] = await db
+    .select()
+    .from(whatsappJobs)
+    .where(eq(whatsappJobs.id, requireRow(excluded, "excluded job").id));
+  expect(untouched?.state).toBe("pending");
+  expect(untouched?.claimedBy).toBeNull();
+});
+
+it("scopes email delivery claims to the requested IDs, including an empty list", async () => {
+  const [target, excluded] = await db
+    .insert(emailDeliveries)
+    .values(
+      [1, 2].map(() => ({
+        schoolId,
+        kind: "owner_lead" as const,
+        recipient: "owner@local.test",
+        providerIdempotencyKey: randomUUID(),
+      })),
+    )
+    .returning();
+  const ids = [requireRow(target, "target delivery").id];
+  expect(await claimDueDeliveries(randomUUID(), 25, { ids: [] })).toEqual([]);
+  expect(
+    (await claimDueDeliveries(randomUUID(), 25, { ids })).map(({ id }) => id),
+  ).toEqual(ids);
+  const [untouched] = await db
+    .select()
+    .from(emailDeliveries)
+    .where(
+      eq(emailDeliveries.id, requireRow(excluded, "excluded delivery").id),
+    );
+  expect(untouched?.state).toBe("pending");
+  expect(untouched?.claimedBy).toBeNull();
+});
+
+it("scopes WhatsApp delivery claims to the requested IDs, including an empty list", async () => {
+  const [target, excluded] = await db
+    .insert(whatsappDeliveries)
+    .values(
+      [1, 2].map(() => ({
+        schoolId,
+        phoneNumberId: ownerId,
+        recipientWaId: "16505550101",
+        providerIdempotencyKey: randomUUID(),
+      })),
+    )
+    .returning();
+  const ids = [requireRow(target, "target delivery").id];
+  expect(await claimDueWhatsAppDeliveries(randomUUID(), { ids: [] })).toEqual(
+    [],
+  );
+  expect(
+    (await claimDueWhatsAppDeliveries(randomUUID(), { ids })).map(
+      ({ id }) => id,
+    ),
+  ).toEqual(ids);
+  const [untouched] = await db
+    .select()
+    .from(whatsappDeliveries)
+    .where(
+      eq(whatsappDeliveries.id, requireRow(excluded, "excluded delivery").id),
+    );
+  expect(untouched?.state).toBe("pending");
+  expect(untouched?.claimedBy).toBeNull();
+});
+
 describe.each([
   ["behind", "2000-01-01T00:00:00Z"],
   ["ahead", "2100-01-01T00:00:00Z"],
@@ -71,7 +153,13 @@ describe.each([
       ]),
     ).toBe(1);
 
-    const claimed = await claimDueWhatsAppJobs(randomUUID(), { limit: 1000 });
+    const jobs = await db
+      .select({ id: whatsappJobs.id })
+      .from(whatsappJobs)
+      .where(eq(whatsappJobs.dedupeKey, wamid));
+    const claimed = await claimDueWhatsAppJobs(randomUUID(), {
+      ids: jobs.map(({ id }) => id),
+    });
     expect(
       claimed
         .filter((row) => row.phoneNumberId === ownerId)
@@ -103,7 +191,8 @@ describe.each([
 
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(serverTime));
-    const claimed = await claimDueWhatsAppJobs(randomUUID(), { limit: 1000 });
+    const ids = rows.map(({ id }) => id);
+    const claimed = await claimDueWhatsAppJobs(randomUUID(), { ids });
     expect(
       claimed
         .filter((row) => row.schoolId === schoolId)
@@ -116,7 +205,7 @@ describe.each([
         .sort(),
     );
     expect(
-      (await claimDueWhatsAppJobs(randomUUID(), { limit: 1000 })).filter(
+      (await claimDueWhatsAppJobs(randomUUID(), { ids })).filter(
         (row) => row.schoolId === schoolId,
       ),
     ).toEqual([]);
@@ -168,7 +257,9 @@ describe.each([
       body: "Hello",
     });
     expect(id).not.toBeNull();
-    const claimed = await claimDueWhatsAppDeliveries(randomUUID());
+    const claimed = await claimDueWhatsAppDeliveries(randomUUID(), {
+      ids: [requireRow(id, "delivery")],
+    });
     expect(
       claimed.filter((row) => row.schoolId === schoolId).map(({ id }) => id),
     ).toEqual([id]);
@@ -198,7 +289,8 @@ describe.each([
 
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(serverTime));
-    const claimed = await claimDueDeliveries(randomUUID(), 1000);
+    const ids = rows.map(({ id }) => id);
+    const claimed = await claimDueDeliveries(randomUUID(), 25, { ids });
     expect(
       claimed
         .filter((row) => row.schoolId === schoolId)
@@ -211,7 +303,7 @@ describe.each([
         .sort(),
     );
     expect(
-      (await claimDueDeliveries(randomUUID(), 1000)).filter(
+      (await claimDueDeliveries(randomUUID(), 25, { ids })).filter(
         (row) => row.schoolId === schoolId,
       ),
     ).toEqual([]);

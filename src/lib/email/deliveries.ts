@@ -233,7 +233,11 @@ export async function attemptPendingForLead(leadId: string) {
   }
 }
 
-export async function claimDueDeliveries(runId: string, limit = 25) {
+export async function claimDueDeliveries(
+  runId: string,
+  limit = 25,
+  opts?: { ids?: string[] },
+) {
   const db = getDb();
   return db.transaction(async (tx) => {
     const due = await tx
@@ -246,6 +250,7 @@ export async function claimDueDeliveries(runId: string, limit = 25) {
             eq(emailDeliveries.state, "failed"),
           ),
           lte(emailDeliveries.nextAttemptAt, sql`now()`),
+          opts?.ids ? inArray(emailDeliveries.id, opts.ids) : undefined,
         ),
       )
       .for("update", { skipLocked: true })
