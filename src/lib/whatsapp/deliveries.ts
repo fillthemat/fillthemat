@@ -23,6 +23,10 @@ import {
   retryDecision,
 } from "@/lib/retry-policy";
 import {
+  bookingConfirmationIsStale,
+  onWhatsAppDeliveryDead,
+} from "./confirmation-delivery";
+import {
   type WhatsAppWorkerDependencies,
   whatsappWorkerDependencies,
 } from "./dependencies";
@@ -49,29 +53,42 @@ async function failDelivery(
   message: string,
   now: Date,
 ): Promise<WhatsAppDeliveryResult> {
-  const decision = retryDecision(failure, delivery.attempts, now);
-  const reason = failure.kind === "internal" ? failure.reason : failure.kind;
+  const stale = await bookingConfirmationIsStale(delivery, now);
+  const reason = stale
+    ? "booking_confirmation_stale"
+    : failure.kind === "internal"
+      ? failure.reason
+      : failure.kind;
+  const decision = retryDecision(
+    stale ? { kind: "internal", reason } : failure,
+    delivery.attempts,
+    now,
+  );
   const code =
     failure.kind === "whatsapp_error"
       ? failure.code
       : failure.kind === "internal" && failure.reason === delivery.failureReason
         ? delivery.failureCode
         : null;
-  const [row] = await getDb()
-    .update(whatsappDeliveries)
-    .set({
-      state: decision.action === "stop" ? "dead" : "failed",
-      nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
-      lastError: message.slice(0, 500),
-      failureReason: reason,
-      failureCode: code,
-      terminalCause: decision.action === "stop" ? decision.cause : null,
-      claimedAt: null,
-      claimedBy: null,
-      updatedAt: now,
-    })
-    .where(ownedClaim(delivery))
-    .returning();
+  const row = await getDb().transaction(async (tx) => {
+    const [row] = await tx
+      .update(whatsappDeliveries)
+      .set({
+        state: decision.action === "stop" ? "dead" : "failed",
+        nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
+        lastError: message.slice(0, 500),
+        failureReason: reason,
+        failureCode: code,
+        terminalCause: decision.action === "stop" ? decision.cause : null,
+        claimedAt: null,
+        claimedBy: null,
+        updatedAt: now,
+      })
+      .where(ownedClaim(delivery))
+      .returning();
+    if (row?.state === "dead") await onWhatsAppDeliveryDead(tx, row, now);
+    return row;
+  });
   if (!row) return "deferred";
   if (decision.action === "stop")
     logDeadTransition({
@@ -277,6 +294,14 @@ export async function sendWhatsAppDelivery(
     !delivery.claimedBy
   )
     return "deferred";
+  if (await bookingConfirmationIsStale(delivery, dependencies.now())) {
+    return failDelivery(
+      delivery,
+      { kind: "internal", reason: "booking_confirmation_stale" },
+      "booking_confirmation_stale",
+      dependencies.now(),
+    );
+  }
   if (delivery.attempts >= MAX_EXECUTIONS) {
     return failDelivery(
       delivery,
@@ -552,7 +577,9 @@ export async function recoverStuckWhatsAppDeliveries(
       .for("update", { skipLocked: true });
     const dead: WhatsAppDelivery[] = [];
     for (const delivery of stale) {
-      const reason = delivery.failureReason ?? "worker_crashed";
+      const reason = (await bookingConfirmationIsStale(delivery, now, tx))
+        ? "booking_confirmation_stale"
+        : (delivery.failureReason ?? "worker_crashed");
       const decision = retryDecision(
         { kind: "internal", reason },
         delivery.attempts,
@@ -575,7 +602,10 @@ export async function recoverStuckWhatsAppDeliveries(
         })
         .where(ownedClaim(delivery))
         .returning();
-      if (row?.state === "dead") dead.push(row);
+      if (row?.state === "dead") {
+        await onWhatsAppDeliveryDead(tx, row, now);
+        dead.push(row);
+      }
     }
     return { recovered: stale.length, dead };
   });
