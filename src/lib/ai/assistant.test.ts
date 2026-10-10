@@ -11,7 +11,7 @@ import {
   streamedReply,
 } from "./assistant";
 import { GATEWAY_TOKEN_ENV_VARS } from "./gateway-token";
-import { PLATFORM_INSTRUCTIONS } from "./system-prompt";
+import { PLATFORM_INSTRUCTIONS } from "./instructions";
 
 type ModelStep = Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>>;
 type ModelStreamPart =
