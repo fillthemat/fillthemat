@@ -8,6 +8,20 @@ import {
 import { assistantTools } from "./tools";
 
 describe("assistant instructions", () => {
+  it("uses glossary terms in platform instructions and tool descriptions", () => {
+    const tools = assistantTools(assistantContext());
+    for (const text of [
+      PLATFORM_INSTRUCTIONS,
+      ...Object.values(tools).map((tool) => tool.description),
+    ]) {
+      expect(text).not.toMatch(/\bslots?\b|\blead\b(?! request)/i);
+    }
+    expect(tools.list_trial_occurrences.description).toContain(
+      "trial occurrences",
+    );
+    expect(tools.request_contact.description).toContain("Lead Request");
+  });
+
   it("keeps every-turn honesty in the prompt and eligibility and times with tools", () => {
     const tools = assistantTools(assistantContext());
 

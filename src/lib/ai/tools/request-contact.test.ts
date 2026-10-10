@@ -4,11 +4,11 @@ import {
   kidsOffering,
   toolExecutionOptions,
 } from "@/test/assistant-context";
-import { captureLead } from "./capture-lead";
+import { requestContact } from "./request-contact";
 
 describe("gather a Lead Request", () => {
   it("returns the participant, offering and stated need for consent without creating a lead", async () => {
-    const result = await captureLead(assistantContext()).execute?.(
+    const result = await requestContact(assistantContext()).execute?.(
       {
         participantName: "Ana",
         participantAge: 8,

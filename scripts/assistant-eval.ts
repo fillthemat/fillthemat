@@ -9,7 +9,6 @@ import { startActiveObservation } from "@langfuse/tracing";
 import { gateway, wrapLanguageModel } from "ai";
 import { z } from "zod";
 import { registerTracing } from "../src/lib/tracing/register";
-import { maskContactFields } from "../src/lib/tracing/span-processor";
 import { cases, DATASET_NAME, type EvalCase } from "./assistant-eval/cases";
 import {
   compareRuns,
@@ -18,10 +17,12 @@ import {
   requireCompleteBaseline,
 } from "./assistant-eval/compare";
 import { judgeHash, judgeReply } from "./assistant-eval/judge";
+import { maskEvalFields } from "./assistant-eval/masking";
 import { type CaseResult, runCase } from "./assistant-eval/runner";
 import { scoreToolCalls } from "./assistant-eval/scoring";
 
 const args = process.argv.slice(2);
+const requiredScoreNames = ["reply-rules", "bookingIntent", "leadRequest"];
 class AssistantEvalError extends Error {}
 function caseFor(metadata: unknown): EvalCase {
   const { caseId } = z.object({ caseId: z.string() }).parse(metadata);
@@ -41,7 +42,7 @@ function required(name: string): string {
 }
 // Serialize dates before masking; never export Date objects as empty objects.
 function safe(value: unknown): unknown {
-  return maskContactFields(JSON.parse(JSON.stringify(value)));
+  return maskEvalFields(JSON.parse(JSON.stringify(value)));
 }
 const datasetHash = createHash("sha256")
   .update(JSON.stringify(safe(cases)))
@@ -221,6 +222,10 @@ async function run() {
         },
       ],
     });
+    const itemResults = result.itemResults.map((item) => ({
+      caseId: caseFor(item.item.metadata).id,
+      item,
+    }));
     const report: RunReport = {
       model: modelId,
       judgeModel,
@@ -228,8 +233,8 @@ async function run() {
       datasetHash,
       runName: result.runName,
       experimentId: result.experimentId,
-      cases: result.itemResults.map((item) => ({
-        caseId: caseFor(item.item.metadata).id,
+      cases: itemResults.map(({ caseId, item }) => ({
+        caseId,
         scores: item.evaluations.map((score) => ({
           name: score.name,
           value: Number(score.value),
@@ -246,8 +251,8 @@ async function run() {
           commit,
           assistantCommit,
           datasetRunUrl: result.datasetRunUrl,
-          outputs: result.itemResults.map((item) => ({
-            caseId: caseFor(item.item.metadata).id,
+          outputs: itemResults.map(({ caseId, item }) => ({
+            caseId,
             output: item.output,
             traceId: item.traceId,
           })),
@@ -259,11 +264,10 @@ async function run() {
     );
     const incomplete =
       report.cases.length !== cases.length ||
-      report.cases.some(
-        (row) =>
-          !row.scores.some((score) => score.name === "reply-rules") ||
-          !row.scores.some((score) => score.name === "bookingIntent") ||
-          !row.scores.some((score) => score.name === "leadRequest"),
+      report.cases.some((row) =>
+        requiredScoreNames.some(
+          (name) => !row.scores.some((score) => score.name === name),
+        ),
       );
     console.log(
       JSON.stringify({
@@ -306,9 +310,7 @@ async function main() {
         cases.map((testCase) => ({
           caseId: testCase.id,
           scores: [
-            "reply-rules",
-            "bookingIntent",
-            "leadRequest",
+            ...requiredScoreNames,
             ...scoreToolCalls(testCase.expectedOutput, []).map(
               (score) => score.name,
             ),

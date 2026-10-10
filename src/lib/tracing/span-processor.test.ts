@@ -20,6 +20,13 @@ async function exportedToLangfuse(
 }
 
 describe("the span processor that exports to Langfuse", () => {
+  it("masks nested JSON-looking text without reparsing or changing its formatting", async () => {
+    const input = JSON.stringify({ text: '{"email": "ana@example.com"}' });
+    expect(await exportedText(input)).toBe(
+      JSON.stringify({ text: '{"email": "[email]"}' }),
+    );
+  });
+
   it("masks email addresses and phone numbers in a span's name, attributes, events, links and status", async () => {
     const [span] = await exportedToLangfuse((tracer) => {
       const earlier = tracer.startSpan("earlier");

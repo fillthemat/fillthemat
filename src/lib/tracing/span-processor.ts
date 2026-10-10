@@ -110,9 +110,9 @@ function maskString(value: string): string {
   return maskText(value);
 }
 
-/** The same ADR-0001 masking for dataset/API exports as for trace spans. */
+/** ADR-0001 masking for decoded contact fields, without reparsing nested text. */
 export function maskContactFields(value: unknown): unknown {
-  if (typeof value === "string") return maskString(value);
+  if (typeof value === "string") return maskText(value);
   if (typeof value === "number") {
     return maskText(String(value)) === String(value) ? value : "[phone]";
   }

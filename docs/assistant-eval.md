@@ -25,9 +25,11 @@ and how the trace was reconstructed or varied. IDs and school identity are
 anonymized; the participant is Sam. Availability and `now` never depend on today's
 date. Existing old tool names in reconstructed history deliberately remain intact.
 
-Email/phone masking is the **same function used by production trace export**
-(`maskContactFields` in `src/lib/tracing/span-processor.ts`, ADR-0001). It also
-handles JSON-encoded trace inputs. Dataset writes, judge inputs, reports and
+Email/phone masking reuses **production's decoded-field masking**
+(`maskContactFields` in `src/lib/tracing/span-processor.ts`, ADR-0001). The eval-only
+`maskEvalFields` wrapper in `scripts/assistant-eval/masking.ts` also decodes nested
+JSON-encoded trace inputs; production preserves its original text-masking behaviour.
+Dataset writes, judge inputs, reports and
 trace spans are masked; ages, dates and times are preserved. Credentials are
 loaded only through ignored env files, never printed or placed in a dataset.
 
@@ -53,14 +55,23 @@ draft reply judge failed three cases:
 Self-comparison of the saved report exits 0. This is a complete baseline with
 existing failures, not an all-passing release gate. It predates the separate
 judge evaluator tracing described below. The private local report is
-`/private/var/folders/v4/_thfqpb96l57qc29x9ph7x_c0000gn/T/opencode/spec-92-baseline.json`;
+`spec-92-baseline.json` in the session's OpenCode temporary directory;
 preserve it outside Git for later comparisons (temporary storage is not archival).
+
+## Every-turn prompt gate (#98)
+
+The baseline **`spec-92-baseline-e76e0cc-paced-20261009`** compared with
+**`issue-98-every-turn-prompt-v2`**, experiment
+`acc3ea5e-3861-430d-b246-1bf638f5584e`, using the same assistant and judge model
+`google/gemini-2.5-flash`: **compare exit 0, zero regressions**.
+`explicit-contact` and `chosen-occurrence-missing-name` failed their reply rules
+in both runs; both failures pre-exist in the baseline.
 
 ## Seed and run
 
 Run from the checkout containing this runner. Load production Langfuse keys and
-Gateway credentials explicitly; substitute your own env-file paths. On this
-machine those files live at the main repository root, not a child worktree.
+Gateway credentials explicitly; substitute your own env-file paths. Use the main
+repository root's env files, not a child worktree's local-stack credentials.
 No `bun run setup` or app server is needed for this isolated runner.
 
 ```bash

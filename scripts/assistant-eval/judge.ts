@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { generateText, type LanguageModel, Output } from "ai";
 import { z } from "zod";
-import { maskContactFields } from "../../src/lib/tracing/span-processor";
 import type { EvalCase } from "./cases";
+import { maskEvalFields } from "./masking";
 import type { Score } from "./scoring";
 
 export const JUDGE_RUBRIC = `You evaluate a martial-arts trial assistant's final reply.
@@ -30,7 +30,7 @@ export async function judgeReply(
       schema: z.object({ passed: z.boolean(), reason: z.string() }),
     }),
     prompt: JSON.stringify(
-      maskContactFields({
+      maskEvalFields({
         school: testCase.input.school,
         catalog: testCase.input.catalog,
         messages: testCase.input.messages,

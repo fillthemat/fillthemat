@@ -6,11 +6,11 @@ import {
   openSlotId,
   toolExecutionOptions,
 } from "@/test/assistant-context";
-import { listTrialSlots } from "./list-trial-slots";
+import { listTrialOccurrences } from "./list-trial-occurrences";
 
 describe("list trial occurrences", () => {
   it("lists open occurrences with local times and remaining capacity, excluding full occurrences", async () => {
-    const result = await listTrialSlots(assistantContext()).execute?.(
+    const result = await listTrialOccurrences(assistantContext()).execute?.(
       { offeringId: kidsOffering.id },
       toolExecutionOptions,
     );

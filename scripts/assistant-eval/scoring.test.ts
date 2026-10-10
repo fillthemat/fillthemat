@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maskContactFields } from "../../src/lib/tracing/span-processor";
+import { maskEvalFields } from "./masking";
 import { scoreIntents, scoreToolCalls } from "./scoring";
 
 describe("intent scoring", () => {
@@ -85,7 +85,7 @@ describe("tool-call scoring", () => {
 describe("eval exports", () => {
   it("masks contact fields inside JSON-encoded trace inputs without masking ages or dates", () => {
     expect(
-      maskContactFields({
+      maskEvalFields({
         input: JSON.stringify({
           text: "Email a@example.com, call\n4165551234. Age 5, 2026-10-12 at 18:00.",
         }),

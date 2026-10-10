@@ -18,15 +18,18 @@ import { assistantInstructions } from "./instructions";
 import { defaultLanguageModel } from "./language-model";
 import { platformInstructionsHash } from "./provenance";
 import { assistantTools } from "./tools";
-import { type LeadRequest, leadRequestFromResult } from "./tools/capture-lead";
 import {
   type BookingIntent,
   bookingIntentFromResult,
 } from "./tools/prepare-booking";
+import {
+  type LeadRequest,
+  leadRequestFromResult,
+} from "./tools/request-contact";
 
 export type { AssistantSchool, SchoolCatalog } from "./context";
-export type { LeadRequest } from "./tools/capture-lead";
 export type { BookingIntent } from "./tools/prepare-booking";
+export type { LeadRequest } from "./tools/request-contact";
 
 /** What a reply came from. */
 export type ReplyProvenance = {
@@ -124,6 +127,16 @@ type StreamEnd = Parameters<
   UIMessageStreamOnEndCallback<AssistantUIMessage>
 >[0];
 
+function replyCompletion(end: StreamEnd): ReplyCompletion {
+  // A model error part mid-stream can still report a completed outcome.
+  if (end.outcome.status === "failed" || end.finishReason === "error") {
+    return "error";
+  }
+  if (end.outcome.status === "completed" && !end.isAborted) return "complete";
+  // A stream that ends without a completed outcome was cut short.
+  return "aborted";
+}
+
 /**
  * Streams the assistant's reply over the conversation (web chat) as a UI
  * message stream response. The reply keeps generating after the browser
@@ -146,18 +159,10 @@ export async function streamedReply({
     uiMessages: messages,
     generateMessageId: generateId,
     onEnd: async (end: StreamEnd) => {
-      // A model error part mid-stream can still report a completed outcome.
-      // A stream that ends without a completed outcome was cut short.
-      const completion: ReplyCompletion =
-        end.outcome.status === "failed" || end.finishReason === "error"
-          ? "error"
-          : end.outcome.status === "completed" && !end.isAborted
-            ? "complete"
-            : "aborted";
       try {
         await onFinish({
           reply: end.responseMessage,
-          completion,
+          completion: replyCompletion(end),
           provenance,
         });
       } catch (error) {

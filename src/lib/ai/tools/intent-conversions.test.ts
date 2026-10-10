@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { leadRequestFromResult } from "./capture-lead";
 import { bookingIntentFromResult } from "./prepare-booking";
+import { leadRequestFromResult } from "./request-contact";
 
 describe("Booking Intent conversion", () => {
   it.each([

@@ -4,9 +4,14 @@ import type {
   CompletedReply,
   LeadRequest,
 } from "../../src/lib/ai/assistant";
+import type { assistantTools } from "../../src/lib/ai/tools";
 
 export type Score = { name: string; value: number; comment?: string };
-export type ToolExpectations = { called: string[]; notCalled: string[] };
+type ToolName = keyof ReturnType<typeof assistantTools>;
+export type ToolExpectations = {
+  called: readonly ToolName[];
+  notCalled: readonly ToolName[];
+};
 export type IntentExpectations = {
   bookingIntent: BookingIntent | null;
   leadRequest: LeadRequest | null;

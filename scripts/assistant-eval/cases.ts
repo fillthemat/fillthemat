@@ -61,7 +61,7 @@ const catalog = {
   faqs: [],
 };
 const now = new Date("2026-10-09T20:19:17.000Z");
-const noMutation = ["prepare_booking", "request_contact"];
+const noMutation = ["prepare_booking", "request_contact"] as const;
 const noClaims = [
   "A booking has been created, confirmed, reserved, or held",
   "The school will contact the prospect (before platform consent)",

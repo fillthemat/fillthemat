@@ -21,14 +21,17 @@ export const reportSchema = z.object({
   ),
 });
 export type RunReport = z.infer<typeof reportSchema>;
+
+function hasDuplicateCases(report: RunReport): boolean {
+  return (
+    new Set(report.cases.map((row) => row.caseId)).size !== report.cases.length
+  );
+}
 export function requireCompleteBaseline(
   report: RunReport,
   required: { caseId: string; scores: string[] }[],
 ): void {
-  if (
-    report.cases.length !== required.length ||
-    new Set(report.cases.map((row) => row.caseId)).size !== report.cases.length
-  )
+  if (report.cases.length !== required.length || hasDuplicateCases(report))
     throw new Error("Incomplete/duplicate baseline case set");
   for (const item of required) {
     const actual = report.cases.find((row) => row.caseId === item.caseId);
@@ -53,11 +56,7 @@ export function compareRuns(
   candidate: RunReport,
 ): Regression[] {
   for (const report of [baseline, candidate]) {
-    if (
-      new Set(report.cases.map((row) => row.caseId)).size !==
-      report.cases.length
-    )
-      throw new Error("Duplicate case ID");
+    if (hasDuplicateCases(report)) throw new Error("Duplicate case ID");
   }
   for (const field of [
     "model",
