@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   consumeStream,
   convertToModelMessages,
@@ -16,22 +15,18 @@ import {
 } from "ai";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
 import type { AssistantContext } from "./context";
-import { assistantInstructions, PLATFORM_INSTRUCTIONS } from "./instructions";
+import { assistantInstructions } from "./instructions";
 import { defaultLanguageModel } from "./language-model";
+import { platformInstructionsHash } from "./provenance";
 import { assistantTools } from "./tools";
 
 export type { AssistantSchool, SchoolCatalog } from "./context";
-
-const PLATFORM_INSTRUCTIONS_HASH = createHash("sha256")
-  .update(PLATFORM_INSTRUCTIONS)
-  .digest("hex")
-  .slice(0, 12);
 
 /** What a reply came from. */
 export type ReplyProvenance = {
   /** The language model that wrote the reply. */
   modelId: string;
-  /** A short hash of the platform instructions every reply follows. */
+  /** A short hash of the platform instructions and model-facing tool definitions. */
   platformInstructionsHash: string;
 };
 
@@ -41,12 +36,13 @@ export type AssistantInput = AssistantContext & {
   model?: LanguageModel;
 };
 
-function createAssistant({
+async function createAssistant({
   school,
   catalog,
   now,
   model = defaultLanguageModel(),
 }: Omit<AssistantInput, "messages">) {
+  const tools = assistantTools({ school, catalog, now });
   const assistant = new ToolLoopAgent({
     model,
     // The builder reads only its own fields, so the rest of a School row
@@ -59,16 +55,16 @@ function createAssistant({
         user: school.id,
       },
     },
-    tools: assistantTools({ school, catalog, now }),
+    tools,
   });
   const provenance: ReplyProvenance = {
     modelId: typeof model === "string" ? model : model.modelId,
-    platformInstructionsHash: PLATFORM_INSTRUCTIONS_HASH,
+    platformInstructionsHash: await platformInstructionsHash(tools),
   };
   return { assistant, provenance };
 }
 
-type Assistant = ReturnType<typeof createAssistant>["assistant"];
+type Assistant = Awaited<ReturnType<typeof createAssistant>>["assistant"];
 
 /** A web chat message whose tool parts are typed by the assistant's tools. */
 export type AssistantUIMessage = InferAgentUIMessage<Assistant>;
@@ -110,7 +106,7 @@ export async function completedReply({
   messages,
   ...input
 }: AssistantInput): Promise<CompletedReply> {
-  const { assistant, provenance } = createAssistant(input);
+  const { assistant, provenance } = await createAssistant(input);
   const result = await assistant.generate({
     messages: await convertToModelMessages(messages, {
       tools: assistant.tools,
@@ -173,7 +169,7 @@ export async function streamedReply({
 }: AssistantInput & {
   onFinish: (finish: ReplyFinish) => Promise<void> | void;
 }): Promise<Response> {
-  const { assistant, provenance } = createAssistant(input);
+  const { assistant, provenance } = await createAssistant(input);
   let finishFailed = false;
   const stream = await createAgentUIStream({
     agent: assistant,
