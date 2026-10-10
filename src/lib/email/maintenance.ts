@@ -3,7 +3,11 @@ import { getDb } from "@/db";
 import { bookings, cronRuns, emailDeliveries } from "@/db/schema";
 import { endInactiveConversations } from "@/lib/conversations/conversation-store";
 import { shouldCreateReminder } from "@/lib/schedule/reminders";
-import { claimDueDeliveries, sendDelivery } from "./deliveries";
+import { runEmailSendOnce } from "./deliveries";
+import {
+  type EmailSendDependencies,
+  emailSendDependencies,
+} from "./dependencies";
 
 export async function createDueReminderDeliveries(now = new Date()) {
   const db = getDb();
@@ -35,6 +39,7 @@ export async function createDueReminderDeliveries(now = new Date()) {
         recipient: booking.contactEmailSnapshot,
         providerIdempotencyKey: `booking-reminder/${booking.id}`,
         state: "pending",
+        nextAttemptAt: now,
       })
       .onConflictDoNothing({
         target: emailDeliveries.providerIdempotencyKey,
@@ -45,26 +50,29 @@ export async function createDueReminderDeliveries(now = new Date()) {
   return created;
 }
 
-export async function runMaintenance() {
+export async function runMaintenance(
+  overrides: Partial<EmailSendDependencies> = {},
+) {
+  const dependencies = emailSendDependencies(overrides);
   const db = getDb();
-  const [run] = await db.insert(cronRuns).values({}).returning();
+  const [run] = await db
+    .insert(cronRuns)
+    .values({ startedAt: dependencies.now() })
+    .returning();
   if (!run) throw new Error("failed to create cron run");
 
   try {
-    const reminderCount = await createDueReminderDeliveries();
-    const claimed = await claimDueDeliveries(run.id);
-    let sentCount = 0;
-    let failedCount = 0;
-    for (const delivery of claimed) {
-      const result = await sendDelivery(delivery.id);
-      if (result === "sent") sentCount += 1;
-      else failedCount += 1;
-    }
-    const endedConversationCount = await endInactiveConversations();
+    const reminderCount = await createDueReminderDeliveries(dependencies.now());
+    const sends = await runEmailSendOnce(run.id, dependencies);
+    const sentCount = sends.sent;
+    const failedCount = sends.retrying + sends.dead;
+    const endedConversationCount = await endInactiveConversations(
+      dependencies.now(),
+    );
     const [updated] = await db
       .update(cronRuns)
       .set({
-        finishedAt: new Date(),
+        finishedAt: dependencies.now(),
         reminderCount,
         sentCount,
         failedCount,
@@ -80,7 +88,7 @@ export async function runMaintenance() {
     await db
       .update(cronRuns)
       .set({
-        finishedAt: new Date(),
+        finishedAt: dependencies.now(),
         result: "error",
         errorSummary: message.slice(0, 500),
       })

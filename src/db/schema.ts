@@ -41,6 +41,7 @@ export const emailStateEnum = appSchema.enum("email_state", [
   "delivered",
   "bounced",
   "complained",
+  "dead",
 ]);
 
 export const whatsappDeliveryStateEnum = appSchema.enum(
@@ -568,6 +569,11 @@ export const emailDeliveries = appSchema.table(
     attempts: integer("attempts").notNull().default(0),
     providerId: text("provider_id"),
     lastError: text("last_error"),
+    failureReason: text("failure_reason"),
+    terminalCause:
+      text("terminal_cause").$type<
+        import("@/lib/retry-policy").TerminalCause
+      >(),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

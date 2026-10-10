@@ -78,6 +78,13 @@
       "when": 1791597494869,
       "tag": "0010_normal_jackpot",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791598155854,
+      "tag": "0011_youthful_grey_gargoyle",
+      "breakpoints": true
     }
   ]
 }
