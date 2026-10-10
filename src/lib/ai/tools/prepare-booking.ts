@@ -11,7 +11,7 @@ export function prepareBooking({
 }: AssistantContext) {
   return tool({
     description:
-      "Revalidate an offering and slot and return data for the booking confirmation flow. This does not create a booking. Collect the participant name and age first so the platform can book without asking again. Returns ineligible_age when a provided age is outside the offering's age range; a missing age is accepted and collected at confirmation.",
+      'Revalidate an offering and slot and return data for the booking confirmation flow. This does not create a booking. Collect the participant name and age first so the platform can book without asking again. Returns ineligible_age when a provided age is outside the offering\'s age range; a missing age is accepted and collected at confirmation. Eligibility is determined only by offering age ranges. Do not override them. Class times come only from tools. Never invent, round, or "hold" a time.',
     inputSchema: z.object({
       offeringId: z.string().uuid(),
       slotId: z.string().min(1),

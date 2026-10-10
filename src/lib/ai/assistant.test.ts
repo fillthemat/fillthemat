@@ -251,49 +251,19 @@ describe("the assistant's instructions", () => {
       role: "system",
       content: `${PLATFORM_INSTRUCTIONS}
 
-<school_name>
-Tiger Dojo
-</school_name>
-
-<timezone>
-America/New_York
-</timezone>
-
-<city>
-Austin
-</city>
-
-<address>
-12 Main St
-</address>
-
-<phone>
-+1 512 555 0100
-</phone>
-
-<website>
-https://tigerdojo.test
-</website>
-
-<parking_notes>
-Park behind the building.
-</parking_notes>
-
-<access_notes>
-Step-free entrance on Oak St.
-</access_notes>
-
-<trial_guidance>
-Arrive 10 minutes early.
-</trial_guidance>
-
-<pricing>
-$120 a month.
-</pricing>
-
-<welcome_message>
-Welcome to Tiger Dojo!
-</welcome_message>
+<school_profile>
+name: Tiger Dojo
+timezone: America/New_York
+city: Austin
+address: 12 Main St
+phone: +1 512 555 0100
+website: https://tigerdojo.test
+parking_notes: Park behind the building.
+access_notes: Step-free entrance on Oak St.
+trial_guidance: Arrive 10 minutes early.
+pricing: $120 a month.
+welcome_message: Welcome to Tiger Dojo!
+</school_profile>
 
 <faqs>
 Q1: Do I need a gi?

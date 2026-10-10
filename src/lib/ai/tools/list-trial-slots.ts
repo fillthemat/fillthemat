@@ -9,7 +9,8 @@ export function listTrialSlots({
   now,
 }: AssistantContext) {
   return tool({
-    description: "List currently open trial slots for one offering.",
+    description:
+      'List currently open trial slots for one offering. Class times come only from tools. Never invent, round, or "hold" a time.',
     inputSchema: z.object({
       offeringId: z.string().uuid(),
     }),

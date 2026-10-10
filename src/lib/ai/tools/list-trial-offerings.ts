@@ -8,7 +8,7 @@ export function listTrialOfferings({
 }: AssistantContext) {
   return tool({
     description:
-      "List trial offerings. Optionally filter by participant age in years.",
+      "List trial offerings. Optionally filter by participant age in years. Eligibility is determined only by offering age ranges. Do not override them.",
     inputSchema: z.object({
       participantAge: z.number().int().min(0).max(99).optional(),
     }),
