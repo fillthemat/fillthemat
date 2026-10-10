@@ -5,7 +5,6 @@ import {
   createUIMessageStreamResponse,
   generateId,
   type InferAgentUIMessage,
-  type InferToolOutput,
   isStepCount,
   type LanguageModel,
   ToolLoopAgent,
@@ -19,8 +18,15 @@ import { assistantInstructions } from "./instructions";
 import { defaultLanguageModel } from "./language-model";
 import { platformInstructionsHash } from "./provenance";
 import { assistantTools } from "./tools";
+import { type LeadRequest, leadRequestFromResult } from "./tools/capture-lead";
+import {
+  type BookingIntent,
+  bookingIntentFromResult,
+} from "./tools/prepare-booking";
 
 export type { AssistantSchool, SchoolCatalog } from "./context";
+export type { LeadRequest } from "./tools/capture-lead";
+export type { BookingIntent } from "./tools/prepare-booking";
 
 /** What a reply came from. */
 export type ReplyProvenance = {
@@ -69,28 +75,6 @@ type Assistant = Awaited<ReturnType<typeof createAssistant>>["assistant"];
 /** A web chat message whose tool parts are typed by the assistant's tools. */
 export type AssistantUIMessage = InferAgentUIMessage<Assistant>;
 
-type AssistantTools = Assistant["tools"];
-type PrepareBookingOk = Extract<
-  InferToolOutput<AssistantTools["prepare_booking"]>,
-  { ok: true }
->;
-
-export type BookingIntent = {
-  trialOfferingId: PrepareBookingOk["offering"]["id"];
-  slotId: PrepareBookingOk["slot"]["slotId"];
-  participantName: PrepareBookingOk["participantName"];
-  participantAge: PrepareBookingOk["participantAge"];
-};
-
-type CaptureLeadOutput = InferToolOutput<AssistantTools["capture_lead"]>;
-
-export type LeadRequest = {
-  participantName: CaptureLeadOutput["participantName"];
-  participantAge: CaptureLeadOutput["participantAge"];
-  trialOfferingId: CaptureLeadOutput["offeringId"];
-  statedNeed: CaptureLeadOutput["statedNeed"];
-};
-
 export type CompletedReply = {
   text: string;
   bookingIntent: BookingIntent | null;
@@ -121,22 +105,8 @@ export async function completedReply({
   );
   return {
     text: result.text.trim(),
-    bookingIntent: lastPrepareBooking?.output.ok
-      ? {
-          trialOfferingId: lastPrepareBooking.output.offering.id,
-          slotId: lastPrepareBooking.output.slot.slotId,
-          participantName: lastPrepareBooking.output.participantName,
-          participantAge: lastPrepareBooking.output.participantAge,
-        }
-      : null,
-    leadRequest: lastCaptureLead
-      ? {
-          participantName: lastCaptureLead.output.participantName,
-          participantAge: lastCaptureLead.output.participantAge,
-          trialOfferingId: lastCaptureLead.output.offeringId,
-          statedNeed: lastCaptureLead.output.statedNeed,
-        }
-      : null,
+    bookingIntent: bookingIntentFromResult(lastPrepareBooking?.output),
+    leadRequest: leadRequestFromResult(lastCaptureLead?.output),
     provenance,
   };
 }
