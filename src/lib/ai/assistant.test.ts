@@ -367,6 +367,28 @@ describe("the assistant's completed reply", () => {
     });
   });
 
+  it("returns ineligible_age and no Booking Intent for a participant outside the offering's age range", async () => {
+    const model = scriptedModel(
+      toolCallStep("prepare_booking", {
+        offeringId: kidsBjj.id,
+        slotId: openSlotId,
+        participantName: "Ana",
+        participantAge: 13,
+      }),
+      textStep(
+        "Kids BJJ is for ages 5 to 12. Shall we look at other offerings?",
+      ),
+    );
+
+    const reply = await completedReply({ ...input, model });
+
+    expect(toolOutputSentBackToModel(model)).toEqual({
+      type: "json",
+      value: { ok: false, reason: "ineligible_age" },
+    });
+    expect(reply.bookingIntent).toBeNull();
+  });
+
   it.each([
     {
       attempt: "an unavailable slot",
