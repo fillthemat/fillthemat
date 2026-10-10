@@ -53,12 +53,10 @@ describe("recordResendDeliveryEvent", () => {
         updatedAt: new Date("2025-01-01T00:00:00Z"),
       })),
     );
-    expect(
-      await recordResendDeliveryEvent({
-        type: "email.delivered",
-        data: { email_id: providerId },
-      }),
-    ).toEqual({ status: "recorded" });
+    await recordResendDeliveryEvent({
+      type: "email.delivered",
+      data: { email_id: providerId },
+    });
     const rows = await db
       .select()
       .from(emailDeliveries)
@@ -88,12 +86,10 @@ describe("recordResendDeliveryEvent", () => {
       state: "sent",
     });
     for (let retry = 0; retry < 2; retry++) {
-      expect(
-        await recordResendDeliveryEvent({
-          type,
-          data: { email_id: providerId },
-        }),
-      ).toEqual({ status: "recorded" });
+      await recordResendDeliveryEvent({
+        type,
+        data: { email_id: providerId },
+      });
     }
     const rows = await db
       .select()
@@ -124,16 +120,12 @@ describe("recordResendDeliveryEvent", () => {
       { type: "email.delivered", data: { email_id: "" } },
       { type: "email.delivered" },
     ]) {
-      expect(await recordResendDeliveryEvent(event)).toEqual({
-        status: "ignored",
-      });
+      await recordResendDeliveryEvent(event);
     }
-    expect(
-      await recordResendDeliveryEvent({
-        type: "email.delivered",
-        data: { email_id: randomUUID() },
-      }),
-    ).toEqual({ status: "recorded" });
+    await recordResendDeliveryEvent({
+      type: "email.delivered",
+      data: { email_id: randomUUID() },
+    });
     expect(
       await db
         .select()

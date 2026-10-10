@@ -26,6 +26,8 @@ export async function enqueueInboundJobs(
         kind: "inbound_message",
         payload: message,
         state: "pending",
+        // Immediate work uses the same clock as the worker's due-time cutoff.
+        nextAttemptAt: new Date(),
       })
       .onConflictDoNothing({ target: whatsappJobs.dedupeKey })
       .returning({ id: whatsappJobs.id });

@@ -3,7 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools, type WhatsAppBookingIntent } from "@/db/schema";
-import { appendMessage } from "@/lib/conversations";
+import { appendMessage } from "@/lib/conversations/conversation-store";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
 import { bookSlot } from "@/lib/schedule/book-slot";
 import { whatsappBookingQuotaExceeded } from "@/lib/security/limits";

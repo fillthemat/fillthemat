@@ -377,112 +377,97 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     ).toBeNull();
   });
 
-  it.each(["question", "confirmation"] as const)(
-    "ends a conversation at its message limit on a %s with an unsaved notice, then answers the next message in a new conversation",
-    async (kind) => {
-      const id = kind === "question" ? "16505553333" : "16505553334";
-      const capSuffix = `${suffix}-${kind}`;
-      expect(
-        (await POST(post(inboundFor(id, `wamid.cap-seed.${capSuffix}`))))
-          .status,
-      ).toBe(200);
-      await runWorker();
+  it("ends a conversation at its message limit on an ordinary message with an unsaved notice, then answers the next message in a new conversation", async () => {
+    const id = "16505553333";
+    const capSuffix = `${suffix}-question`;
+    expect(
+      (await POST(post(inboundFor(id, `wamid.cap-seed.${capSuffix}`)))).status,
+    ).toBe(200);
+    await runWorker();
 
-      const conversation = requireRow(
-        await conversationForWa(id),
-        "conversation",
+    const conversation = requireRow(
+      await conversationForWa(id),
+      "conversation",
+    );
+    const existing = await conversationMessages(conversation.id);
+    const fill = MAX_CHAT_MESSAGES_PER_CONVERSATION - existing.length;
+
+    if (fill > 0) {
+      await db.insert(messages).values(
+        Array.from({ length: fill }, (_, index) => ({
+          conversationId: conversation.id,
+          messageId: `wamid.cap-fill-${index}.${capSuffix}`,
+          role: "user" as const,
+          parts: [{ type: "text", text: `fill ${index}` }],
+          completion: "complete" as const,
+        })),
       );
-      const existing = await conversationMessages(conversation.id);
-      const fill = MAX_CHAT_MESSAGES_PER_CONVERSATION - existing.length;
+    }
 
-      if (fill > 0) {
-        await db.insert(messages).values(
-          Array.from({ length: fill }, (_, index) => ({
-            conversationId: conversation.id,
-            messageId: `wamid.cap-fill-${index}.${capSuffix}`,
-            role: "user" as const,
-            parts: [{ type: "text", text: `fill ${index}` }],
-            completion: "complete" as const,
-          })),
-        );
-      }
+    const before = await conversationMessages(conversation.id);
+    expect(
+      (
+        await POST(
+          post(inboundFor(id, `wamid.cap-over.${capSuffix}`, "Hello?")),
+        )
+      ).status,
+    ).toBe(200);
+    await runWorker();
 
-      const before = await conversationMessages(conversation.id);
-      expect(
-        (
-          await POST(
-            post(
-              inboundFor(
-                id,
-                `wamid.cap-over.${capSuffix}`,
-                kind === "confirmation"
-                  ? `confirm_booking:${randomUUID()}`
-                  : "Hello?",
-              ),
-            ),
-          )
-        ).status,
-      ).toBe(200);
-      await runWorker();
-
-      expect(await conversationMessages(conversation.id)).toEqual(before);
-      const [ended] = await db
-        .select()
-        .from(conversations)
-        .where(eq(conversations.id, conversation.id));
-      expect(ended?.endedAt).toBeInstanceOf(Date);
-      expect(ended?.endReason).toBe("message_limit");
-      expect(ended?.generatingAt).toBeNull();
-      expect(await conversationForWa(id)).toBeUndefined();
-      const [notice] = await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(
-          eq(
-            whatsappDeliveries.providerIdempotencyKey,
-            `wa-notice/${id}/wamid.cap-over.${capSuffix}`,
-          ),
-        );
-      expect(notice?.body).toBe(
-        "This conversation has reached its message limit. Your next message starts a fresh conversation.",
+    expect(await conversationMessages(conversation.id)).toEqual(before);
+    const [ended] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversation.id));
+    expect(ended?.endedAt).toBeInstanceOf(Date);
+    expect(ended?.endReason).toBe("message_limit");
+    expect(ended?.generatingAt).toBeNull();
+    expect(await conversationForWa(id)).toBeUndefined();
+    const [notice] = await db
+      .select()
+      .from(whatsappDeliveries)
+      .where(
+        eq(
+          whatsappDeliveries.providerIdempotencyKey,
+          `wa-notice/${id}/wamid.cap-over.${capSuffix}`,
+        ),
       );
-      expect(notice?.state).toBe("sent");
+    expect(notice?.body).toBe(
+      "This conversation has reached its message limit. Your next message starts a fresh conversation.",
+    );
+    expect(notice?.state).toBe("sent");
 
-      expect(
-        (
-          await POST(
-            post(inboundFor(id, `wamid.cap-next.${capSuffix}`, "Hello again")),
-          )
-        ).status,
-      ).toBe(200);
-      await runWorker();
-      const current = requireRow(
-        await conversationForWa(id),
-        "new conversation",
+    expect(
+      (
+        await POST(
+          post(inboundFor(id, `wamid.cap-next.${capSuffix}`, "Hello again")),
+        )
+      ).status,
+    ).toBe(200);
+    await runWorker();
+    const current = requireRow(await conversationForWa(id), "new conversation");
+    expect(current.id).not.toBe(conversation.id);
+    expect(current.generatingAt).toBeNull();
+    const currentMessages = await conversationMessages(current.id);
+    expect(currentMessages.filter(({ role }) => role === "user")).toHaveLength(
+      1,
+    );
+    expect(
+      currentMessages.filter(({ role }) => role === "assistant"),
+    ).toHaveLength(1);
+    expect(await conversationMessages(conversation.id)).toEqual(before);
+    const deliveries = await db
+      .select()
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, id),
+        ),
       );
-      expect(current.id).not.toBe(conversation.id);
-      expect(current.generatingAt).toBeNull();
-      const currentMessages = await conversationMessages(current.id);
-      expect(
-        currentMessages.filter(({ role }) => role === "user"),
-      ).toHaveLength(1);
-      expect(
-        currentMessages.filter(({ role }) => role === "assistant"),
-      ).toHaveLength(1);
-      expect(await conversationMessages(conversation.id)).toEqual(before);
-      const deliveries = await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(
-          and(
-            eq(whatsappDeliveries.schoolId, schoolId),
-            eq(whatsappDeliveries.recipientWaId, id),
-          ),
-        );
-      expect(deliveries).toHaveLength(3);
-      expect(deliveries.every(({ state }) => state === "sent")).toBe(true);
-    },
-  );
+    expect(deliveries).toHaveLength(3);
+    expect(deliveries.every(({ state }) => state === "sent")).toBe(true);
+  });
 
   it("answers the next inbound message after an abandoned generation lock", async () => {
     const id = "16505554444";

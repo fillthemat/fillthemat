@@ -64,6 +64,13 @@
       "when": 1791580140288,
       "tag": "0008_conversation-data-contract",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791580140289,
+      "tag": "0009_correct-ended-conversation-count",
+      "breakpoints": true
     }
   ]
 }

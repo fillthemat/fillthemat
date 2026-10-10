@@ -27,10 +27,6 @@ export async function POST(request: Request) {
     return Response.json({ error: "invalid_signature" }, { status: 401 });
   }
 
-  const result = await recordResendDeliveryEvent(event);
-  switch (result.status) {
-    case "recorded":
-    case "ignored":
-      return Response.json({ ok: true });
-  }
+  await recordResendDeliveryEvent(event);
+  return Response.json({ ok: true });
 }

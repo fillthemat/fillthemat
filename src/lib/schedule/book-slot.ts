@@ -17,7 +17,7 @@ import {
 import {
   attachConversationContact,
   findConversation,
-} from "@/lib/conversations";
+} from "@/lib/conversations/conversation-store";
 import { hashToken, normalizeEmail, normalizePersonName } from "@/lib/crypto";
 import { bookingIcsUid } from "@/lib/email/ics";
 import { FUNNEL_EVENTS, privacySafeMetadata } from "@/lib/funnel";

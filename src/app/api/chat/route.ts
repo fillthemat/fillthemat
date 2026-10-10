@@ -1,3 +1,4 @@
+import { CHAT_ERRORS, type ChatError } from "@/lib/chat/protocol";
 import { requestBodyTooLarge } from "@/lib/security/limits";
 import {
   chatRequestSchema,
@@ -7,39 +8,46 @@ import {
   loadWebTranscript,
   startWebTurn,
   type WebTurnResult,
-} from "@/lib/web-chat";
+} from "@/lib/web-chat/web-chat";
 
 // Five minutes, safely below the ten-minute abandoned-generation threshold.
 export const maxDuration = 300;
 
 const refusals = {
-  not_found: { status: 404, error: "not_found" },
-  invalid_conversation: { status: 403, error: "invalid_conversation" },
-  generation_in_progress: { status: 409, error: "generation_in_progress" },
-  duplicate: { status: 409, error: "duplicate" },
-  message_limit: { status: 429, error: "limit" },
+  not_found: { status: 404, error: CHAT_ERRORS.notFound },
+  invalid_conversation: { status: 403, error: CHAT_ERRORS.invalidConversation },
+  generation_in_progress: {
+    status: 409,
+    error: CHAT_ERRORS.generationInProgress,
+  },
+  duplicate: { status: 409, error: CHAT_ERRORS.duplicate },
+  message_limit: { status: 429, error: CHAT_ERRORS.messageLimit },
 } satisfies Record<
   Extract<WebTurnResult, { ok: false }>["reason"],
-  { status: number; error: string }
+  { status: number; error: ChatError }
 >;
 
 export async function POST(request: Request) {
   if (requestBodyTooLarge(request.headers.get("content-length"))) {
-    return Response.json({ error: "too_large" }, { status: 413 });
+    return Response.json({ error: CHAT_ERRORS.tooLarge }, { status: 413 });
   }
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return Response.json({ error: "invalid" }, { status: 400 });
+    return Response.json({ error: CHAT_ERRORS.invalid }, { status: 400 });
   }
   const parsed = chatRequestSchema.safeParse(body);
   if (!parsed.success) {
     const invalidMessage = parsed.error.issues.some(
-      (issue) => issue.message === "invalid_message",
+      (issue) => issue.message === CHAT_ERRORS.invalidMessage,
     );
     return Response.json(
-      { error: invalidMessage ? "invalid_message" : "invalid" },
+      {
+        error: invalidMessage
+          ? CHAT_ERRORS.invalidMessage
+          : CHAT_ERRORS.invalid,
+      },
       { status: 400 },
     );
   }
@@ -57,7 +65,7 @@ export async function GET(request: Request) {
     preview: params.get("preview") === "1",
   });
   if (!parsed.success) {
-    return Response.json({ error: "invalid" }, { status: 400 });
+    return Response.json({ error: CHAT_ERRORS.invalid }, { status: 400 });
   }
   const result = await loadWebTranscript(parsed.data);
   if (!result.ok)

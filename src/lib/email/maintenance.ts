@@ -1,7 +1,7 @@
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { bookings, cronRuns, emailDeliveries } from "@/db/schema";
-import { endInactiveConversations } from "@/lib/conversations";
+import { endInactiveConversations } from "@/lib/conversations/conversation-store";
 import { shouldCreateReminder } from "@/lib/schedule/reminders";
 import { claimDueDeliveries, sendDelivery } from "./deliveries";
 

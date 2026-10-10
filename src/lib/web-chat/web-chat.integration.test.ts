@@ -31,7 +31,7 @@ import {
   isRoot,
   leaks,
 } from "@/test/tracing";
-import { loadWebTranscript, startWebTurn } from "./index";
+import { loadWebTranscript, startWebTurn } from "./web-chat";
 
 loadLocalEnv();
 
@@ -179,6 +179,34 @@ afterAll(async () => {
 });
 
 describe("a web chat turn with no AI Gateway token", () => {
+  it("reads a transcript even when a historic row is not a valid SDK message", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1"],
+    });
+    await db.insert(messages).values({
+      conversationId,
+      messageId: "historic-reply",
+      role: "assistant",
+      parts: [{ type: "legacy-part", value: "Old reply" }],
+    });
+    expect(
+      await loadWebTranscript({ slug, preview: false, resumeToken }),
+    ).toEqual({
+      ok: true,
+      messages: [
+        {
+          id: "question-1",
+          role: "user",
+          parts: [{ type: "text", text: "Message 1" }],
+        },
+        {
+          id: "historic-reply",
+          role: "assistant",
+          parts: [{ type: "legacy-part", value: "Old reply" }],
+        },
+      ],
+    });
+  });
   it("loads an empty transcript after a conversation has ended even before its deadline", async () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1", "reply-1"],
@@ -613,6 +641,26 @@ describe("a web chat turn whose trace can't be exported", () => {
 });
 
 describe("a rejected web chat message", () => {
+  it("ignores a resent message at the limit without ending the conversation", async () => {
+    const messageIds = Array.from(
+      { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
+      (_, index) => `message-${index + 1}`,
+    );
+    const { resumeToken } = await existingConversation({ messageIds });
+    expect(await startMessage(resumeToken, "message-1", "Hello?")).toEqual({
+      ok: false,
+      reason: "duplicate",
+    });
+    const transcript = await loadWebTranscript({
+      slug,
+      preview: false,
+      resumeToken,
+    });
+    if (!transcript.ok) throw new Error(transcript.reason);
+    expect(transcript.messages).toHaveLength(
+      MAX_CHAT_MESSAGES_PER_CONVERSATION,
+    );
+  });
   it("refuses a resume token belonging to another school and never returns its transcript", async () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1", "reply-1"],

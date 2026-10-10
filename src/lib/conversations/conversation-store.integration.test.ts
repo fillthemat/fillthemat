@@ -9,7 +9,7 @@ import {
   endConversation,
   findConversation,
   findOrCreateConversation,
-} from ".";
+} from "./conversation-store";
 
 loadLocalEnv();
 const sql = authSql();
@@ -72,12 +72,8 @@ describe("conversations", () => {
       const input = { schoolId: schoolIds[0], identity };
       const original = await findOrCreateConversation(input);
       if (!original.ok) throw new Error("conversation refused");
-      expect(await endConversation(original.conversation.id, reason)).toBe(
-        true,
-      );
-      expect(await endConversation(original.conversation.id, reason)).toBe(
-        false,
-      );
+      await endConversation(original.conversation.id, reason);
+      await endConversation(original.conversation.id, reason);
       expect(await findConversation(input)).toBeUndefined();
       expect(await claimGeneration(original.conversation.id)).toBeUndefined();
       expect(

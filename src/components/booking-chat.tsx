@@ -4,6 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { APICallError, DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useState } from "react";
 import type { AssistantUIMessage } from "@/lib/ai/assistant";
+import { CHAT_ERRORS, CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
 import { BookingFlow, type ProposedTrial } from "./booking-flow";
 import { readConversationToken } from "./browser-token";
 
@@ -19,7 +20,9 @@ type Offering = {
 function isMessageLimitRefusal(error: Error | undefined): boolean {
   if (!APICallError.isInstance(error) || error.statusCode !== 429) return false;
   try {
-    return JSON.parse(error.responseBody ?? "{}").error === "limit";
+    return (
+      JSON.parse(error.responseBody ?? "{}").error === CHAT_ERRORS.messageLimit
+    );
   } catch {
     return false;
   }
@@ -144,8 +147,7 @@ export function BookingChat({
               role="status"
               className="rounded-xl bg-page-50 p-3 text-page-600"
             >
-              This conversation has reached its message limit. Your next message
-              starts a fresh conversation.
+              {CONVERSATION_LIMIT_NOTICE}
             </p>
           ) : null}
         </div>

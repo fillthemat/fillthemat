@@ -1,4 +1,7 @@
+import type { UIMessage } from "ai";
 import { z } from "zod";
+import { textFromMessage } from "./chat/messages";
+import { CHAT_ERRORS } from "./chat/protocol";
 import { MAX_USER_MESSAGE_CHARS } from "./security/limits";
 import { isValidSlug, normalizeSlug } from "./slug";
 
@@ -90,18 +93,34 @@ export const chatTranscriptRequestSchema = z.object({
   preview: z.boolean().default(false),
 });
 
+export const landingSessionRequestSchema = z.object({
+  slug: z.string().min(1),
+  token: z.string().min(16),
+  preview: z.boolean().optional(),
+  utm: z.record(z.string(), z.string().optional()).optional(),
+});
+
 export const chatRequestSchema = chatTranscriptRequestSchema.extend({
-  message: z.object({
-    id: z.string().min(1),
-    role: z.literal("user"),
-    parts: z
-      .array(z.object({ type: z.literal("text"), text: z.string() }))
-      .refine((parts) => {
-        const text = parts
-          .map((part) => part.text)
-          .join("")
-          .trim();
-        return text.length > 0 && text.length <= MAX_USER_MESSAGE_CHARS;
-      }, "invalid_message"),
-  }),
+  message: z
+    .looseObject({
+      id: z.string().min(1),
+      role: z.literal("user"),
+      metadata: z.unknown().optional(),
+      // Preserve all UI parts; the assistant boundary performs SDK validation.
+      parts: z.array(
+        z.custom<UIMessage["parts"][number]>(
+          (part) =>
+            typeof part === "object" &&
+            part !== null &&
+            "type" in part &&
+            typeof part.type === "string" &&
+            (part.type !== "text" ||
+              ("text" in part && typeof part.text === "string")),
+        ),
+      ),
+    })
+    .refine((message) => {
+      const text = textFromMessage(message);
+      return text.length > 0 && text.length <= MAX_USER_MESSAGE_CHARS;
+    }, CHAT_ERRORS.invalidMessage),
 });
