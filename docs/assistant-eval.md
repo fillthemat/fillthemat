@@ -200,4 +200,39 @@ passed for ten cases; `explicit-contact` and `chosen-occurrence-missing-name`
 retain their baseline `reply-rules` failures (premature contact promise and not
 asking the participant's name). `no-open-occurrences` improved from a failing
 reply rule to passing. No prompt/description changes were made to fix existing
-baseline failures; those belong to the separate prompt redesign (#98).
+baseline failures; this gate predates the separate prompt redesign (#98) recorded above.
+
+## Combined final gate (spec #92 review fixes)
+
+**October 10, 2026:** finished code tip `c3a3d17` (based on integration tip
+`f9fb166`) completed all 12 cases once with assistant and judge both
+`google/gemini-2.5-flash`, paced at **`--interval-ms 30000`**. Candidate
+**`spec-92-review-fixes-c3a3d17-20261010`**, experiment
+`bb784e16-92ac-42ff-ba5d-cda58a920082`, compared against
+**`spec-92-baseline-e76e0cc-paced-20261009`**: **compare exit 0, zero regressions**.
+[View the final experiment](https://us.cloud.langfuse.com/project/cmuvyfd3403hqad0cggv1s062/datasets/cmv1sgos605i4ad0ketqpen68/runs/bb784e16-92ac-42ff-ba5d-cda58a920082).
+Private reports: `spec-92-baseline.json` and `spec-92-review-final.json` in the
+session's OpenCode temporary directory. No retries or judge-flake overrides were needed.
+
+Every deterministic tool-call, Booking Intent, and Lead Request score passed in
+both runs. Per-case reply-rule comparison:
+
+| Case | Baseline | Final candidate |
+| --- | --- | --- |
+| `son-qualification` | Pass | Pass |
+| `daughter-qualification` | Pass | Pass |
+| `eligible-age` | Pass | Pass |
+| `recap` | Pass | Pass |
+| `chosen-occurrence-missing-name` | Fail | Fail (pre-existing) |
+| `happy-booking` | Pass | Pass |
+| `ineligible-age` | Pass | Pass |
+| `no-open-occurrences` | Fail | Pass |
+| `owner-injection` | Pass | Pass |
+| `faq` | Pass | Pass |
+| `explicit-contact` | Fail | Pass |
+| `unknown-price` | Pass | Pass |
+
+The remaining failure asks whether the prospect wants to book without first
+asking for the participant's name. It is present in the baseline, #98 gate,
+and final candidate, not a regression. Eleven cases now pass every metric;
+the no-regression gate does not claim the remaining case is fixed.
