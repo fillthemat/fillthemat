@@ -67,6 +67,11 @@ export const messageCompletionEnum = appSchema.enum("message_completion", [
   "error",
 ]);
 
+export const conversationEndReasonEnum = appSchema.enum(
+  "conversation_end_reason",
+  ["inactivity", "message_limit"],
+);
+
 export const cronResultEnum = appSchema.enum("cron_result", [
   "success",
   "error",
@@ -373,14 +378,18 @@ export const conversations = appSchema.table(
     waIdHash: text("wa_id_hash"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     generatingAt: timestamp("generating_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endReason: conversationEndReasonEnum("end_reason"),
     ...timestamps,
   },
   (t) => [
     unique("conversations_school_id_id").on(t.schoolId, t.id),
-    unique("conversations_resume_token_hash").on(t.resumeTokenHash),
+    uniqueIndex("conversations_resume_token_hash")
+      .on(t.resumeTokenHash)
+      .where(sql`${t.endedAt} IS NULL`),
     uniqueIndex("conversations_school_wa_id_hash")
       .on(t.schoolId, t.waIdHash)
-      .where(sql`${t.waIdHash} IS NOT NULL`),
+      .where(sql`${t.waIdHash} IS NOT NULL AND ${t.endedAt} IS NULL`),
     foreignKey({
       columns: [t.schoolId],
       foreignColumns: [schools.id],
@@ -412,7 +421,6 @@ export const messages = appSchema.table(
     completion: messageCompletionEnum("completion")
       .notNull()
       .default("complete"),
-    purgeAt: timestamp("purge_at", { withTimezone: true }).notNull(),
     ...timestamps,
   },
   (t) => [
@@ -420,7 +428,6 @@ export const messages = appSchema.table(
       t.conversationId,
       t.messageId,
     ),
-    index("messages_purge_at_idx").on(t.purgeAt),
   ],
 );
 
@@ -746,7 +753,7 @@ export const cronRuns = appSchema.table("cron_runs", {
   reminderCount: integer("reminder_count").notNull().default(0),
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
-  purgedCount: integer("purged_count").notNull().default(0),
+  endedConversationCount: integer("ended_conversation_count").notNull().default(0),
   result: cronResultEnum("result"),
   errorSummary: text("error_summary"),
 });

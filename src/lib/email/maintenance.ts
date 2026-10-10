@@ -1,12 +1,7 @@
-import { and, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
-import {
-  bookings,
-  conversations,
-  cronRuns,
-  emailDeliveries,
-  messages,
-} from "@/db/schema";
+import { bookings, cronRuns, emailDeliveries } from "@/db/schema";
+import { endInactiveConversations } from "@/lib/conversations/conversation-store";
 import { shouldCreateReminder } from "@/lib/schedule/reminders";
 import { claimDueDeliveries, sendDelivery } from "./deliveries";
 
@@ -15,9 +10,7 @@ export async function createDueReminderDeliveries(now = new Date()) {
   const due = await db
     .select()
     .from(bookings)
-    .where(
-      and(eq(bookings.status, "booked"), sql`${bookings.startAt} > ${now}`),
-    );
+    .where(and(eq(bookings.status, "booked"), gt(bookings.startAt, now)));
 
   let created = 0;
   for (const booking of due) {
@@ -52,30 +45,6 @@ export async function createDueReminderDeliveries(now = new Date()) {
   return created;
 }
 
-export async function purgeExpiredTranscripts(now = new Date()) {
-  const db = getDb();
-  const purgedMessages = await db
-    .update(messages)
-    .set({ parts: [], updatedAt: now })
-    .where(
-      and(lte(messages.purgeAt, now), sql`${messages.parts} <> '[]'::jsonb`),
-    )
-    .returning({ id: messages.id });
-
-  await db.delete(messages).where(lte(messages.purgeAt, now));
-  const deletedConversations = await db
-    .delete(conversations)
-    .where(
-      and(
-        lte(conversations.expiresAt, now),
-        isNull(conversations.generatingAt),
-      ),
-    )
-    .returning({ id: conversations.id });
-
-  return purgedMessages.length + deletedConversations.length;
-}
-
 export async function runMaintenance() {
   const db = getDb();
   const [run] = await db.insert(cronRuns).values({}).returning();
@@ -91,7 +60,7 @@ export async function runMaintenance() {
       if (result === "sent") sentCount += 1;
       else failedCount += 1;
     }
-    const purgedCount = await purgeExpiredTranscripts();
+    const endedConversationCount = await endInactiveConversations();
     const [updated] = await db
       .update(cronRuns)
       .set({
@@ -99,7 +68,7 @@ export async function runMaintenance() {
         reminderCount,
         sentCount,
         failedCount,
-        purgedCount,
+        endedConversationCount,
         result: "success",
       })
       .where(eq(cronRuns.id, run.id))

@@ -8,6 +8,7 @@ import {
   bookings,
   conversations,
   emailDeliveries,
+  messages,
   schools,
   trialOccurrences,
   trialOfferings,
@@ -21,6 +22,7 @@ import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
 import {
   MAX_BOOKINGS_PER_WA_ID_PER_DAY,
+  MAX_CHAT_MESSAGES_PER_CONVERSATION,
   whatsappBookingQuotaExceeded,
 } from "@/lib/security/limits";
 import { confirmWhatsAppBooking } from "@/lib/whatsapp/booking";
@@ -221,8 +223,63 @@ afterAll(async () => {
 });
 
 describe("WhatsApp booking funnel (Phase 5)", () => {
-  it("confirms a reply-button booking: row + occupancy + WhatsApp template confirmation", async () => {
+  it("a Confirm booking tap after conversation inactivity expires the old intent and sends the expired notice", async () => {
+    const waId = "16505550063";
+    const conversationId = await makeConversation(waId);
+    const intentId = await seedIntent(conversationId, "stale-slot");
+    await db
+      .update(conversations)
+      .set({ expiresAt: addDays(new Date(), -1) })
+      .where(eq(conversations.id, conversationId));
+    const before = await db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.schoolId, schoolId));
+    expect(
+      (
+        await POST(
+          post(
+            buttonReplyPayload(
+              waId,
+              `wamid.inactive-confirm.${suffix}`,
+              confirmBookingButtonId(intentId),
+            ),
+          ),
+        )
+      ).status,
+    ).toBe(200);
+    await runWhatsAppWorkerOnce(randomUUID());
+    expect((await fetchIntent(intentId)).state).toBe("expired");
+    expect(
+      await db.select().from(bookings).where(eq(bookings.schoolId, schoolId)),
+    ).toEqual(before);
+    const [notice] = await db
+      .select()
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, waId),
+        ),
+      );
+    expect(notice?.body).toBe(
+      "That booking option has expired or was replaced. Please ask for available times again.",
+    );
+    expect(notice?.state).toBe("sent");
+  });
+  it("confirms a reply-button booking at the message limit: row + occupancy + normal confirmation", async () => {
     const conversationId = await makeConversation(waA);
+    await db.insert(messages).values(
+      Array.from(
+        { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
+        (_, index) => ({
+          conversationId,
+          messageId: `earlier-${index}`,
+          role: index % 2 === 0 ? "user" : "assistant",
+          parts: [{ type: "text", text: `Message ${index + 1}` }],
+        }),
+      ),
+    );
 
     const [window] = await db
       .select()
@@ -259,6 +316,27 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     const booking = bookingRows[0];
     expect(booking.contactEmailSnapshot).toBeNull();
     expect(booking.contactPhoneSnapshot).toBe(waA);
+    expect(booking.conversationId).toBe(conversationId);
+
+    const replies = await db
+      .select({ parts: messages.parts })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.role, "assistant"),
+        ),
+      );
+    expect(replies).toContainEqual({
+      parts: [
+        {
+          type: "text",
+          text: expect.stringMatching(
+            /^Booked! Alex's trial for Kids beginner trial/,
+          ),
+        },
+      ],
+    });
 
     const [occurrence] = await db
       .select()
@@ -383,7 +461,6 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
         phoneNumberId,
         wamid: `wamid.quota.${i}.${suffix}`,
         profileName: "Alex Rivera",
-        purgeAt: addDays(new Date(), 30),
         runId: randomUUID(),
       });
       expect(outcome.status).toBe("booked");
@@ -403,7 +480,6 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       phoneNumberId,
       wamid: `wamid.quota.over.${suffix}`,
       profileName: "Alex Rivera",
-      purgeAt: addDays(new Date(), 30),
       runId: randomUUID(),
     });
     expect(outcome.status).toBe("rate_limited");

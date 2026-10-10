@@ -82,3 +82,10 @@ export const leadRequestSchema = z.object({
   turnstileToken: z.string().min(1).max(4096),
   landingSessionToken: z.string().min(1).max(256).optional(),
 });
+
+export const landingSessionRequestSchema = z.object({
+  slug: z.string().min(1),
+  token: z.string().min(16),
+  preview: z.boolean().optional(),
+  utm: z.record(z.string(), z.string().optional()).optional(),
+});

@@ -9,13 +9,20 @@ import {
   type WhatsAppJob,
 } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
+import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
+import {
+  appendMessage,
+  claimGeneration,
+  endConversationAtMessageLimit,
+  findConversation,
+  findOrCreateConversation,
+  hasWhatsAppMessage,
+  loadTranscript,
+} from "@/lib/conversations/conversation-store";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { loadSchoolCatalog } from "@/lib/schools/public";
-import {
-  MAX_CHAT_MESSAGES_PER_CONVERSATION,
-  whatsappOutboundQuotaExceeded,
-} from "@/lib/security/limits";
+import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
 import {
   exportEndedTurns,
   startTurnTrace,
@@ -34,14 +41,7 @@ import {
   enqueueWhatsAppDelivery,
   recoverStuckWhatsAppDeliveries,
 } from "./deliveries";
-import {
-  claimGenerating,
-  messageExists,
-  persistAssistantMessage,
-  persistUserMessage,
-  releaseGenerating,
-  resolveInboundConversation,
-} from "./inbound";
+import { resolveInboundSchool } from "./inbound";
 import {
   getPendingBookingIntent,
   getPendingBookingIntentById,
@@ -54,7 +54,6 @@ import {
   recoverStuckWhatsAppJobs,
   rescheduleJob,
 } from "./jobs";
-import { loadValidatedConversationMessages } from "./messages";
 import type { InboundWhatsAppMessage } from "./parse";
 import { splitWhatsAppText } from "./text";
 
@@ -65,7 +64,6 @@ export type ProcessJobResult = "done" | "failed";
 type JobContext = {
   schoolId: string;
   conversationId: string;
-  purgeAt: Date;
 };
 
 type InboundContext = JobContext & {
@@ -80,18 +78,18 @@ type InboundContext = JobContext & {
 };
 
 async function saveInboundMessage(ctx: InboundContext): Promise<void> {
-  await persistUserMessage({
+  await appendMessage({
     id: ctx.inboundMessageId,
     conversationId: ctx.conversationId,
-    wamid: ctx.message.wamid,
-    text: ctx.inboundText,
-    purgeAt: ctx.purgeAt,
+    messageId: ctx.message.wamid,
+    role: "user",
+    parts: [{ type: "text", text: ctx.inboundText }],
   });
 }
 
 // Notices are sent but not saved as messages, so their reply has no id.
 async function sendNotice(
-  ctx: InboundContext,
+  ctx: Pick<InboundContext, "schoolId" | "message" | "runId">,
   text: string,
 ): Promise<TurnReply> {
   const deliveryId = await enqueueWhatsAppDelivery({
@@ -132,7 +130,6 @@ async function handleConfirmation(
     phoneNumberId: ctx.message.phoneNumberId,
     wamid: ctx.message.wamid,
     profileName: ctx.message.profileName,
-    purgeAt: ctx.purgeAt,
     runId: ctx.runId,
   });
 
@@ -174,17 +171,6 @@ async function handleAssistantTurn(
   history: UIMessage[],
   now: Date,
 ): Promise<TurnReply> {
-  // 429-equivalent: per-wa_id daily outbound cap (Phase 5 abuse controls).
-  if (
-    await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
-  ) {
-    await saveInboundMessage(ctx);
-    return sendNotice(
-      ctx,
-      "You've reached today's message limit. Please try again tomorrow.",
-    );
-  }
-
   const inboundUIMessage: UIMessage = {
     id: ctx.message.wamid,
     role: "user",
@@ -231,11 +217,11 @@ async function handleAssistantTurn(
     const body =
       reply.text ||
       "I found a time that works. Use the buttons below to confirm.";
-    const replyMessageId = await persistAssistantMessage({
+    const replyMessageId = await appendMessage({
+      role: "assistant",
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: body ? [{ type: "text", text: body }] : [],
-      purgeAt: ctx.purgeAt,
     });
 
     const deliveryId = await enqueueWhatsAppDelivery({
@@ -279,11 +265,11 @@ async function handleAssistantTurn(
     const replyText =
       reply.text ||
       "Thanks — I've passed your details along and the school will contact you to find a time.";
-    const replyMessageId = await persistAssistantMessage({
+    const replyMessageId = await appendMessage({
+      role: "assistant",
       conversationId: ctx.conversationId,
       messageId: generateId(),
       parts: [{ type: "text", text: replyText }],
-      purgeAt: ctx.purgeAt,
     });
     await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${lead.id}`);
     return { text: replyText, messageId: replyMessageId, provenance };
@@ -291,11 +277,11 @@ async function handleAssistantTurn(
 
   // Plain text reply.
   const replyText = reply.text;
-  const replyMessageId = await persistAssistantMessage({
+  const replyMessageId = await appendMessage({
+    role: "assistant",
     conversationId: ctx.conversationId,
     messageId: generateId(),
     parts: replyText ? [{ type: "text", text: replyText }] : [],
-    purgeAt: ctx.purgeAt,
   });
   await enqueueAndSendTextReplies(ctx, replyText, `wa-reply/${generateId()}`);
   return { text: replyText, messageId: replyMessageId, provenance };
@@ -303,8 +289,8 @@ async function handleAssistantTurn(
 
 /**
  * Decides how to answer the inbound message before answering it, and returns
- * the turn that sends the reply. Returns null when the message gets no reply:
- * the conversation has reached its message limit and it isn't a confirmation.
+ * the turn that sends the reply. Returns null for a refusal, which saves no
+ * messages and is not traced as a Turn, even when a notice is sent.
  *
  * Deterministic confirmation path (addendum "Deterministic confirmation"): a
  * `confirm_booking:<id>` reply button, or an exact affirmative while a pending
@@ -314,6 +300,7 @@ async function planReply(
   ctx: InboundContext,
   now: Date,
 ): Promise<(() => Promise<TurnReply>) | null> {
+  // Booking confirmations bypass the assistant's message limit.
   const buttonIntentId = parseConfirmBookingButton(ctx.inboundText);
   const pending = await getPendingBookingIntent(ctx.conversationId, now);
   if (
@@ -326,8 +313,24 @@ async function planReply(
     return () => handleConfirmation(ctx, intent);
   }
 
-  const history = await loadValidatedConversationMessages(ctx.conversationId);
-  if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) return null;
+  const history = await loadTranscript(ctx.conversationId);
+  if (
+    await endConversationAtMessageLimit(ctx.conversationId, history.length, now)
+  ) {
+    await sendNotice(ctx, CONVERSATION_LIMIT_NOTICE);
+    return null;
+  }
+
+  // Daily-cap refusals leave the conversation open and its transcript intact.
+  if (
+    await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)
+  ) {
+    await sendNotice(
+      ctx,
+      "You've reached today's message limit. Please try again tomorrow.",
+    );
+    return null;
+  }
   return () => handleAssistantTurn(ctx, history, now);
 }
 
@@ -341,9 +344,8 @@ export async function processWhatsAppJob(
   runId: string,
 ): Promise<ProcessJobResult> {
   const message = job.payload as InboundWhatsAppMessage;
-  let conversationId: string | null = null;
   try {
-    const resolved = await resolveInboundConversation(message, new Date());
+    const resolved = await resolveInboundSchool(message);
     if (!resolved.resolved) {
       if (resolved.reason === "unknown_phone_number") {
         await failJob(job.id, job.attempts, "unknown_phone_number");
@@ -353,27 +355,67 @@ export async function processWhatsAppJob(
       await markJobDone(job.id);
       return "done";
     }
-    conversationId = resolved.conversationId;
     const now = new Date();
 
     // Retry idempotency: if a previous attempt already persisted this inbound
     // message, do not reply or book a second time.
-    if (await messageExists(conversationId, message.wamid)) {
+    const alreadyAnswered = () =>
+      hasWhatsAppMessage({
+        schoolId: resolved.schoolId,
+        waId: message.waId,
+        messageId: message.wamid,
+      });
+    if (await alreadyAnswered()) {
       await markJobDone(job.id, resolved.schoolId);
       return "done";
     }
+    const identity = { channel: "whatsapp", waId: message.waId } as const;
+    // A daily-cap refusal is not a turn and must not create an empty record.
+    // Explicit confirmation buttons retain their deterministic path at the cap.
+    if (
+      !parseConfirmBookingButton(message.text ?? "") &&
+      !(await findConversation({
+        schoolId: resolved.schoolId,
+        identity,
+        now,
+      })) &&
+      (await whatsappOutboundQuotaExceeded(
+        resolved.schoolId,
+        message.waId,
+        now,
+      ))
+    ) {
+      await sendNotice(
+        { schoolId: resolved.schoolId, message, runId },
+        "You've reached today's message limit. Please try again tomorrow.",
+      );
+      await markJobDone(job.id, resolved.schoolId);
+      return "done";
+    }
+    const result = await findOrCreateConversation({
+      schoolId: resolved.schoolId,
+      identity,
+      now,
+    });
+    if (!result.ok) throw new Error(result.reason);
+    const conversationId = result.conversation.id;
 
-    if (!(await claimGenerating(conversationId, now))) {
+    const lock = await claimGeneration(conversationId, { wait: true, now });
+    if (!lock) {
       // Another job is mid-flight on this conversation; try again shortly.
       await rescheduleJob(job.id, 2000);
       return "done";
     }
 
     try {
+      // Recheck after waiting for a concurrent attempt to release its lock.
+      if (await alreadyAnswered()) {
+        await markJobDone(job.id, resolved.schoolId);
+        return "done";
+      }
       const ctx: InboundContext = {
         schoolId: resolved.schoolId,
         conversationId,
-        purgeAt: resolved.purgeAt,
         message,
         inboundText: message.text ?? "",
         inboundMessageId: randomUUID(),
@@ -382,8 +424,8 @@ export async function processWhatsAppJob(
 
       const sendReply = await planReply(ctx, now);
       if (sendReply) {
-        // A message that gets a reply is a turn. Its trace starts only once
-        // that's known, because a started trace can't be dropped. It's
+        // Only an accepted message and its reply are a Turn. Its trace starts
+        // once that's known, because a started trace can't be dropped. It's
         // exported when the worker run ends.
         const turn = startTurnTrace({
           channel: "whatsapp",
@@ -398,11 +440,11 @@ export async function processWhatsAppJob(
       await markJobDone(job.id, resolved.schoolId);
       return "done";
     } finally {
-      await releaseGenerating(conversationId);
+      await lock.release();
     }
   } catch (error) {
-    // `releaseGenerating` is handled by the inner `finally`: the lock is only
-    // ever held between `claimGenerating` and that finally, so there is no
+    // The lock is released by the inner `finally`: it is only ever held
+    // between `claimGeneration` and that finally, so there is no
     // second release here (fail the job + backoff, never leak the lock).
     const message =
       error instanceof Error ? error.message : "whatsapp_job_failed";

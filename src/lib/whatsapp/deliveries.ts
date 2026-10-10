@@ -111,6 +111,8 @@ export async function enqueueWhatsAppDelivery(
       bookingId: input.bookingId ?? null,
       leadId: input.leadId ?? null,
       state: "pending",
+      // Inline delivery must be immediately due even if the DB clock is ahead.
+      nextAttemptAt: new Date(),
     })
     .onConflictDoNothing({
       target: whatsappDeliveries.providerIdempotencyKey,

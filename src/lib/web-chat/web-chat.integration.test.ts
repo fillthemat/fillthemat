@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
 import { hrTimeToMilliseconds } from "@opentelemetry/core";
 import { addDays } from "date-fns";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
@@ -31,7 +31,7 @@ import {
   isRoot,
   leaks,
 } from "@/test/tracing";
-import { POST } from "./route";
+import { loadWebTranscript, startWebTurn } from "./web-chat";
 
 loadLocalEnv();
 
@@ -39,25 +39,28 @@ const db = getDb();
 const sql = authSql();
 const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
+const otherOwnerId = randomUUID();
 const slug = `chat-${suffix}`;
+const otherSlug = `other-chat-${suffix}`;
 // The assistant sees these in its instructions and in a tool result.
 const schoolPhone = "+1 512 555 0142";
 const coachEmail = "coach@webchat.example";
 let schoolId = "";
 let kidsBjjId = "";
 
-function sendMessage(resumeToken: string, id: string, text: string) {
-  return POST(
-    new Request("http://127.0.0.1:3000/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        slug,
-        resumeToken,
-        message: { id, role: "user", parts: [{ type: "text", text }] },
-      }),
-    }),
-  );
+function startMessage(resumeToken: string, id: string, text: string) {
+  return startWebTurn({
+    slug,
+    preview: false,
+    resumeToken,
+    message: { id, role: "user", parts: [{ type: "text", text }] },
+  });
+}
+
+async function sendMessage(resumeToken: string, id: string, text: string) {
+  const result = await startMessage(resumeToken, id, text);
+  if (!result.ok) throw new Error(result.reason);
+  return result.response;
 }
 
 // The id the browser was given for the reply, from the stream's start chunk.
@@ -74,12 +77,17 @@ async function conversationFor(resumeToken: string) {
   const [conversation] = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.resumeTokenHash, hashToken(resumeToken)))
+    .where(
+      and(
+        eq(conversations.resumeTokenHash, hashToken(resumeToken)),
+        isNull(conversations.endedAt),
+      ),
+    )
     .limit(1);
   return requireRow(conversation, "conversation");
 }
 
-// A conversation as the route would have left it after earlier turns.
+// A conversation as earlier turns would have left it.
 async function existingConversation({
   messageIds = [],
   generatingAt = null,
@@ -107,7 +115,6 @@ async function existingConversation({
         messageId,
         role: index % 2 === 0 ? "user" : "assistant",
         parts: [{ type: "text", text: `Message ${index + 1}` }],
-        purgeAt: expiresAt,
       })),
     );
   }
@@ -152,6 +159,13 @@ beforeAll(async () => {
   });
   schoolId = seeded.schoolId;
   kidsBjjId = requireRow(seeded.offeringIds[0], "Kids BJJ offering");
+  await seedSchool(sql, {
+    ownerId: otherOwnerId,
+    name: "Another Web Chat School",
+    slug: otherSlug,
+    publishedAt: new Date(),
+    offerings: [{ name: "BJJ" }],
+  });
 });
 
 afterEach(() => {
@@ -160,10 +174,106 @@ afterEach(() => {
 
 afterAll(async () => {
   await deleteSchoolOwner(sql, ownerId);
+  await deleteSchoolOwner(sql, otherOwnerId);
   await sql.end({ timeout: 5 });
 });
 
 describe("a web chat turn with no AI Gateway token", () => {
+  it("reads a transcript even when a historic row is not a valid SDK message", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1"],
+    });
+    await db.insert(messages).values({
+      conversationId,
+      messageId: "historic-reply",
+      role: "assistant",
+      parts: [{ type: "legacy-part", value: "Old reply" }],
+    });
+    expect(
+      await loadWebTranscript({ slug, preview: false, resumeToken }),
+    ).toEqual({
+      ok: true,
+      messages: [
+        {
+          id: "question-1",
+          role: "user",
+          parts: [{ type: "text", text: "Message 1" }],
+        },
+        {
+          id: "historic-reply",
+          role: "assistant",
+          parts: [{ type: "legacy-part", value: "Old reply" }],
+        },
+      ],
+    });
+  });
+  it("loads an empty transcript after a conversation has ended even before its deadline", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1", "reply-1"],
+    });
+    await db
+      .update(conversations)
+      .set({ endedAt: new Date(), endReason: "message_limit" })
+      .where(eq(conversations.id, conversationId));
+    expect(
+      await loadWebTranscript({ slug, preview: false, resumeToken }),
+    ).toEqual({ ok: true, messages: [] });
+    expect(await savedMessageIds(conversationId)).toEqual([
+      "question-1",
+      "reply-1",
+    ]);
+  });
+  it("slides the inactivity deadline on an accepted message, but not a duplicate refusal", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      expiresAt: addDays(new Date(), 1),
+    });
+    const before = new Date();
+    await (await sendMessage(resumeToken, "question-1", "Hi!")).text();
+    const accepted = await conversationFor(resumeToken);
+    expect(accepted.id).toBe(conversationId);
+    expect(accepted.expiresAt.getTime()).toBeGreaterThanOrEqual(
+      addDays(before, 30).getTime(),
+    );
+    expect(accepted.expiresAt.getTime()).toBeLessThanOrEqual(
+      addDays(new Date(), 30).getTime(),
+    );
+    expect(await startMessage(resumeToken, "question-1", "Hi!")).toEqual({
+      ok: false,
+      reason: "duplicate",
+    });
+    expect((await conversationFor(resumeToken)).expiresAt).toEqual(
+      accepted.expiresAt,
+    );
+  });
+  it("loads the saved transcript for this school and token, or an empty list for an unknown token", async () => {
+    const resumeToken = randomUUID();
+    await (await sendMessage(resumeToken, "question-1", "Hi!")).text();
+
+    const result = await loadWebTranscript({
+      slug,
+      preview: false,
+      resumeToken,
+    });
+    expect(result).toEqual({
+      ok: true,
+      messages: [
+        {
+          id: "question-1",
+          role: "user",
+          parts: [{ type: "text", text: "Hi!" }],
+        },
+        expect.objectContaining({ role: "assistant" }),
+      ],
+    });
+    expect(
+      await loadWebTranscript({
+        slug,
+        preview: false,
+        resumeToken: randomUUID(),
+      }),
+    ).toEqual({ ok: true, messages: [] });
+  });
+
   it("saves the user message and a reply that lists the school's trial offerings, then releases the conversation lock", async () => {
     const resumeToken = randomUUID();
 
@@ -531,31 +641,43 @@ describe("a web chat turn whose trace can't be exported", () => {
 });
 
 describe("a rejected web chat message", () => {
-  it("gets 409 while another reply is generating, saves nothing, leaves that reply's lock in place, and is not traced", async () => {
-    const lockedAt = new Date(Date.now() - 5_000);
-    const { resumeToken, conversationId } = await existingConversation({
-      messageIds: ["question-1"],
-      generatingAt: lockedAt,
+  it("ignores a resent message at the limit without ending the conversation", async () => {
+    const messageIds = Array.from(
+      { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
+      (_, index) => `message-${index + 1}`,
+    );
+    const { resumeToken } = await existingConversation({ messageIds });
+    expect(await startMessage(resumeToken, "message-1", "Hello?")).toEqual({
+      ok: false,
+      reason: "duplicate",
     });
-
-    const response = await sendMessage(resumeToken, "question-2", "Hello?");
-
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "generation_in_progress" });
-    expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
-    expect((await conversationFor(resumeToken)).generatingAt).toEqual(lockedAt);
-    expect(await exportedTraces()).toEqual([]);
+    const transcript = await loadWebTranscript({
+      slug,
+      preview: false,
+      resumeToken,
+    });
+    if (!transcript.ok) throw new Error(transcript.reason);
+    expect(transcript.messages).toHaveLength(
+      MAX_CHAT_MESSAGES_PER_CONVERSATION,
+    );
   });
-
-  it("gets 409 when the message was already sent, saves no reply, releases the lock, and is not traced", async () => {
+  it("refuses a resume token belonging to another school and never returns its transcript", async () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1", "reply-1"],
     });
+    const input = { slug: otherSlug, preview: false, resumeToken };
 
-    const response = await sendMessage(resumeToken, "question-1", "Hello?");
-
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "duplicate" });
+    expect(
+      await startWebTurn({
+        ...input,
+        message: {
+          id: "question-2",
+          role: "user",
+          parts: [{ type: "text", text: "Hi!" }],
+        },
+      }),
+    ).toEqual({ ok: false, reason: "invalid_conversation" });
+    expect(await loadWebTranscript(input)).toEqual({ ok: true, messages: [] });
     expect(await savedMessageIds(conversationId)).toEqual([
       "question-1",
       "reply-1",
@@ -564,7 +686,61 @@ describe("a rejected web chat message", () => {
     expect(await exportedTraces()).toEqual([]);
   });
 
-  it("gets 429 once the conversation is at its message limit, saves nothing, releases the lock, and is not traced", async () => {
+  it("refuses send and transcript requests for a missing school", async () => {
+    const input = {
+      slug: `missing-${suffix}`,
+      preview: false,
+      resumeToken: randomUUID(),
+    };
+    expect(
+      await startWebTurn({
+        ...input,
+        message: {
+          id: "question-1",
+          role: "user",
+          parts: [{ type: "text", text: "Hi!" }],
+        },
+      }),
+    ).toEqual({ ok: false, reason: "not_found" });
+    expect(await loadWebTranscript(input)).toEqual({
+      ok: false,
+      reason: "not_found",
+    });
+    expect(await exportedTraces()).toEqual([]);
+  });
+
+  it("refuses while another reply is generating, saves nothing, leaves that reply's lock in place, and is not traced", async () => {
+    const lockedAt = new Date(Date.now() - 5_000);
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1"],
+      generatingAt: lockedAt,
+    });
+
+    const result = await startMessage(resumeToken, "question-2", "Hello?");
+
+    expect(result).toEqual({ ok: false, reason: "generation_in_progress" });
+    expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
+    expect((await conversationFor(resumeToken)).generatingAt).toEqual(lockedAt);
+    expect(await exportedTraces()).toEqual([]);
+  });
+
+  it("refuses when the message was already sent, saves no reply, releases the lock, and is not traced", async () => {
+    const { resumeToken, conversationId } = await existingConversation({
+      messageIds: ["question-1", "reply-1"],
+    });
+
+    const result = await startMessage(resumeToken, "question-1", "Hello?");
+
+    expect(result).toEqual({ ok: false, reason: "duplicate" });
+    expect(await savedMessageIds(conversationId)).toEqual([
+      "question-1",
+      "reply-1",
+    ]);
+    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
+    expect(await exportedTraces()).toEqual([]);
+  });
+
+  it("ends the conversation at its message limit, refuses without saving or tracing, and answers the next message in a new conversation", async () => {
     const messageIds = Array.from(
       { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
       (_, index) => `message-${index + 1}`,
@@ -573,30 +749,74 @@ describe("a rejected web chat message", () => {
       messageIds,
     });
 
-    const response = await sendMessage(resumeToken, "one-more", "Hello?");
+    const result = await startMessage(resumeToken, "one-more", "Hello?");
 
-    expect(response.status).toBe(429);
-    expect(await response.json()).toEqual({ error: "limit" });
+    expect(result).toEqual({ ok: false, reason: "message_limit" });
     expect(await savedMessageIds(conversationId)).toEqual(
       messageIds.toSorted(),
     );
-    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
+    const [ended] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
+    expect(ended?.endedAt).toBeInstanceOf(Date);
+    expect(ended?.endReason).toBe("message_limit");
+    expect(ended?.generatingAt).toBeNull();
     expect(await exportedTraces()).toEqual([]);
+    expect(
+      await loadWebTranscript({ slug, preview: false, resumeToken }),
+    ).toEqual({ ok: true, messages: [] });
+
+    await (
+      await sendMessage(resumeToken, "fresh-question", "Hello again")
+    ).text();
+    const current = await conversationFor(resumeToken);
+    expect(current.id).not.toBe(conversationId);
+    expect(current.generatingAt).toBeNull();
+    expect(await savedMessageIds(current.id)).toContain("fresh-question");
+    expect(await savedMessages(current.id)).toHaveLength(2);
+    expect(await savedMessageIds(conversationId)).toEqual(
+      messageIds.toSorted(),
+    );
+    const transcript = await loadWebTranscript({
+      slug,
+      preview: false,
+      resumeToken,
+    });
+    if (!transcript.ok) throw new Error(transcript.reason);
+    expect(transcript.messages).toHaveLength(2);
+    expect(transcript.messages.map(({ id }) => id)).toContain("fresh-question");
   });
 
-  it("gets 410 once the conversation has expired, saves nothing, and is not traced", async () => {
+  it("answers in a new conversation after inactivity and keeps the ended conversation's transcript", async () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1"],
       expiresAt: new Date(Date.now() - 60_000),
     });
 
-    const response = await sendMessage(resumeToken, "question-2", "Hello?");
-
-    expect(response.status).toBe(410);
-    expect(await response.json()).toEqual({ error: "expired" });
+    expect(
+      await loadWebTranscript({ slug, preview: false, resumeToken }),
+    ).toEqual({ ok: true, messages: [] });
+    await (await sendMessage(resumeToken, "question-2", "Hello?")).text();
+    const current = await conversationFor(resumeToken);
+    expect(current.id).not.toBe(conversationId);
+    expect(current.generatingAt).toBeNull();
     expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
-    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
-    expect(await exportedTraces()).toEqual([]);
+    const [ended] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
+    expect(ended?.endedAt).toBeInstanceOf(Date);
+    expect(ended?.endReason).toBe("inactivity");
+    expect(await savedMessages(current.id)).toHaveLength(2);
+    const transcript = await loadWebTranscript({
+      slug,
+      preview: false,
+      resumeToken,
+    });
+    if (!transcript.ok) throw new Error(transcript.reason);
+    expect(transcript.messages.map(({ id }) => id)).toContain("question-2");
+    expect(transcript.messages.map(({ id }) => id)).not.toContain("question-1");
   });
 });
 

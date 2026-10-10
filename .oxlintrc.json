@@ -41,6 +41,41 @@
   },
   "overrides": [
     {
+      "files": ["src/app/api/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/db",
+                  "@/db/**",
+                  "**/db",
+                  "**/db/**",
+                  "drizzle-orm",
+                  "drizzle-orm/**",
+                  "postgres",
+                  "postgres/**"
+                ],
+                "message": "API routes are HTTP adapters. Move database access into a domain module and call its public interface."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/app/api/**/*.test.*",
+        "src/app/api/**/*.spec.*",
+        "src/app/api/**/__tests__/**"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    },
+    {
       "files": ["src/components/ui/**"],
       "rules": {
         "shadcn/no-restyle": "off",
