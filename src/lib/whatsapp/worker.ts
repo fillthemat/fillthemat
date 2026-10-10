@@ -21,6 +21,7 @@ import {
 } from "@/lib/conversations/conversation-store";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
+import { InternalFailure, MAX_EXECUTIONS } from "@/lib/retry-policy";
 import { loadSchoolCatalog } from "@/lib/schools/public";
 import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
 import {
@@ -57,13 +58,14 @@ import {
   markJobDone,
   recoverStuckWhatsAppJobs,
   rescheduleJob,
+  startJobExecution,
 } from "./jobs";
 import type { InboundWhatsAppMessage } from "./parse";
 import { splitWhatsAppText } from "./text";
 
 export const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-export type ProcessJobResult = "done" | "failed";
+export type ProcessJobResult = "done" | "retrying" | "dead" | "deferred";
 
 type JobContext = {
   schoolId: string;
@@ -210,7 +212,7 @@ async function handleAssistantTurn(
     .from(schools)
     .where(eq(schools.id, ctx.schoolId))
     .limit(1);
-  if (!school) throw new Error("school_missing");
+  if (!school) throw new InternalFailure("school_missing");
 
   const reply = await completedReply({
     school,
@@ -376,22 +378,49 @@ export async function processWhatsAppJob(
 ): Promise<ProcessJobResult> {
   const dependencies = whatsappWorkerDependencies(overrides);
   const message = job.payload as InboundWhatsAppMessage;
+  if (job.state !== "claimed" || job.claimedBy !== runId) return "deferred";
+  let started = false;
+  let schoolId = job.schoolId;
+  const start = async () => {
+    const execution = await startJobExecution(
+      job,
+      schoolId,
+      dependencies.now(),
+    );
+    if (!execution) return false;
+    job = execution;
+    started = true;
+    return true;
+  };
+  const done = async () =>
+    (await markJobDone(job, schoolId, dependencies.now()))
+      ? ("done" as const)
+      : ("deferred" as const);
   try {
+    if (job.attempts >= MAX_EXECUTIONS) {
+      return await failJob(
+        job,
+        { kind: "internal", reason: job.failureReason ?? "execution_limit" },
+        job.lastError ?? "execution_limit",
+        dependencies.now(),
+      );
+    }
     const resolved = await resolveInboundSchool(message);
     if (!resolved.resolved) {
       if (resolved.reason === "unknown_phone_number") {
-        await failJob(
-          job.id,
-          job.attempts,
+        if (!(await start())) return "deferred";
+        return await failJob(
+          job,
+          { kind: "internal", reason: "unknown_phone_number" },
           "unknown_phone_number",
           dependencies.now(),
         );
-        return "failed";
       }
       // Empty/non-text payload: nothing to persist or reply to.
-      await markJobDone(job.id, undefined, dependencies.now());
-      return "done";
+      if (!(await start())) return "deferred";
+      return await done();
     }
+    schoolId = resolved.schoolId;
     const now = dependencies.now();
 
     // Retry idempotency: if a previous attempt already persisted this inbound
@@ -403,8 +432,7 @@ export async function processWhatsAppJob(
         messageId: message.wamid,
       });
     if (await alreadyAnswered()) {
-      await markJobDone(job.id, resolved.schoolId, dependencies.now());
-      return "done";
+      return await done();
     }
     const identity = { channel: "whatsapp", waId: message.waId } as const;
     // A daily-cap refusal is not a turn and must not create an empty record.
@@ -422,19 +450,19 @@ export async function processWhatsAppJob(
         now,
       ))
     ) {
+      if (!(await start())) return "deferred";
       await sendNotice(
         { schoolId: resolved.schoolId, message, runId, dependencies },
         "You've reached today's message limit. Please try again tomorrow.",
       );
-      await markJobDone(job.id, resolved.schoolId, dependencies.now());
-      return "done";
+      return await done();
     }
     const result = await findOrCreateConversation({
       schoolId: resolved.schoolId,
       identity,
       now,
     });
-    if (!result.ok) throw new Error(result.reason);
+    if (!result.ok) throw new InternalFailure(result.reason);
     const conversationId = result.conversation.id;
 
     const lock = await claimGeneration(conversationId, {
@@ -444,16 +472,16 @@ export async function processWhatsAppJob(
     });
     if (!lock) {
       // Another job is mid-flight on this conversation; try again shortly.
-      await rescheduleJob(job.id, 2000, dependencies.now());
-      return "done";
+      await rescheduleJob(job, 2000, dependencies.now());
+      return "deferred";
     }
 
     try {
       // Recheck after waiting for a concurrent attempt to release its lock.
       if (await alreadyAnswered()) {
-        await markJobDone(job.id, resolved.schoolId, dependencies.now());
-        return "done";
+        return await done();
       }
+      if (!(await start())) return "deferred";
       const ctx: InboundContext = {
         schoolId: resolved.schoolId,
         conversationId,
@@ -479,8 +507,7 @@ export async function processWhatsAppJob(
         turn.end(await turn.run(sendReply));
       }
 
-      await markJobDone(job.id, resolved.schoolId, dependencies.now());
-      return "done";
+      return await done();
     } finally {
       await lock.release();
     }
@@ -490,9 +517,12 @@ export async function processWhatsAppJob(
     // second release here (fail the job + backoff, never leak the lock).
     const message =
       error instanceof Error ? error.message : "whatsapp_job_failed";
-    await failJob(job.id, job.attempts, message, dependencies.now());
-    console.error("whatsapp: job failed", job.id, message);
-    return "failed";
+    if (!started && !(await start())) return "deferred";
+    const failure =
+      error instanceof InternalFailure
+        ? error
+        : { kind: "internal" as const, reason: "whatsapp_job_failed" };
+    return failJob(job, failure, message, dependencies.now());
   }
 }
 
@@ -500,20 +530,30 @@ export async function drainWhatsAppJobs(
   runId: string,
   limit = 10,
   overrides: Partial<WhatsAppWorkerDependencies> = {},
-): Promise<{ claimed: number; done: number; failed: number }> {
+): Promise<{
+  claimed: number;
+  done: number;
+  retrying: number;
+  dead: number;
+  deferred: number;
+}> {
   const dependencies = whatsappWorkerDependencies(overrides);
   const claimed = await claimDueWhatsAppJobs(runId, {
     limit,
     now: dependencies.now(),
   });
-  let done = 0;
-  let failed = 0;
+  const counts = {
+    claimed: claimed.length,
+    done: 0,
+    retrying: 0,
+    dead: 0,
+    deferred: 0,
+  };
   for (const job of claimed) {
     const result = await processWhatsAppJob(job, runId, dependencies);
-    if (result === "done") done += 1;
-    else failed += 1;
+    counts[result] += 1;
   }
-  return { claimed: claimed.length, done, failed };
+  return counts;
 }
 
 /**
@@ -531,9 +571,14 @@ export async function runWhatsAppWorkerOnce(
 ) {
   const dependencies = whatsappWorkerDependencies(overrides);
   try {
-    await recoverStuckWhatsAppJobs(undefined, dependencies.now());
+    const recovered = await recoverStuckWhatsAppJobs(
+      undefined,
+      dependencies.now(),
+      runId,
+    );
     await recoverStuckWhatsAppDeliveries(undefined, dependencies.now());
     const jobs = await drainWhatsAppJobs(runId, 10, dependencies);
+    jobs.dead += recovered.dead;
     const deliveries = await drainDueWhatsAppDeliveries(
       runId,
       25,

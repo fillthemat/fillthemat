@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { schools, type WhatsAppBookingIntent } from "@/db/schema";
 import { appendMessage } from "@/lib/conversations/conversation-store";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
+import { InternalFailure } from "@/lib/retry-policy";
 import { bookSlot } from "@/lib/schedule/book-slot";
 import { whatsappBookingQuotaExceeded } from "@/lib/security/limits";
 import { bookingConfirmationIdempotencyKey } from "./confirmation";
@@ -110,7 +111,7 @@ export async function confirmWhatsAppBooking(
     .where(eq(schools.id, schoolId))
     .limit(1);
   // The school was deleted mid-turn, and its conversation with it.
-  if (!school) throw new Error("school_missing");
+  if (!school) throw new InternalFailure("school_missing");
 
   // 429-equivalent: per-wa_id daily booking cap (Phase 5 abuse controls).
   if (await whatsappBookingQuotaExceeded(schoolId, waId, now)) {

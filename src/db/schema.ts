@@ -53,6 +53,7 @@ export const whatsappJobStateEnum = appSchema.enum("whatsapp_job_state", [
   "claimed",
   "done",
   "failed",
+  "dead",
 ]);
 
 export const whatsappBookingIntentStateEnum = appSchema.enum(
@@ -665,6 +666,10 @@ export const whatsappJobs = appSchema.table(
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimedBy: text("claimed_by"),
     lastError: text("last_error"),
+    failureReason: text("failure_reason"),
+    terminalCause: text("terminal_cause").$type<
+      "permanent" | "attempts_exhausted"
+    >(),
     ...timestamps,
   },
   (t) => [
@@ -753,7 +758,9 @@ export const cronRuns = appSchema.table("cron_runs", {
   reminderCount: integer("reminder_count").notNull().default(0),
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
-  endedConversationCount: integer("ended_conversation_count").notNull().default(0),
+  endedConversationCount: integer("ended_conversation_count")
+    .notNull()
+    .default(0),
   result: cronResultEnum("result"),
   errorSummary: text("error_summary"),
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { conversations, whatsappDeliveries, whatsappJobs } from "@/db/schema";
 import { findOrCreateConversation } from "@/lib/conversations/conversation-store";
@@ -44,8 +44,9 @@ afterAll(async () => {
 });
 
 describe("WhatsApp worker dependencies", () => {
-  it("schedules inbound failures with the unchanged minute backoff on the injected clock", async () => {
+  it("stops an unknown phone number after one execution and never claims it again", async () => {
     const dedupeKey = `unknown/${suffix}`;
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const [job] = await db
       .insert(whatsappJobs)
       .values({
@@ -62,20 +63,50 @@ describe("WhatsApp worker dependencies", () => {
         },
       })
       .returning();
-    await runWhatsAppWorkerOnce(randomUUID(), { now: () => new Date(now) });
+    const runId = randomUUID();
+    const result = await runWhatsAppWorkerOnce(runId, {
+      now: () => new Date(now),
+    });
     const [failed] = await db
       .select()
       .from(whatsappJobs)
       .where(eq(whatsappJobs.id, job.id));
-    expect({
-      state: failed.state,
-      attempts: failed.attempts,
-      nextAttemptAt: failed.nextAttemptAt,
-    }).toEqual({
-      state: "failed",
+    expect(failed).toMatchObject({
+      state: "dead",
       attempts: 1,
-      nextAttemptAt: new Date("2020-01-01T12:01:00Z"),
+      failureReason: "unknown_phone_number",
+      terminalCause: "permanent",
+      lastError: "unknown_phone_number",
+      claimedAt: null,
+      claimedBy: null,
+      dedupeKey,
     });
+    expect(result.jobs).toEqual({
+      claimed: 1,
+      done: 0,
+      retrying: 0,
+      dead: 1,
+      deferred: 0,
+    });
+    const again = await runWhatsAppWorkerOnce(randomUUID(), {
+      now: () => new Date(now),
+    });
+    expect(again.jobs.claimed).toBe(0);
+    expect(log.mock.calls).toEqual([
+      [
+        JSON.stringify({
+          event: "queue.dead",
+          queue: "whatsapp_job",
+          id: job.id,
+          schoolId: null,
+          reason: "unknown_phone_number",
+          terminalCause: "permanent",
+          executions: 1,
+          runId,
+        }),
+      ],
+    ]);
+    log.mockRestore();
   });
   it("recovers only claims older than five minutes on the injected clock", async () => {
     const freshAt = new Date("2020-01-01T11:59:00Z");
@@ -155,7 +186,7 @@ describe("WhatsApp worker dependencies", () => {
       .set({ nextAttemptAt: now })
       .where(eq(whatsappJobs.dedupeKey, wamid));
     let elapsed = 0;
-    await runWhatsAppWorkerOnce(randomUUID(), {
+    const result = await runWhatsAppWorkerOnce(randomUUID(), {
       now: () => new Date(now.getTime() + elapsed),
       sleep: async (milliseconds) => {
         elapsed += milliseconds;
@@ -171,6 +202,13 @@ describe("WhatsApp worker dependencies", () => {
           throw new Error("busy conversation must not send");
         },
       },
+    });
+    expect(result.jobs).toEqual({
+      claimed: 1,
+      done: 0,
+      retrying: 0,
+      dead: 0,
+      deferred: 1,
     });
     const [job] = await db
       .select()
@@ -279,6 +317,13 @@ describe("WhatsApp worker dependencies", () => {
       .where(eq(whatsappDeliveries.id, sweepId));
     const sent: string[] = [];
     const sendText = async (input: Parameters<typeof sendWhatsAppText>[0]) => {
+      if (input.text !== "Sweep reply") {
+        const [executing] = await db
+          .select()
+          .from(whatsappJobs)
+          .where(eq(whatsappJobs.dedupeKey, wamid));
+        expect(executing).toMatchObject({ state: "claimed", attempts: 1 });
+      }
       sent.push(input.text);
       return {
         ok: true as const,
@@ -302,7 +347,7 @@ describe("WhatsApp worker dependencies", () => {
       },
     });
     expect(result).toEqual({
-      jobs: { claimed: 1, done: 1, failed: 0 },
+      jobs: { claimed: 1, done: 1, retrying: 0, dead: 0, deferred: 0 },
       deliveries: { claimed: 1, sent: 1, failed: 0, windowClosed: 0 },
     });
     expect(sent).toEqual(
