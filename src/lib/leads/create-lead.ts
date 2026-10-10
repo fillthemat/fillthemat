@@ -1,5 +1,9 @@
 import { and, eq } from "drizzle-orm";
-import { getDb, type Transaction } from "@/db";
+import {
+  type Transaction,
+  type TransactionOptions,
+  withTransaction,
+} from "@/db";
 import {
   contacts,
   emailDeliveries,
@@ -55,9 +59,8 @@ export type CreateLeadInput = {
  */
 export async function createLead(
   input: CreateLeadInput,
-  transaction?: Transaction,
+  options: TransactionOptions = {},
 ) {
-  const db = getDb();
   const email = input.contact.email
     ? normalizeEmail(input.contact.email)
     : null;
@@ -196,5 +199,5 @@ export async function createLead(
     });
     return row;
   };
-  return transaction ? write(transaction) : db.transaction(write);
+  return withTransaction(write, options);
 }

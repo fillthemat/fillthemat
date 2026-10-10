@@ -13,7 +13,13 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import { type Database, getDb, type Transaction } from "@/db";
+import {
+  type Database,
+  getDb,
+  type Transaction,
+  type TransactionOptions,
+  withTransaction,
+} from "@/db";
 import {
   type Conversation,
   conversations,
@@ -339,7 +345,7 @@ export async function appendMessage(
     parts: UIMessage["parts"];
     completion?: typeof messages.$inferInsert.completion;
   },
-  transaction?: Transaction,
+  options: TransactionOptions = {},
 ): Promise<string | undefined> {
   const write = async (tx: Transaction) => {
     const [row] = await tx
@@ -373,7 +379,7 @@ export async function appendMessage(
     }
     return row?.id;
   };
-  return transaction ? write(transaction) : getDb().transaction(write);
+  return withTransaction(write, options);
 }
 
 /** Tenant-check and attach the first contact within the booking transaction. */

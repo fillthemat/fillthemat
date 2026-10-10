@@ -85,7 +85,7 @@ async function enqueue() {
       body: "Private reply",
       windowExpiresAt: new Date("2000-01-02T12:00:00Z"),
     },
-    now,
+    { now },
   );
   if (!id) throw new Error("enqueue failed");
   ids.push(id);

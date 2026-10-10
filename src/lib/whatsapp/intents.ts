@@ -1,5 +1,10 @@
 import { and, eq } from "drizzle-orm";
-import { getDb, type Transaction } from "@/db";
+import {
+  getDb,
+  type Transaction,
+  type TransactionOptions,
+  withTransaction,
+} from "@/db";
 import {
   type WhatsAppBookingIntent,
   whatsappBookingIntents,
@@ -30,9 +35,8 @@ export type BookingIntentInput = {
  */
 export async function upsertPendingBookingIntent(
   input: BookingIntentInput,
-  transaction?: Transaction,
+  options: TransactionOptions = {},
 ): Promise<WhatsAppBookingIntent> {
-  const db = getDb();
   const now = input.now ?? new Date();
   const write = async (tx: Transaction) => {
     await tx
@@ -61,7 +65,7 @@ export async function upsertPendingBookingIntent(
     if (!intent) throw new Error("whatsapp_booking_intent_insert_failed");
     return intent;
   };
-  return transaction ? write(transaction) : db.transaction(write);
+  return withTransaction(write, options);
 }
 
 /** Mark an expired row expired and return null (intents are short-lived). */

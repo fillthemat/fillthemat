@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { generateId, type UIMessage, validateUIMessages } from "ai";
 import { addHours } from "date-fns";
 import { eq } from "drizzle-orm";
-import { getDb, type Transaction } from "@/db";
+import { getDb, type TransactionOptions } from "@/db";
 import {
   schools,
   type WhatsAppBookingIntent,
@@ -94,7 +94,7 @@ type InboundContext = JobContext & {
 
 async function saveInboundMessage(
   ctx: InboundContext,
-  tx?: Transaction,
+  options: TransactionOptions = {},
 ): Promise<void> {
   await appendMessage(
     {
@@ -104,14 +104,14 @@ async function saveInboundMessage(
       role: "user",
       parts: [{ type: "text", text: ctx.inboundText }],
     },
-    tx,
+    options,
   );
 }
 
 async function enqueueNotice(
-  ctx: Pick<InboundContext, "schoolId" | "message" | "runId" | "dependencies">,
+  ctx: Pick<InboundContext, "schoolId" | "message" | "dependencies">,
   text: string,
-  tx?: Transaction,
+  options: TransactionOptions = {},
 ): Promise<string | null> {
   return enqueueWhatsAppDelivery(
     {
@@ -122,8 +122,7 @@ async function enqueueNotice(
       body: text,
       windowExpiresAt: addHours(ctx.dependencies.now(), 24),
     },
-    ctx.dependencies.now(),
-    tx,
+    { ...options, now: ctx.dependencies.now() },
   );
 }
 
@@ -156,8 +155,8 @@ async function handleConfirmation(
     const text =
       "That booking option has expired or was replaced. Please ask for available times again.";
     const deliveryId = await getDb().transaction(async (tx) => {
-      await saveInboundMessage(ctx, tx);
-      return enqueueNotice(ctx, text, tx);
+      await saveInboundMessage(ctx, { transaction: tx });
+      return enqueueNotice(ctx, text, { transaction: tx });
     });
     if (deliveryId)
       await attemptWhatsAppDeliveriesNow(
@@ -190,7 +189,7 @@ async function enqueueTextReplies(
   ctx: InboundContext,
   text: string,
   idempotencyPrefix: string,
-  tx?: Transaction,
+  options: TransactionOptions = {},
 ): Promise<string[]> {
   const chunks = splitWhatsAppText(text);
   const windowExpiresAt = addHours(ctx.dependencies.now(), 24);
@@ -205,8 +204,7 @@ async function enqueueTextReplies(
         body: chunks[index],
         windowExpiresAt,
       },
-      ctx.dependencies.now(),
-      tx,
+      { ...options, now: ctx.dependencies.now() },
     );
     if (deliveryId) deliveryIds.push(deliveryId);
   }
@@ -214,9 +212,9 @@ async function enqueueTextReplies(
 }
 
 /**
- * Assistant turn: get the assistant's completed reply, then persist messages
- * and either (a) refresh the pending booking intent + send the interactive
- * confirmation, (b) write a lead (platform), or (c) send the plain text reply.
+ * Generate the completed reply, then atomically commit the Turn's messages,
+ * platform writes, and delivery outboxes. A Booking Intent wins over a Lead
+ * Request when both are captured. Network sends happen only after commit.
  */
 async function handleAssistantTurn(
   ctx: InboundContext,
@@ -248,56 +246,95 @@ async function handleAssistantTurn(
     now,
   });
   const { provenance, bookingIntent, leadRequest } = reply;
-  const replyText =
-    reply.text ||
-    (bookingIntent
-      ? "I found a time that works. Use the buttons below to confirm."
-      : leadRequest
-        ? "Thanks — I've passed your details along and the school will contact you to find a time."
-        : "");
+  const turn = bookingIntent
+    ? {
+        kind: "booking_intent" as const,
+        input: bookingIntent,
+        fallback:
+          "I found a time that works. Use the buttons below to confirm.",
+      }
+    : leadRequest
+      ? {
+          kind: "lead_request" as const,
+          input: leadRequest,
+          fallback:
+            "Thanks — I've passed your details along and the school will contact you to find a time.",
+        }
+      : { kind: "plain_reply" as const, fallback: "" };
+  const replyText = reply.text || turn.fallback;
 
   // The inbound duplicate marker is committed only with the whole Turn and its
   // outboxes. Model work and network sends never hold this transaction open.
   const { replyMessageId, deliveryIds, leadId } = await db.transaction(
     async (tx) => {
-      await saveInboundMessage(ctx, tx);
-      const intent = bookingIntent
-        ? await upsertPendingBookingIntent(
+      const options = { transaction: tx };
+      await saveInboundMessage(ctx, options);
+      let leadId: string | undefined;
+      let deliveryIds: string[] | undefined;
+      switch (turn.kind) {
+        case "booking_intent": {
+          const intent = await upsertPendingBookingIntent(
             {
               schoolId: ctx.schoolId,
               conversationId: ctx.conversationId,
-              offeringId: bookingIntent.trialOfferingId,
-              slotId: bookingIntent.slotId,
-              participantName: bookingIntent.participantName,
-              participantAge: bookingIntent.participantAge,
+              offeringId: turn.input.trialOfferingId,
+              slotId: turn.input.slotId,
+              participantName: turn.input.participantName,
+              participantAge: turn.input.participantAge,
               now,
             },
-            tx,
-          )
-        : null;
-      // Booking Intent takes precedence if the model returns both captures.
-      const lead =
-        !intent && leadRequest
-          ? await createLead(
-              {
-                school,
-                contact: {
-                  name:
-                    leadRequest.participantName ??
-                    ctx.message.profileName ??
-                    "Guest",
-                  email: null,
-                  phone: ctx.message.waId,
+            options,
+          );
+          const deliveryId = await enqueueWhatsAppDelivery(
+            {
+              schoolId: ctx.schoolId,
+              recipientWaId: ctx.message.waId,
+              phoneNumberId: ctx.message.phoneNumberId,
+              providerIdempotencyKey: `wa-confirm/${ctx.message.wamid}`,
+              body: replyText,
+              interactiveButtons: [
+                {
+                  id: confirmBookingButtonId(intent.id),
+                  title: "Confirm booking",
                 },
-                source: { channel: "whatsapp", waId: ctx.message.waId },
-                participantName: leadRequest.participantName,
-                participantAge: leadRequest.participantAge,
-                offeringId: leadRequest.trialOfferingId,
-                statedNeed: leadRequest.statedNeed,
+                {
+                  id: CHOOSE_ANOTHER_TIME_BUTTON_ID,
+                  title: "Choose another time",
+                },
+              ],
+              windowExpiresAt: addHours(now, 24),
+            },
+            { ...options, now: ctx.dependencies.now() },
+          );
+          deliveryIds = deliveryId ? [deliveryId] : [];
+          break;
+        }
+        case "lead_request": {
+          const lead = await createLead(
+            {
+              school,
+              contact: {
+                name:
+                  turn.input.participantName ??
+                  ctx.message.profileName ??
+                  "Guest",
+                email: null,
+                phone: ctx.message.waId,
               },
-              tx,
-            )
-          : null;
+              source: { channel: "whatsapp", waId: ctx.message.waId },
+              participantName: turn.input.participantName,
+              participantAge: turn.input.participantAge,
+              offeringId: turn.input.trialOfferingId,
+              statedNeed: turn.input.statedNeed,
+            },
+            options,
+          );
+          leadId = lead.id;
+          break;
+        }
+        case "plain_reply":
+          break;
+      }
       const replyMessageId = await appendMessage(
         {
           role: "assistant",
@@ -305,46 +342,30 @@ async function handleAssistantTurn(
           messageId: generateId(),
           parts: replyText ? [{ type: "text", text: replyText }] : [],
         },
-        tx,
+        options,
       );
 
-      let deliveryIds: string[];
-      if (intent) {
-        const deliveryId = await enqueueWhatsAppDelivery(
-          {
-            schoolId: ctx.schoolId,
-            recipientWaId: ctx.message.waId,
-            phoneNumberId: ctx.message.phoneNumberId,
-            providerIdempotencyKey: `wa-confirm/${ctx.message.wamid}`,
-            body: replyText,
-            interactiveButtons: [
-              {
-                id: confirmBookingButtonId(intent.id),
-                title: "Confirm booking",
-              },
-              {
-                id: CHOOSE_ANOTHER_TIME_BUTTON_ID,
-                title: "Choose another time",
-              },
-            ],
-            windowExpiresAt: addHours(now, 24),
-          },
-          ctx.dependencies.now(),
-          tx,
-        );
-        deliveryIds = deliveryId ? [deliveryId] : [];
-      } else {
-        deliveryIds = await enqueueTextReplies(
-          ctx,
-          replyText,
-          `wa-reply/${ctx.message.wamid}`,
-          tx,
-        );
-      }
-      return { replyMessageId, deliveryIds, leadId: lead?.id };
+      deliveryIds ??= await enqueueTextReplies(
+        ctx,
+        replyText,
+        `wa-reply/${ctx.message.wamid}`,
+        options,
+      );
+      return { replyMessageId, deliveryIds, leadId };
     },
   );
-  if (leadId) await attemptPendingForLead(leadId);
+  if (leadId) {
+    try {
+      await attemptPendingForLead(leadId);
+    } catch {
+      // The durable email outbox has its own retry lifecycle. An immediate
+      // email-attempt failure must not fail this Turn or suppress its reply.
+      console.error("whatsapp_lead_email_attempt_failed", {
+        leadId,
+        runId: ctx.runId,
+      });
+    }
+  }
   await attemptWhatsAppDeliveriesNow(deliveryIds, ctx.runId, ctx.dependencies);
   return { text: replyText, messageId: replyMessageId, provenance };
 }
