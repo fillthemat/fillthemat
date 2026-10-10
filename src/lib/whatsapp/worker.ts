@@ -333,7 +333,7 @@ async function planReply(
 
 /**
  * Claim-then-process one inbound job. The webhook never runs this — it only
- * enqueues — so the agent loop + outbound send happen here on the worker
+ * enqueues — so the assistant's reply and outbound send happen here on the worker
  * (decision D12 / H).
  */
 export async function processWhatsAppJob(
