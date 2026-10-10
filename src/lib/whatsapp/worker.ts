@@ -333,7 +333,7 @@ async function planReply(
 
 /**
  * Claim-then-process one inbound job. The webhook never runs this — it only
- * enqueues — so the assistant's reply and outbound send happen here on the worker
+ * enqueues — so the reply and outbound send happen here on the worker
  * (decision D12 / H).
  */
 export async function processWhatsAppJob(
@@ -357,7 +357,7 @@ export async function processWhatsAppJob(
     const now = new Date();
 
     // Retry idempotency: if a previous attempt already persisted this inbound
-    // message, do not run the agent or book a second time.
+    // message, do not reply or book a second time.
     if (await messageExists(conversationId, message.wamid)) {
       await markJobDone(job.id, resolved.schoolId);
       return "done";

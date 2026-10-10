@@ -57,5 +57,5 @@ A specific dated instance of a trial window, with its own booking capacity.
 A question a school has answered in advance for people interested in a trial.
 
 **School Catalog**:
-What a school currently publishes about its trials: its active trial offerings with their trial windows and trial occurrences, and its FAQs. The assistant answers only from the school catalog.
+What a school currently publishes about its trials: the trial offerings it is taking trials for, with their trial windows and trial occurrences, and its FAQs.
 _Avoid_: Catalogue, school data, school info

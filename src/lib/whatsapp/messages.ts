@@ -10,8 +10,7 @@ import { messages } from "@/db/schema";
  * This mirrors the POST `/api/chat` load path (`chat/route.ts`): rows are
  * ordered oldest-first, their persisted parts are cast back to UIMessage
  * parts, and `validateUIMessages` guards against rows written by an older
- * schema. The worker passes the result to the assistant as the conversation
- * history.
+ * schema.
  */
 export async function loadValidatedConversationMessages(
   conversationId: string,
