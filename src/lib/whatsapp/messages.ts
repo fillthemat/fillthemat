@@ -10,9 +10,7 @@ import { messages } from "@/db/schema";
  * This mirrors the POST `/api/chat` load path (`chat/route.ts`): rows are
  * ordered oldest-first, their persisted parts are cast back to UIMessage
  * parts, and `validateUIMessages` guards against rows written by an older
- * schema. This is the Phase 3 persistence/load wiring — the agent loop that
- * consumes the result is Phase 4, but the load-and-validate path is exercised
- * on every inbound persist now.
+ * schema.
  */
 export async function loadValidatedConversationMessages(
   conversationId: string,
