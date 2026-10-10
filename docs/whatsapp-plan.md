@@ -208,7 +208,7 @@ route comment. Concurrency: Meta retries — dedupe by wamid is the safety net, 
 ### Phase 3 — Conversation identity + persistence for WhatsApp (local: text channel works end-to-end)
 
 **Goal:** a WhatsApp-keyed conversation that stores inbound/outbound messages as UIMessage parts, with the
-same single-flight + caps + purge semantics as web.
+same single-flight, message caps, and conversation lifecycle as web (ADR-0002).
 
 **Concrete changes**
 - `conversations` + `wa_id_hash` (nullable) + partial unique `(school_id, wa_id_hash)`; keep
@@ -220,8 +220,9 @@ same single-flight + caps + purge semantics as web.
   server-side per ai docs `chatbot-message-persistence.mdx:93`).
 
 **Acceptance criteria**: two sequential inbound messages from the same wa_id land in one conversation;
-concurrent inbound on the same conversation is serialized; purge/expiry respects the existing
-`TRANSCRIPT_RETENTION_DAYS` mechanics.
+concurrent inbound on the same conversation is serialized. Per ADR-0002, a conversation ends after
+30 days without a new message or at its message limit, and the next message starts a new one.
+Ended conversations and their transcripts are kept; there is no transcript purge or retention deadline.
 
 **Resolved decisions at this phase**
 - **D2 — conversation message cap.** Web caps at 30 messages (429 `limit`); a long-lived WhatsApp thread

@@ -9,21 +9,20 @@ import {
   type WhatsAppJob,
 } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
+import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
 import {
   appendMessage,
   claimGeneration,
-  endConversation,
+  endConversationAtMessageLimit,
+  findConversation,
   findOrCreateConversation,
-  hasConversationMessage,
+  hasWhatsAppMessage,
   loadTranscript,
-} from "@/lib/conversations";
+} from "@/lib/conversations/conversation-store";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { loadSchoolCatalog } from "@/lib/schools/public";
-import {
-  MAX_CHAT_MESSAGES_PER_CONVERSATION,
-  whatsappOutboundQuotaExceeded,
-} from "@/lib/security/limits";
+import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
 import {
   exportEndedTurns,
   startTurnTrace,
@@ -90,7 +89,7 @@ async function saveInboundMessage(ctx: InboundContext): Promise<void> {
 
 // Notices are sent but not saved as messages, so their reply has no id.
 async function sendNotice(
-  ctx: InboundContext,
+  ctx: Pick<InboundContext, "schoolId" | "message" | "runId">,
   text: string,
 ): Promise<TurnReply> {
   const deliveryId = await enqueueWhatsAppDelivery({
@@ -302,12 +301,10 @@ async function planReply(
   now: Date,
 ): Promise<(() => Promise<TurnReply>) | null> {
   const history = await loadTranscript(ctx.conversationId);
-  if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) {
-    await endConversation(ctx.conversationId, "message_limit", now);
-    await sendNotice(
-      ctx,
-      "This conversation has reached its message limit. Your next message starts a fresh conversation.",
-    );
+  if (
+    await endConversationAtMessageLimit(ctx.conversationId, history.length, now)
+  ) {
+    await sendNotice(ctx, CONVERSATION_LIMIT_NOTICE);
     return null;
   }
 
@@ -358,20 +355,46 @@ export async function processWhatsAppJob(
       return "done";
     }
     const now = new Date();
+    const alreadyAnswered = () =>
+      hasWhatsAppMessage({
+        schoolId: resolved.schoolId,
+        waId: message.waId,
+        messageId: message.wamid,
+      });
+    if (await alreadyAnswered()) {
+      await markJobDone(job.id, resolved.schoolId);
+      return "done";
+    }
+    const identity = { channel: "whatsapp", waId: message.waId } as const;
+    // A daily-cap refusal is not a turn and must not create an empty record.
+    // Explicit confirmation buttons retain their deterministic path at the cap.
+    if (
+      !parseConfirmBookingButton(message.text ?? "") &&
+      !(await findConversation({
+        schoolId: resolved.schoolId,
+        identity,
+        now,
+      })) &&
+      (await whatsappOutboundQuotaExceeded(
+        resolved.schoolId,
+        message.waId,
+        now,
+      ))
+    ) {
+      await sendNotice(
+        { schoolId: resolved.schoolId, message, runId },
+        "You've reached today's message limit. Please try again tomorrow.",
+      );
+      await markJobDone(job.id, resolved.schoolId);
+      return "done";
+    }
     const result = await findOrCreateConversation({
       schoolId: resolved.schoolId,
-      identity: { channel: "whatsapp", waId: message.waId },
+      identity,
       now,
     });
     if (!result.ok) throw new Error(result.reason);
     const conversationId = result.conversation.id;
-
-    // Retry idempotency: if a previous attempt already persisted this inbound
-    // message, do not run the agent or book a second time.
-    if (await hasConversationMessage(conversationId, message.wamid)) {
-      await markJobDone(job.id, resolved.schoolId);
-      return "done";
-    }
 
     const lock = await claimGeneration(conversationId, { wait: true, now });
     if (!lock) {
@@ -381,6 +404,11 @@ export async function processWhatsAppJob(
     }
 
     try {
+      // Recheck after waiting for a concurrent attempt to release its lock.
+      if (await alreadyAnswered()) {
+        await markJobDone(job.id, resolved.schoolId);
+        return "done";
+      }
       const ctx: InboundContext = {
         schoolId: resolved.schoolId,
         conversationId,

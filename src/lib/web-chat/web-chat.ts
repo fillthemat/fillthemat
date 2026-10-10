@@ -2,19 +2,19 @@ import { randomUUID } from "node:crypto";
 import { type UIMessage, validateUIMessages } from "ai";
 import { after } from "next/server";
 import { streamedReply } from "@/lib/ai/assistant";
+import { textFromMessage } from "@/lib/chat/messages";
 import {
   appendMessage,
   claimGeneration,
-  endConversation,
+  endConversationAtMessageLimit,
   findConversation,
   findOrCreateConversation,
   loadTranscript,
-} from "@/lib/conversations";
+} from "@/lib/conversations/conversation-store";
 import {
   getSchoolForLandingAccess,
   loadSchoolCatalog,
 } from "@/lib/schools/public";
-import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 import { startTurnTrace } from "@/lib/tracing/turn-trace";
 
 type WebConversationInput = {
@@ -57,13 +57,6 @@ export async function loadWebTranscript({
   };
 }
 
-function textFromMessage(message: UIMessage): string {
-  return message.parts
-    .map((part) => (part.type === "text" ? part.text : ""))
-    .join("")
-    .trim();
-}
-
 /** Accept one web turn, handing its lock to the reply until it is saved. */
 export async function startWebTurn({
   slug,
@@ -88,12 +81,13 @@ export async function startWebTurn({
   let replyOwnsLock = false;
   try {
     const history = await loadTranscript(conversation.id);
-    if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) {
-      await endConversation(conversation.id, "message_limit", now);
-      return { ok: false, reason: "message_limit" };
-    }
     if (history.some(({ id }) => id === message.id)) {
       return { ok: false, reason: "duplicate" };
+    }
+    if (
+      await endConversationAtMessageLimit(conversation.id, history.length, now)
+    ) {
+      return { ok: false, reason: "message_limit" };
     }
 
     const inboundMessageId = randomUUID();

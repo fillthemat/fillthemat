@@ -425,11 +425,11 @@ describe("a WhatsApp turn answered without the assistant", () => {
       const saved = await savedMessages(nextDay);
       expect(saved).toHaveLength(4);
       expect(
-        saved.filter(({ role }) => role === "user").map(textOf).toSorted(),
-      ).toEqual([
-        "Thanks, what can my daughter try?",
-        "What can my son try?",
-      ]);
+        saved
+          .filter(({ role }) => role === "user")
+          .map(textOf)
+          .toSorted(),
+      ).toEqual(["Thanks, what can my daughter try?", "What can my son try?"]);
       expect(
         saved.filter(({ role }) => role === "assistant").map(textOf),
       ).toEqual([scriptedReply, scriptedReply]);
@@ -493,6 +493,86 @@ describe("a WhatsApp turn answered without the assistant", () => {
 });
 
 describe("an inbound WhatsApp message that gets no reply", () => {
+  it("does not answer a retried job after its conversation was replaced", async () => {
+    const waId = "16505550128";
+    const wamid = wamidFrom(waId);
+    await sendText(waId, "What can my son try?", wamid);
+    const original = await conversationWith(waId);
+    await db
+      .update(conversations)
+      .set({ endedAt: new Date(), endReason: "message_limit" })
+      .where(eq(conversations.id, original.id));
+    await sendText(waId, "Hello again");
+    const before = await db
+      .select({ body: whatsappDeliveries.body })
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, waId),
+        ),
+      );
+    expect(before).toHaveLength(2);
+    await db
+      .update(whatsappJobs)
+      .set({ state: "pending", nextAttemptAt: new Date(Date.now() - 1000) })
+      .where(eq(whatsappJobs.dedupeKey, wamid));
+    await runWhatsAppWorkerOnce(randomUUID());
+    expect(
+      await db
+        .select({ body: whatsappDeliveries.body })
+        .from(whatsappDeliveries)
+        .where(
+          and(
+            eq(whatsappDeliveries.schoolId, schoolId),
+            eq(whatsappDeliveries.recipientWaId, waId),
+          ),
+        ),
+    ).toEqual(before);
+  });
+  it("refuses a first message at the daily cap without creating a conversation", async () => {
+    const waId = "16505550129";
+    await db.insert(whatsappDeliveries).values(
+      Array.from(
+        { length: MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY },
+        (_, index) => ({
+          schoolId,
+          recipientWaId: waId,
+          phoneNumberId,
+          providerIdempotencyKey: `first-cap/${suffix}/${index}`,
+          body: "Earlier reply",
+          state: "sent" as const,
+        }),
+      ),
+    );
+    await sendText(waId, "Hello?");
+    expect(
+      await db
+        .select()
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.schoolId, schoolId),
+            eq(conversations.waIdHash, hashWaId(waId)),
+          ),
+        ),
+    ).toEqual([]);
+    const notices = await db
+      .select({ body: whatsappDeliveries.body })
+      .from(whatsappDeliveries)
+      .where(
+        and(
+          eq(whatsappDeliveries.schoolId, schoolId),
+          eq(whatsappDeliveries.recipientWaId, waId),
+          eq(
+            whatsappDeliveries.body,
+            "You've reached today's message limit. Please try again tomorrow.",
+          ),
+        ),
+      );
+    expect(notices).toHaveLength(1);
+    expect(await exportedTraces()).toEqual([]);
+  });
   it("is not traced when it was already answered and its job runs again", async () => {
     const waId = "16505550121";
     const wamid = wamidFrom(waId);

@@ -1,4 +1,4 @@
-import { type UIMessage, validateUIMessages } from "ai";
+import type { UIMessage } from "ai";
 import { addDays } from "date-fns";
 import {
   and,
@@ -22,6 +22,7 @@ import {
 } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
 import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
+import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 
 export type ConversationIdentity =
   | { channel: "web"; resumeToken: string }
@@ -42,6 +43,10 @@ function identityPredicate(identity: ConversationIdentity) {
     : eq(conversations.waIdHash, hashWaId(identity.waId));
 }
 
+function activeConversation(now: Date) {
+  return and(isNull(conversations.endedAt), gt(conversations.expiresAt, now));
+}
+
 /** Lookup only: never creates a conversation or changes its deadline. */
 export async function findConversation(
   { schoolId, identity, now = new Date() }: ConversationInput,
@@ -54,8 +59,7 @@ export async function findConversation(
       and(
         eq(conversations.schoolId, schoolId),
         identityPredicate(identity),
-        isNull(conversations.endedAt),
-        gt(conversations.expiresAt, now),
+        activeConversation(now),
       ),
     )
     .limit(1);
@@ -67,12 +71,13 @@ export type FindOrCreateConversationResult =
   | { ok: false; reason: "invalid_conversation" };
 
 /** The unique identity indexes settle concurrent first-message inserts. */
-export async function findOrCreateConversation(
-  { schoolId, identity, now = new Date() }: ConversationInput,
-  db: Database = getDb(),
-): Promise<FindOrCreateConversationResult> {
+export async function findOrCreateConversation({
+  schoolId,
+  identity,
+  now = new Date(),
+}: ConversationInput): Promise<FindOrCreateConversationResult> {
   const expiresAt = addDays(now, CONVERSATION_INACTIVITY_DAYS);
-  return db.transaction(async (tx) => {
+  return getDb().transaction(async (tx) => {
     for (;;) {
       // Even an ended token belongs to its original school. It must never be
       // adopted by another school after the active-only index releases it.
@@ -173,16 +178,26 @@ export async function endConversation(
   conversationId: string,
   reason: ConversationEndReason,
   now = new Date(),
+): Promise<void> {
+  await getDb().transaction(async (tx) => {
+    await endMatchingConversations(
+      eq(conversations.id, conversationId),
+      reason,
+      now,
+      tx,
+    );
+  });
+}
+
+/** Called under the generation lock, before accepting a new inbound message. */
+export async function endConversationAtMessageLimit(
+  conversationId: string,
+  messageCount: number,
+  now = new Date(),
 ): Promise<boolean> {
-  return getDb().transaction(
-    async (tx) =>
-      (await endMatchingConversations(
-        eq(conversations.id, conversationId),
-        reason,
-        now,
-        tx,
-      )) > 0,
-  );
+  if (messageCount < MAX_CHAT_MESSAGES_PER_CONVERSATION) return false;
+  await endConversation(conversationId, "message_limit", now);
+  return true;
 }
 
 export type GenerationLock = { release: () => Promise<void> };
@@ -190,22 +205,23 @@ export type GenerationLock = { release: () => Promise<void> };
 // Longer than a live function can run, so only abandoned turns are recovered.
 const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 
+function generationAvailable(now: Date) {
+  return or(
+    isNull(conversations.generatingAt),
+    lt(
+      conversations.generatingAt,
+      new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS),
+    ),
+  );
+}
+
 /** Maintenance never interrupts a live reply, but an abandoned lock cannot retain an inactive conversation. */
 export async function endInactiveConversations(
   now = new Date(),
 ): Promise<number> {
   return getDb().transaction((tx) =>
     endMatchingConversations(
-      and(
-        lte(conversations.expiresAt, now),
-        or(
-          isNull(conversations.generatingAt),
-          lt(
-            conversations.generatingAt,
-            new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS),
-          ),
-        ),
-      ),
+      and(lte(conversations.expiresAt, now), generationAvailable(now)),
       "inactivity",
       now,
       tx,
@@ -220,7 +236,6 @@ export async function claimGeneration(
 ): Promise<GenerationLock | undefined> {
   const db = getDb();
   const attempts = wait ? 120 : 1;
-  const abandonedBefore = new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS);
   for (let attempt = 0; attempt < attempts; attempt++) {
     const [claimed] = await db
       .update(conversations)
@@ -229,10 +244,7 @@ export async function claimGeneration(
         and(
           eq(conversations.id, conversationId),
           isNull(conversations.endedAt),
-          or(
-            isNull(conversations.generatingAt),
-            lt(conversations.generatingAt, abandonedBefore),
-          ),
+          generationAvailable(now),
         ),
       )
       .returning({ id: conversations.id });
@@ -259,7 +271,8 @@ export async function claimGeneration(
   return undefined;
 }
 
-/** Stored UI messages, oldest first, validated before entering model context. */
+/** Stored UI messages, oldest first. SDK validation belongs at the model boundary,
+ * not on read-only transcript requests, which may include historic parts. */
 export async function loadTranscript(
   conversationId: string,
 ): Promise<UIMessage[]> {
@@ -268,26 +281,31 @@ export async function loadTranscript(
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt));
-  if (rows.length === 0) return [];
-  return validateUIMessages({
-    messages: rows.map((row) => ({
-      id: row.messageId,
-      role: row.role as UIMessage["role"],
-      parts: row.parts as UIMessage["parts"],
-    })),
-  });
+  return rows.map((row) => ({
+    id: row.messageId,
+    role: row.role as UIMessage["role"],
+    parts: row.parts as UIMessage["parts"],
+  }));
 }
 
-export async function hasConversationMessage(
-  conversationId: string,
-  messageId: string,
-): Promise<boolean> {
+/** Retry identity survives the replacement of an ended conversation. */
+export async function hasWhatsAppMessage({
+  schoolId,
+  waId,
+  messageId,
+}: {
+  schoolId: string;
+  waId: string;
+  messageId: string;
+}): Promise<boolean> {
   const [row] = await getDb()
     .select({ id: messages.id })
     .from(messages)
+    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
     .where(
       and(
-        eq(messages.conversationId, conversationId),
+        eq(conversations.schoolId, schoolId),
+        eq(conversations.waIdHash, hashWaId(waId)),
         eq(messages.messageId, messageId),
       ),
     )
@@ -370,8 +388,7 @@ export async function attachConversationContact(
       and(
         eq(conversations.schoolId, schoolId),
         eq(conversations.id, conversationId),
-        isNull(conversations.endedAt),
-        gt(conversations.expiresAt, now),
+        activeConversation(now),
       ),
     )
     .returning({ id: conversations.id });

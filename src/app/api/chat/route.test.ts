@@ -3,11 +3,11 @@ import {
   MAX_REQUEST_BYTES,
   MAX_USER_MESSAGE_CHARS,
 } from "@/lib/security/limits";
-import { loadWebTranscript, startWebTurn } from "@/lib/web-chat";
+import { loadWebTranscript, startWebTurn } from "@/lib/web-chat/web-chat";
 import { GET, maxDuration, POST } from "./route";
 
 // Only the HTTP adapter is under test; Turn behavior is tested against Supabase.
-vi.mock("@/lib/web-chat", () => ({
+vi.mock("@/lib/web-chat/web-chat", () => ({
   startWebTurn: vi.fn(),
   loadWebTranscript: vi.fn(),
 }));
@@ -31,6 +31,23 @@ function post(body: string, headers: HeadersInit = {}) {
 beforeEach(() => vi.resetAllMocks());
 
 describe("chat request parsing", () => {
+  it("accepts text alongside other UI parts and preserves metadata", async () => {
+    const message = {
+      ...validBody.message,
+      metadata: { source: "browser" },
+      parts: [
+        { type: "text", text: "Hi", state: "done" },
+        { type: "step-start" },
+      ],
+    };
+    vi.mocked(startWebTurn).mockImplementation(async (input) => ({
+      ok: true,
+      response: Response.json(input.message),
+    }));
+    const response = await post(JSON.stringify({ ...validBody, message }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(message);
+  });
   it("returns 400 for malformed JSON without starting a turn", async () => {
     const response = await post("{");
     expect(response.status).toBe(400);
@@ -81,21 +98,21 @@ describe("chat request parsing", () => {
     expect(startWebTurn).not.toHaveBeenCalled();
   });
 
-  it("passes parsed input and the default preview flag to the turn module", async () => {
-    const reply = new Response("reply");
-    vi.mocked(startWebTurn).mockResolvedValue({ ok: true, response: reply });
-    expect(await post(JSON.stringify(validBody))).toBe(reply);
-    expect(startWebTurn).toHaveBeenCalledWith({ ...validBody, preview: false });
-  });
-
-  it("passes an explicit preview flag to the turn module", async () => {
-    vi.mocked(startWebTurn).mockResolvedValue({
-      ok: true,
-      response: new Response(),
-    });
-    await post(JSON.stringify({ ...validBody, preview: true }));
-    expect(startWebTurn).toHaveBeenCalledWith({ ...validBody, preview: true });
-  });
+  it.each([undefined, true])(
+    "returns the streamed reply with preview=%s",
+    async (preview) => {
+      vi.mocked(startWebTurn).mockResolvedValue({
+        ok: true,
+        response: new Response("data: reply\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      });
+      const response = await post(JSON.stringify({ ...validBody, preview }));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("text/event-stream");
+      expect(await response.text()).toBe("data: reply\n\n");
+    },
+  );
 });
 
 describe("chat refusal statuses", () => {
