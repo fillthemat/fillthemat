@@ -41,6 +41,10 @@ import {
   enqueueWhatsAppDelivery,
   recoverStuckWhatsAppDeliveries,
 } from "./deliveries";
+import {
+  type WhatsAppWorkerDependencies,
+  whatsappWorkerDependencies,
+} from "./dependencies";
 import { resolveInboundSchool } from "./inbound";
 import {
   getPendingBookingIntent,
@@ -75,6 +79,7 @@ type InboundContext = JobContext & {
    */
   inboundMessageId: string;
   runId: string;
+  dependencies: WhatsAppWorkerDependencies;
 };
 
 async function saveInboundMessage(ctx: InboundContext): Promise<void> {
@@ -89,18 +94,26 @@ async function saveInboundMessage(ctx: InboundContext): Promise<void> {
 
 // Notices are sent but not saved as messages, so their reply has no id.
 async function sendNotice(
-  ctx: Pick<InboundContext, "schoolId" | "message" | "runId">,
+  ctx: Pick<InboundContext, "schoolId" | "message" | "runId" | "dependencies">,
   text: string,
 ): Promise<TurnReply> {
-  const deliveryId = await enqueueWhatsAppDelivery({
-    schoolId: ctx.schoolId,
-    recipientWaId: ctx.message.waId,
-    phoneNumberId: ctx.message.phoneNumberId,
-    providerIdempotencyKey: `wa-notice/${ctx.message.waId}/${ctx.message.wamid}`,
-    body: text,
-    windowExpiresAt: addHours(new Date(), 24),
-  });
-  if (deliveryId) await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
+  const deliveryId = await enqueueWhatsAppDelivery(
+    {
+      schoolId: ctx.schoolId,
+      recipientWaId: ctx.message.waId,
+      phoneNumberId: ctx.message.phoneNumberId,
+      providerIdempotencyKey: `wa-notice/${ctx.message.waId}/${ctx.message.wamid}`,
+      body: text,
+      windowExpiresAt: addHours(ctx.dependencies.now(), 24),
+    },
+    ctx.dependencies.now(),
+  );
+  if (deliveryId)
+    await attemptWhatsAppDeliveriesNow(
+      [deliveryId],
+      ctx.runId,
+      ctx.dependencies,
+    );
   return { text };
 }
 
@@ -122,16 +135,19 @@ async function handleConfirmation(
     );
   }
 
-  const { reply } = await confirmWhatsAppBooking({
-    schoolId: ctx.schoolId,
-    conversationId: ctx.conversationId,
-    intent,
-    waId: ctx.message.waId,
-    phoneNumberId: ctx.message.phoneNumberId,
-    wamid: ctx.message.wamid,
-    profileName: ctx.message.profileName,
-    runId: ctx.runId,
-  });
+  const { reply } = await confirmWhatsAppBooking(
+    {
+      schoolId: ctx.schoolId,
+      conversationId: ctx.conversationId,
+      intent,
+      waId: ctx.message.waId,
+      phoneNumberId: ctx.message.phoneNumberId,
+      wamid: ctx.message.wamid,
+      profileName: ctx.message.profileName,
+      runId: ctx.runId,
+    },
+    ctx.dependencies,
+  );
 
   await saveInboundMessage(ctx);
   return reply;
@@ -143,21 +159,28 @@ async function enqueueAndSendTextReplies(
   idempotencyPrefix: string,
 ): Promise<void> {
   const chunks = splitWhatsAppText(text);
-  const windowExpiresAt = addHours(new Date(), 24);
+  const windowExpiresAt = addHours(ctx.dependencies.now(), 24);
   const deliveryIds: string[] = [];
   for (let index = 0; index < chunks.length; index++) {
-    const deliveryId = await enqueueWhatsAppDelivery({
-      schoolId: ctx.schoolId,
-      recipientWaId: ctx.message.waId,
-      phoneNumberId: ctx.message.phoneNumberId,
-      providerIdempotencyKey: `${idempotencyPrefix}/${index}`,
-      body: chunks[index],
-      windowExpiresAt,
-    });
+    const deliveryId = await enqueueWhatsAppDelivery(
+      {
+        schoolId: ctx.schoolId,
+        recipientWaId: ctx.message.waId,
+        phoneNumberId: ctx.message.phoneNumberId,
+        providerIdempotencyKey: `${idempotencyPrefix}/${index}`,
+        body: chunks[index],
+        windowExpiresAt,
+      },
+      ctx.dependencies.now(),
+    );
     if (deliveryId) deliveryIds.push(deliveryId);
   }
   if (deliveryIds.length > 0) {
-    await attemptWhatsAppDeliveriesNow(deliveryIds, ctx.runId);
+    await attemptWhatsAppDeliveriesNow(
+      deliveryIds,
+      ctx.runId,
+      ctx.dependencies,
+    );
   }
 }
 
@@ -224,20 +247,27 @@ async function handleAssistantTurn(
       parts: body ? [{ type: "text", text: body }] : [],
     });
 
-    const deliveryId = await enqueueWhatsAppDelivery({
-      schoolId: ctx.schoolId,
-      recipientWaId: ctx.message.waId,
-      phoneNumberId: ctx.message.phoneNumberId,
-      providerIdempotencyKey: `wa-confirm/${intent.id}`,
-      body,
-      interactiveButtons: [
-        { id: confirmBookingButtonId(intent.id), title: "Confirm booking" },
-        { id: CHOOSE_ANOTHER_TIME_BUTTON_ID, title: "Choose another time" },
-      ],
-      windowExpiresAt,
-    });
+    const deliveryId = await enqueueWhatsAppDelivery(
+      {
+        schoolId: ctx.schoolId,
+        recipientWaId: ctx.message.waId,
+        phoneNumberId: ctx.message.phoneNumberId,
+        providerIdempotencyKey: `wa-confirm/${intent.id}`,
+        body,
+        interactiveButtons: [
+          { id: confirmBookingButtonId(intent.id), title: "Confirm booking" },
+          { id: CHOOSE_ANOTHER_TIME_BUTTON_ID, title: "Choose another time" },
+        ],
+        windowExpiresAt,
+      },
+      ctx.dependencies.now(),
+    );
     if (deliveryId) {
-      await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId);
+      await attemptWhatsAppDeliveriesNow(
+        [deliveryId],
+        ctx.runId,
+        ctx.dependencies,
+      );
     }
     return { text: body, messageId: replyMessageId, provenance };
   }
@@ -342,20 +372,27 @@ async function planReply(
 export async function processWhatsAppJob(
   job: WhatsAppJob,
   runId: string,
+  overrides: Partial<WhatsAppWorkerDependencies> = {},
 ): Promise<ProcessJobResult> {
+  const dependencies = whatsappWorkerDependencies(overrides);
   const message = job.payload as InboundWhatsAppMessage;
   try {
     const resolved = await resolveInboundSchool(message);
     if (!resolved.resolved) {
       if (resolved.reason === "unknown_phone_number") {
-        await failJob(job.id, job.attempts, "unknown_phone_number");
+        await failJob(
+          job.id,
+          job.attempts,
+          "unknown_phone_number",
+          dependencies.now(),
+        );
         return "failed";
       }
       // Empty/non-text payload: nothing to persist or reply to.
-      await markJobDone(job.id);
+      await markJobDone(job.id, undefined, dependencies.now());
       return "done";
     }
-    const now = new Date();
+    const now = dependencies.now();
 
     // Retry idempotency: if a previous attempt already persisted this inbound
     // message, do not reply or book a second time.
@@ -366,7 +403,7 @@ export async function processWhatsAppJob(
         messageId: message.wamid,
       });
     if (await alreadyAnswered()) {
-      await markJobDone(job.id, resolved.schoolId);
+      await markJobDone(job.id, resolved.schoolId, dependencies.now());
       return "done";
     }
     const identity = { channel: "whatsapp", waId: message.waId } as const;
@@ -386,10 +423,10 @@ export async function processWhatsAppJob(
       ))
     ) {
       await sendNotice(
-        { schoolId: resolved.schoolId, message, runId },
+        { schoolId: resolved.schoolId, message, runId, dependencies },
         "You've reached today's message limit. Please try again tomorrow.",
       );
-      await markJobDone(job.id, resolved.schoolId);
+      await markJobDone(job.id, resolved.schoolId, dependencies.now());
       return "done";
     }
     const result = await findOrCreateConversation({
@@ -400,17 +437,21 @@ export async function processWhatsAppJob(
     if (!result.ok) throw new Error(result.reason);
     const conversationId = result.conversation.id;
 
-    const lock = await claimGeneration(conversationId, { wait: true, now });
+    const lock = await claimGeneration(conversationId, {
+      wait: true,
+      now,
+      sleep: dependencies.sleep,
+    });
     if (!lock) {
       // Another job is mid-flight on this conversation; try again shortly.
-      await rescheduleJob(job.id, 2000);
+      await rescheduleJob(job.id, 2000, dependencies.now());
       return "done";
     }
 
     try {
       // Recheck after waiting for a concurrent attempt to release its lock.
       if (await alreadyAnswered()) {
-        await markJobDone(job.id, resolved.schoolId);
+        await markJobDone(job.id, resolved.schoolId, dependencies.now());
         return "done";
       }
       const ctx: InboundContext = {
@@ -420,6 +461,7 @@ export async function processWhatsAppJob(
         inboundText: message.text ?? "",
         inboundMessageId: randomUUID(),
         runId,
+        dependencies,
       };
 
       const sendReply = await planReply(ctx, now);
@@ -437,7 +479,7 @@ export async function processWhatsAppJob(
         turn.end(await turn.run(sendReply));
       }
 
-      await markJobDone(job.id, resolved.schoolId);
+      await markJobDone(job.id, resolved.schoolId, dependencies.now());
       return "done";
     } finally {
       await lock.release();
@@ -448,7 +490,7 @@ export async function processWhatsAppJob(
     // second release here (fail the job + backoff, never leak the lock).
     const message =
       error instanceof Error ? error.message : "whatsapp_job_failed";
-    await failJob(job.id, job.attempts, message);
+    await failJob(job.id, job.attempts, message, dependencies.now());
     console.error("whatsapp: job failed", job.id, message);
     return "failed";
   }
@@ -457,12 +499,17 @@ export async function processWhatsAppJob(
 export async function drainWhatsAppJobs(
   runId: string,
   limit = 10,
+  overrides: Partial<WhatsAppWorkerDependencies> = {},
 ): Promise<{ claimed: number; done: number; failed: number }> {
-  const claimed = await claimDueWhatsAppJobs(runId, { limit });
+  const dependencies = whatsappWorkerDependencies(overrides);
+  const claimed = await claimDueWhatsAppJobs(runId, {
+    limit,
+    now: dependencies.now(),
+  });
   let done = 0;
   let failed = 0;
   for (const job of claimed) {
-    const result = await processWhatsAppJob(job, runId);
+    const result = await processWhatsAppJob(job, runId, dependencies);
     if (result === "done") done += 1;
     else failed += 1;
   }
@@ -478,12 +525,20 @@ export async function drainWhatsAppJobs(
  * `sent`, and failed inline rows have a future `nextAttemptAt`, so neither needs
  * re-picking-up here.
  */
-export async function runWhatsAppWorkerOnce(runId: string) {
+export async function runWhatsAppWorkerOnce(
+  runId: string,
+  overrides: Partial<WhatsAppWorkerDependencies> = {},
+) {
+  const dependencies = whatsappWorkerDependencies(overrides);
   try {
-    await recoverStuckWhatsAppJobs();
-    await recoverStuckWhatsAppDeliveries();
-    const jobs = await drainWhatsAppJobs(runId);
-    const deliveries = await drainDueWhatsAppDeliveries(runId);
+    await recoverStuckWhatsAppJobs(undefined, dependencies.now());
+    await recoverStuckWhatsAppDeliveries(undefined, dependencies.now());
+    const jobs = await drainWhatsAppJobs(runId, 10, dependencies);
+    const deliveries = await drainDueWhatsAppDeliveries(
+      runId,
+      25,
+      dependencies,
+    );
     return { jobs, deliveries };
   } finally {
     // Once, after every reply in the run, so a slow or unreachable Langfuse

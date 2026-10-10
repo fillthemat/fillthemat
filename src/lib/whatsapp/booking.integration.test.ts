@@ -306,7 +306,30 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
         )
       ).status,
     ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+    const workerNow = new Date();
+    await runWhatsAppWorkerOnce(randomUUID(), {
+      now: () => new Date(workerNow),
+      sleep: async () => {
+        throw new Error("unexpected booking pause");
+      },
+      transport: {
+        sendText: async () => ({
+          ok: true,
+          kind: "accepted",
+          providerId: `fake-text:${suffix}`,
+        }),
+        sendInteractive: async () => ({
+          ok: true,
+          kind: "accepted",
+          providerId: `fake-interactive:${suffix}`,
+        }),
+        sendTemplate: async () => ({
+          ok: true,
+          kind: "accepted",
+          providerId: `fake-booking:${suffix}`,
+        }),
+      },
+    });
 
     const bookingRows = await db
       .select()
@@ -360,6 +383,8 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     expect(templateDelivery).toBeTruthy();
     expect(templateDelivery?.state).toBe("sent");
     expect(templateDelivery?.recipientWaId).toBe(waA);
+    expect(templateDelivery?.providerId).toBe(`fake-booking:${suffix}`);
+    expect(templateDelivery?.sentAt).toEqual(workerNow);
 
     const ownerEmails = await db
       .select()

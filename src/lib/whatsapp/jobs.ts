@@ -3,9 +3,9 @@ import { getDb } from "@/db";
 import { whatsappJobs } from "@/db/schema";
 import type { InboundWhatsAppMessage } from "./parse";
 
-function nextBackoff(attempts: number): Date {
+function nextBackoff(attempts: number, now: Date): Date {
   const minutes = Math.min(60, 2 ** Math.max(0, attempts - 1));
-  return new Date(Date.now() + minutes * 60_000);
+  return new Date(now.getTime() + minutes * 60_000);
 }
 
 /**
@@ -38,9 +38,10 @@ export async function enqueueInboundJobs(
 
 export async function claimDueWhatsAppJobs(
   runId: string,
-  opts?: { limit?: number },
+  opts?: { limit?: number; now?: Date },
 ) {
   const db = getDb();
+  const now = opts?.now ?? new Date();
   const limit = opts?.limit ?? 10;
   return db.transaction(async (tx) => {
     const due = await tx
@@ -52,7 +53,7 @@ export async function claimDueWhatsAppJobs(
             eq(whatsappJobs.state, "pending"),
             eq(whatsappJobs.state, "failed"),
           ),
-          lte(whatsappJobs.nextAttemptAt, new Date()),
+          lte(whatsappJobs.nextAttemptAt, now),
         ),
       )
       .for("update", { skipLocked: true })
@@ -65,9 +66,9 @@ export async function claimDueWhatsAppJobs(
       .update(whatsappJobs)
       .set({
         state: "claimed",
-        claimedAt: new Date(),
+        claimedAt: now,
         claimedBy: runId,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .where(inArray(whatsappJobs.id, ids));
 
@@ -78,6 +79,7 @@ export async function claimDueWhatsAppJobs(
 export async function markJobDone(
   jobId: string,
   schoolId?: string | null,
+  now = new Date(),
 ): Promise<void> {
   const db = getDb();
   await db
@@ -86,7 +88,7 @@ export async function markJobDone(
       state: "done",
       schoolId: schoolId ?? undefined,
       lastError: null,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(eq(whatsappJobs.id, jobId));
 }
@@ -95,6 +97,7 @@ export async function failJob(
   jobId: string,
   attempts: number,
   message: string,
+  now = new Date(),
 ): Promise<void> {
   const db = getDb();
   await db
@@ -102,9 +105,9 @@ export async function failJob(
     .set({
       state: "failed",
       attempts: attempts + 1,
-      nextAttemptAt: nextBackoff(attempts + 1),
+      nextAttemptAt: nextBackoff(attempts + 1, now),
       lastError: message.slice(0, 500),
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(eq(whatsappJobs.id, jobId));
 }
@@ -112,16 +115,17 @@ export async function failJob(
 export async function rescheduleJob(
   jobId: string,
   delayMs = 1000,
+  now = new Date(),
 ): Promise<void> {
   const db = getDb();
   await db
     .update(whatsappJobs)
     .set({
       state: "pending",
-      nextAttemptAt: new Date(Date.now() + delayMs),
+      nextAttemptAt: new Date(now.getTime() + delayMs),
       claimedAt: null,
       claimedBy: null,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(eq(whatsappJobs.id, jobId));
 }
@@ -133,6 +137,7 @@ export async function rescheduleJob(
  */
 export async function recoverStuckWhatsAppJobs(
   staleBeforeMs = 5 * 60_000,
+  now = new Date(),
 ): Promise<number> {
   const db = getDb();
   const rows = await db
@@ -141,12 +146,12 @@ export async function recoverStuckWhatsAppJobs(
       state: "pending",
       claimedAt: null,
       claimedBy: null,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(
       and(
         eq(whatsappJobs.state, "claimed"),
-        lt(whatsappJobs.claimedAt, new Date(Date.now() - staleBeforeMs)),
+        lt(whatsappJobs.claimedAt, new Date(now.getTime() - staleBeforeMs)),
       ),
     )
     .returning({ id: whatsappJobs.id });

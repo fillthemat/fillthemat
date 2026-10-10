@@ -2,16 +2,15 @@ import { and, eq, inArray, lt, lte, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools, whatsappDeliveries } from "@/db/schema";
 import {
-  sendWhatsAppInteractive,
-  sendWhatsAppTemplate,
-  sendWhatsAppText,
-} from "./client";
+  type WhatsAppWorkerDependencies,
+  whatsappWorkerDependencies,
+} from "./dependencies";
 import type { InboundWhatsAppStatus } from "./status";
 import { WHATSAPP_TEMPLATE_LANGUAGE } from "./templates";
 
-function nextBackoff(attempts: number): Date {
+function nextBackoff(attempts: number, now: Date): Date {
   const minutes = Math.min(60, 2 ** Math.max(0, attempts - 1));
-  return new Date(Date.now() + minutes * 60_000);
+  return new Date(now.getTime() + minutes * 60_000);
 }
 
 export type WhatsappDeliveryPlan =
@@ -93,6 +92,7 @@ export type EnqueueWhatsAppDelivery = {
 
 export async function enqueueWhatsAppDelivery(
   input: EnqueueWhatsAppDelivery,
+  now = new Date(),
 ): Promise<string | null> {
   const db = getDb();
   const [row] = await db
@@ -112,7 +112,7 @@ export async function enqueueWhatsAppDelivery(
       leadId: input.leadId ?? null,
       state: "pending",
       // Inline delivery must be immediately due even if the DB clock is ahead.
-      nextAttemptAt: new Date(),
+      nextAttemptAt: now,
     })
     .onConflictDoNothing({
       target: whatsappDeliveries.providerIdempotencyKey,
@@ -123,9 +123,10 @@ export async function enqueueWhatsAppDelivery(
 
 export async function claimDueWhatsAppDeliveries(
   runId: string,
-  opts?: { ids?: string[]; limit?: number },
+  opts?: { ids?: string[]; limit?: number; now?: Date },
 ) {
   const db = getDb();
+  const now = opts?.now ?? new Date();
   const limit = opts?.limit ?? 25;
   return db.transaction(async (tx) => {
     const conditions = [
@@ -133,7 +134,7 @@ export async function claimDueWhatsAppDeliveries(
         eq(whatsappDeliveries.state, "pending"),
         eq(whatsappDeliveries.state, "failed"),
       ),
-      lte(whatsappDeliveries.nextAttemptAt, new Date()),
+      lte(whatsappDeliveries.nextAttemptAt, now),
     ];
     if (opts?.ids && opts.ids.length > 0) {
       conditions.push(inArray(whatsappDeliveries.id, opts.ids));
@@ -152,9 +153,9 @@ export async function claimDueWhatsAppDeliveries(
       .update(whatsappDeliveries)
       .set({
         state: "claimed",
-        claimedAt: new Date(),
+        claimedAt: now,
         claimedBy: runId,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .where(inArray(whatsappDeliveries.id, ids));
 
@@ -164,7 +165,9 @@ export async function claimDueWhatsAppDeliveries(
 
 export async function sendWhatsAppDelivery(
   deliveryId: string,
+  overrides: Partial<WhatsAppWorkerDependencies> = {},
 ): Promise<"sent" | "failed" | "window_closed"> {
+  const dependencies = whatsappWorkerDependencies(overrides);
   const db = getDb();
   const [delivery] = await db
     .select()
@@ -185,20 +188,23 @@ export async function sendWhatsAppDelivery(
         state: "failed",
         lastError: "school_not_approved",
         attempts: delivery.attempts + 1,
-        nextAttemptAt: nextBackoff(delivery.attempts + 1),
-        updatedAt: new Date(),
+        nextAttemptAt: nextBackoff(delivery.attempts + 1, dependencies.now()),
+        updatedAt: dependencies.now(),
       })
       .where(eq(whatsappDeliveries.id, delivery.id));
     return "failed";
   }
 
-  const plan = planWhatsAppDelivery({
-    templateName: delivery.templateName,
-    templateParams: delivery.templateParams,
-    windowExpiresAt: delivery.windowExpiresAt,
-    interactiveButtons: delivery.interactiveButtons,
-    body: delivery.body,
-  });
+  const plan = planWhatsAppDelivery(
+    {
+      templateName: delivery.templateName,
+      templateParams: delivery.templateParams,
+      windowExpiresAt: delivery.windowExpiresAt,
+      interactiveButtons: delivery.interactiveButtons,
+      body: delivery.body,
+    },
+    dependencies.now(),
+  );
   if (plan.type === "window_closed") {
     await db
       .update(whatsappDeliveries)
@@ -206,8 +212,8 @@ export async function sendWhatsAppDelivery(
         state: "failed",
         lastError: "window_closed",
         attempts: delivery.attempts + 1,
-        nextAttemptAt: nextBackoff(delivery.attempts + 1),
-        updatedAt: new Date(),
+        nextAttemptAt: nextBackoff(delivery.attempts + 1, dependencies.now()),
+        updatedAt: dependencies.now(),
       })
       .where(eq(whatsappDeliveries.id, delivery.id));
     return "window_closed";
@@ -216,7 +222,7 @@ export async function sendWhatsAppDelivery(
   try {
     const outcome =
       plan.type === "template"
-        ? await sendWhatsAppTemplate({
+        ? await dependencies.transport.sendTemplate({
             phoneNumberId: delivery.phoneNumberId,
             to: delivery.recipientWaId,
             templateName: plan.templateName,
@@ -224,13 +230,13 @@ export async function sendWhatsAppDelivery(
             params: plan.params,
           })
         : plan.type === "interactive"
-          ? await sendWhatsAppInteractive({
+          ? await dependencies.transport.sendInteractive({
               phoneNumberId: delivery.phoneNumberId,
               to: delivery.recipientWaId,
               body: plan.body,
               buttons: plan.buttons,
             })
-          : await sendWhatsAppText({
+          : await dependencies.transport.sendText({
               phoneNumberId: delivery.phoneNumberId,
               to: delivery.recipientWaId,
               text: delivery.body ?? "",
@@ -238,7 +244,9 @@ export async function sendWhatsAppDelivery(
 
     if (!outcome.ok) {
       const lastError = `${
-        outcome.code != null ? `${outcome.code}: ` : ""
+        outcome.kind === "whatsapp_error" && outcome.code != null
+          ? `${outcome.code}: `
+          : ""
       }${outcome.message}`.slice(0, 500);
       await db
         .update(whatsappDeliveries)
@@ -246,22 +254,25 @@ export async function sendWhatsAppDelivery(
           state: "failed",
           lastError,
           attempts: delivery.attempts + 1,
-          nextAttemptAt: nextBackoff(delivery.attempts + 1),
-          updatedAt: new Date(),
+          nextAttemptAt: nextBackoff(delivery.attempts + 1, dependencies.now()),
+          updatedAt: dependencies.now(),
         })
         .where(eq(whatsappDeliveries.id, delivery.id));
       return "failed";
     }
 
-    const providerId = outcome.providerId ?? `local-noop:${delivery.id}`;
+    const providerId =
+      outcome.kind === "local_noop"
+        ? `local-noop:${delivery.id}`
+        : outcome.providerId;
     await db
       .update(whatsappDeliveries)
       .set({
         state: "sent",
         providerId,
-        sentAt: new Date(),
+        sentAt: dependencies.now(),
         lastError: null,
-        updatedAt: new Date(),
+        updatedAt: dependencies.now(),
       })
       .where(eq(whatsappDeliveries.id, delivery.id));
     return "sent";
@@ -273,8 +284,8 @@ export async function sendWhatsAppDelivery(
         state: "failed",
         lastError: message.slice(0, 500),
         attempts: delivery.attempts + 1,
-        nextAttemptAt: nextBackoff(delivery.attempts + 1),
-        updatedAt: new Date(),
+        nextAttemptAt: nextBackoff(delivery.attempts + 1, dependencies.now()),
+        updatedAt: dependencies.now(),
       })
       .where(eq(whatsappDeliveries.id, delivery.id));
     return "failed";
@@ -284,13 +295,18 @@ export async function sendWhatsAppDelivery(
 export async function attemptWhatsAppDeliveriesNow(
   ids: string[],
   runId: string,
+  overrides: Partial<WhatsAppWorkerDependencies> = {},
 ) {
-  const claimed = await claimDueWhatsAppDeliveries(runId, { ids });
+  const dependencies = whatsappWorkerDependencies(overrides);
+  const claimed = await claimDueWhatsAppDeliveries(runId, {
+    ids,
+    now: dependencies.now(),
+  });
   let sent = 0;
   let failed = 0;
   let windowClosed = 0;
   for (const row of claimed) {
-    const result = await sendWhatsAppDelivery(row.id);
+    const result = await sendWhatsAppDelivery(row.id, dependencies);
     if (result === "sent") sent += 1;
     else if (result === "window_closed") windowClosed += 1;
     else failed += 1;
@@ -298,13 +314,21 @@ export async function attemptWhatsAppDeliveriesNow(
   return { sent, failed, windowClosed };
 }
 
-export async function drainDueWhatsAppDeliveries(runId: string, limit = 25) {
-  const claimed = await claimDueWhatsAppDeliveries(runId, { limit });
+export async function drainDueWhatsAppDeliveries(
+  runId: string,
+  limit = 25,
+  overrides: Partial<WhatsAppWorkerDependencies> = {},
+) {
+  const dependencies = whatsappWorkerDependencies(overrides);
+  const claimed = await claimDueWhatsAppDeliveries(runId, {
+    limit,
+    now: dependencies.now(),
+  });
   let sent = 0;
   let failed = 0;
   let windowClosed = 0;
   for (const row of claimed) {
-    const result = await sendWhatsAppDelivery(row.id);
+    const result = await sendWhatsAppDelivery(row.id, dependencies);
     if (result === "sent") sent += 1;
     else if (result === "window_closed") windowClosed += 1;
     else failed += 1;
@@ -387,6 +411,7 @@ export async function applyWhatsAppStatuses(statuses: InboundWhatsAppStatus[]) {
  */
 export async function recoverStuckWhatsAppDeliveries(
   staleBeforeMs = 5 * 60_000,
+  now = new Date(),
 ): Promise<number> {
   const db = getDb();
   const rows = await db
@@ -395,12 +420,15 @@ export async function recoverStuckWhatsAppDeliveries(
       state: "pending",
       claimedAt: null,
       claimedBy: null,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(
       and(
         eq(whatsappDeliveries.state, "claimed"),
-        lt(whatsappDeliveries.claimedAt, new Date(Date.now() - staleBeforeMs)),
+        lt(
+          whatsappDeliveries.claimedAt,
+          new Date(now.getTime() - staleBeforeMs),
+        ),
       ),
     )
     .returning({ id: whatsappDeliveries.id });

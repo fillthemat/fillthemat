@@ -12,6 +12,10 @@ import {
   attemptWhatsAppDeliveriesNow,
   enqueueWhatsAppDelivery,
 } from "./deliveries";
+import {
+  type WhatsAppWorkerDependencies,
+  whatsappWorkerDependencies,
+} from "./dependencies";
 import { markBookingIntentConfirmed } from "./intents";
 
 /**
@@ -35,6 +39,7 @@ async function sendNotice({
   runId,
   windowExpiresAt,
   idempotencyKey,
+  dependencies,
 }: {
   schoolId: string;
   waId: string;
@@ -43,16 +48,21 @@ async function sendNotice({
   runId: string;
   windowExpiresAt: Date;
   idempotencyKey: string;
+  dependencies: WhatsAppWorkerDependencies;
 }): Promise<BookingReply> {
-  const deliveryId = await enqueueWhatsAppDelivery({
-    schoolId,
-    recipientWaId: waId,
-    phoneNumberId,
-    providerIdempotencyKey: idempotencyKey,
-    body: text,
-    windowExpiresAt,
-  });
-  if (deliveryId) await attemptWhatsAppDeliveriesNow([deliveryId], runId);
+  const deliveryId = await enqueueWhatsAppDelivery(
+    {
+      schoolId,
+      recipientWaId: waId,
+      phoneNumberId,
+      providerIdempotencyKey: idempotencyKey,
+      body: text,
+      windowExpiresAt,
+    },
+    dependencies.now(),
+  );
+  if (deliveryId)
+    await attemptWhatsAppDeliveriesNow([deliveryId], runId, dependencies);
   return { text };
 }
 
@@ -68,26 +78,30 @@ async function sendNotice({
  *   prospect email; the prospect confirmation is enqueued here as the
  *   `booking_confirmation` WhatsApp template and the owner email stays email.
  */
-export async function confirmWhatsAppBooking({
-  schoolId,
-  conversationId,
-  intent,
-  waId,
-  phoneNumberId,
-  wamid,
-  profileName,
-  runId,
-}: {
-  schoolId: string;
-  conversationId: string;
-  intent: WhatsAppBookingIntent;
-  waId: string;
-  phoneNumberId: string;
-  wamid: string;
-  profileName: string | null;
-  runId: string;
-}): Promise<ConfirmWhatsAppBookingResult> {
-  const now = new Date();
+export async function confirmWhatsAppBooking(
+  {
+    schoolId,
+    conversationId,
+    intent,
+    waId,
+    phoneNumberId,
+    wamid,
+    profileName,
+    runId,
+  }: {
+    schoolId: string;
+    conversationId: string;
+    intent: WhatsAppBookingIntent;
+    waId: string;
+    phoneNumberId: string;
+    wamid: string;
+    profileName: string | null;
+    runId: string;
+  },
+  overrides: Partial<WhatsAppWorkerDependencies> = {},
+): Promise<ConfirmWhatsAppBookingResult> {
+  const dependencies = whatsappWorkerDependencies(overrides);
+  const now = dependencies.now();
   const windowExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const db = getDb();
   const [school] = await db
@@ -106,6 +120,7 @@ export async function confirmWhatsAppBooking({
       phoneNumberId,
       runId,
       windowExpiresAt,
+      dependencies,
       idempotencyKey: `wa-notice/${waId}/${wamid}`,
       text: "You've reached the daily booking limit for today. Please try again tomorrow.",
     });
@@ -121,6 +136,7 @@ export async function confirmWhatsAppBooking({
       phoneNumberId,
       runId,
       windowExpiresAt,
+      dependencies,
       idempotencyKey: `wa-notice/${waId}/${wamid}`,
       text: "I still need the participant's age to complete the booking. Could you tell me their age in years?",
     });
@@ -152,6 +168,7 @@ export async function confirmWhatsAppBooking({
       phoneNumberId,
       runId,
       windowExpiresAt,
+      dependencies,
       idempotencyKey: `wa-notice/${waId}/${wamid}`,
       text: message,
     });
@@ -178,22 +195,29 @@ export async function confirmWhatsAppBooking({
 
   // No-email prospect confirmation → WhatsApp template (decision B / D8). The
   // owner notification stays email and was enqueued by `bookSlot` already.
-  const templateDeliveryId = await enqueueWhatsAppDelivery({
-    schoolId,
-    recipientWaId: waId,
-    phoneNumberId,
-    providerIdempotencyKey: `booking-confirmation-template/${booking.id}`,
-    templateName: "booking_confirmation",
-    templateParams: [
-      school.name,
-      booking.participantNameSnapshot,
-      booking.offeringNameSnapshot,
-      when,
-    ],
-    bookingId: booking.id,
-  });
+  const templateDeliveryId = await enqueueWhatsAppDelivery(
+    {
+      schoolId,
+      recipientWaId: waId,
+      phoneNumberId,
+      providerIdempotencyKey: `booking-confirmation-template/${booking.id}`,
+      templateName: "booking_confirmation",
+      templateParams: [
+        school.name,
+        booking.participantNameSnapshot,
+        booking.offeringNameSnapshot,
+        when,
+      ],
+      bookingId: booking.id,
+    },
+    dependencies.now(),
+  );
   if (templateDeliveryId) {
-    await attemptWhatsAppDeliveriesNow([templateDeliveryId], runId);
+    await attemptWhatsAppDeliveriesNow(
+      [templateDeliveryId],
+      runId,
+      dependencies,
+    );
   }
   if (!result.idempotent) {
     await attemptPendingForBooking(booking.id);
