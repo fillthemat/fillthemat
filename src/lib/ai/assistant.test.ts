@@ -3,6 +3,7 @@ import { simulateReadableStream, type UIMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
+import { legacyAssistantHistory } from "@/test/assistant-legacy-history";
 import {
   type AssistantInput,
   type AssistantUIMessage,
@@ -455,11 +456,31 @@ describe("the assistant's completed reply", () => {
     expect(reply.bookingIntent).toBeNull();
   });
 
-  it("returns a Lead Request when it captures a request to be contacted", async () => {
+  it("lists open trial occurrences through list_trial_occurrences", async () => {
+    const model = scriptedModel(
+      toolCallStep("list_trial_occurrences", { offeringId: kidsBjj.id }),
+      textStep("Wednesday at 6:00 PM is available."),
+    );
+    const reply = await completedReply({ ...input, model });
+
+    expect(toolOutputSentBackToModel(model)).toMatchObject({
+      type: "json",
+      value: {
+        noMatch: false,
+        slots: expect.arrayContaining([
+          expect.objectContaining({ slotId: openSlotId }),
+        ]),
+      },
+    });
+    expect(reply.bookingIntent).toBeNull();
+    expect(reply.leadRequest).toBeNull();
+  });
+
+  it("returns a Lead Request through request_contact", async () => {
     const reply = await completedReply({
       ...input,
       model: scriptedModel(
-        toolCallStep("capture_lead", {
+        toolCallStep("request_contact", {
           participantName: "Sam",
           participantAge: 34,
           statedNeed: "Adult evening classes",
@@ -517,6 +538,45 @@ describe("the assistant's completed reply with no model passed", () => {
 describe("the assistant's streamed reply", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("replays saved pre-rename occurrence and contact tool parts without registering aliases", async () => {
+    const model = streamingModel([
+      textStep("Wednesday at 6:00 PM; contact request for Sam."),
+    ]);
+    let finish: ReplyFinish | undefined;
+    const response = await streamedReply({
+      ...input,
+      messages: JSON.parse(JSON.stringify(legacyAssistantHistory())),
+      model,
+      onFinish: (value) => {
+        finish = value;
+      },
+    });
+    await response.text();
+
+    expect(finish?.completion).toBe("complete");
+    expect(finish?.reply.parts).toContainEqual(
+      expect.objectContaining({
+        type: "text",
+        text: "Wednesday at 6:00 PM; contact request for Sam.",
+      }),
+    );
+    const call = model.doStreamCalls[0];
+    expect(call.tools?.map((tool) => tool.name)).toEqual([
+      "list_trial_offerings",
+      "list_trial_occurrences",
+      "prepare_booking",
+      "request_contact",
+    ]);
+    const historyNames = call.prompt.flatMap((message) =>
+      message.role === "tool"
+        ? message.content.map((part) =>
+            part.type === "tool-result" ? part.toolName : null,
+          )
+        : [],
+    );
+    expect(historyNames).toEqual(["list_trial_slots", "capture_lead"]);
   });
 
   const kidsBjjListing = {

@@ -53,17 +53,12 @@ it("scores tool calls and public reply intents through the real assistant withou
           usage,
           warnings: [],
         };
-      const toolName = params.tools?.some(
-        (tool) => tool.name === "request_contact",
-      )
-        ? "request_contact"
-        : "capture_lead";
       return {
         content: [
           {
             type: "tool-call",
             toolCallId: "contact",
-            toolName,
+            toolName: "request_contact",
             input:
               '{"participantName":"Sam","participantAge":5,"statedNeed":"Contact me about a trial"}',
           },
@@ -77,6 +72,7 @@ it("scores tool calls and public reply intents through the real assistant withou
   const contactCase = cases.find((row) => row.id === "explicit-contact");
   if (!contactCase) throw new Error("Missing contact case");
   const contact = await runCase(contactCase, contactModel);
+  expect(contact.toolCalls).toEqual(["request_contact"]);
   expect(contact.reply.leadRequest).toEqual({
     participantName: "Sam",
     participantAge: 5,

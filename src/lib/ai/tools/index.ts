@@ -8,8 +8,8 @@ import { prepareBooking } from "./prepare-booking";
 export function assistantTools(ctx: AssistantContext) {
   return {
     list_trial_offerings: listTrialOfferings(ctx),
-    list_trial_slots: listTrialSlots(ctx),
+    list_trial_occurrences: listTrialSlots(ctx),
     prepare_booking: prepareBooking(ctx),
-    capture_lead: captureLead(ctx),
+    request_contact: captureLead(ctx),
   };
 }
