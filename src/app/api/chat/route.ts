@@ -3,7 +3,7 @@ import { requestBodyTooLarge } from "@/lib/security/limits";
 import {
   chatRequestSchema,
   chatTranscriptRequestSchema,
-} from "@/lib/validation";
+} from "@/lib/chat/requests";
 import {
   loadWebTranscript,
   startWebTurn,
