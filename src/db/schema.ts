@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const appSchema = pgSchema("app");
+export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 
 export const bookingStatusEnum = appSchema.enum("booking_status", [
   "booked",
@@ -31,6 +32,7 @@ export const emailKindEnum = appSchema.enum("email_kind", [
   "owner_booking",
   "owner_cancellation",
   "owner_lead",
+  "owner_whatsapp_confirmation_failed",
 ]);
 
 export const emailStateEnum = appSchema.enum("email_state", [
@@ -41,11 +43,12 @@ export const emailStateEnum = appSchema.enum("email_state", [
   "delivered",
   "bounced",
   "complained",
+  "dead",
 ]);
 
 export const whatsappDeliveryStateEnum = appSchema.enum(
   "whatsapp_delivery_state",
-  ["pending", "claimed", "sent", "delivered", "read", "failed"],
+  ["pending", "claimed", "sent", "delivered", "read", "failed", "dead"],
 );
 
 export const whatsappJobStateEnum = appSchema.enum("whatsapp_job_state", [
@@ -53,6 +56,7 @@ export const whatsappJobStateEnum = appSchema.enum("whatsapp_job_state", [
   "claimed",
   "done",
   "failed",
+  "dead",
 ]);
 
 export const whatsappBookingIntentStateEnum = appSchema.enum(
@@ -567,6 +571,8 @@ export const emailDeliveries = appSchema.table(
     attempts: integer("attempts").notNull().default(0),
     providerId: text("provider_id"),
     lastError: text("last_error"),
+    failureReason: text("failure_reason"),
+    terminalCause: text("terminal_cause").$type<TerminalCause>(),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -625,6 +631,9 @@ export const whatsappDeliveries = appSchema.table(
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimedBy: text("claimed_by"),
     lastError: text("last_error"),
+    failureReason: text("failure_reason"),
+    failureCode: integer("failure_code"),
+    terminalCause: text("terminal_cause").$type<TerminalCause>(),
     ...timestamps,
   },
   (t) => [
@@ -665,6 +674,8 @@ export const whatsappJobs = appSchema.table(
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimedBy: text("claimed_by"),
     lastError: text("last_error"),
+    failureReason: text("failure_reason"),
+    terminalCause: text("terminal_cause").$type<TerminalCause>(),
     ...timestamps,
   },
   (t) => [
@@ -753,7 +764,9 @@ export const cronRuns = appSchema.table("cron_runs", {
   reminderCount: integer("reminder_count").notNull().default(0),
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
-  endedConversationCount: integer("ended_conversation_count").notNull().default(0),
+  endedConversationCount: integer("ended_conversation_count")
+    .notNull()
+    .default(0),
   result: cronResultEnum("result"),
   errorSummary: text("error_summary"),
 });

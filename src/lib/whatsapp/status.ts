@@ -5,6 +5,8 @@ export type InboundWhatsAppStatus = {
   timestamp: number | null;
   errorCode: string | null;
   errorMessage: string | null;
+  errorSubcode?: number | null;
+  errorDetails?: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,10 +54,18 @@ export function parseInboundWhatsAppStatuses(
 
         let errorCode: string | null = null;
         let errorMessage: string | null = null;
+        let errorSubcode: number | null = null;
+        let errorDetails: string | null = null;
         const errors = status.errors;
         if (Array.isArray(errors)) {
           for (const error of errors) {
             if (!isRecord(error)) continue;
+            errorSubcode = toTimestamp(error.error_subcode);
+            errorDetails =
+              isRecord(error.error_data) &&
+              typeof error.error_data.details === "string"
+                ? error.error_data.details
+                : null;
             errorCode =
               typeof error.code === "string" || typeof error.code === "number"
                 ? String(error.code)
@@ -80,6 +90,8 @@ export function parseInboundWhatsAppStatuses(
           timestamp: toTimestamp(status.timestamp),
           errorCode,
           errorMessage,
+          errorSubcode,
+          errorDetails,
         });
       }
     }

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { emailDeliveries } from "@/db/schema";
 
@@ -25,5 +25,10 @@ export async function recordResendDeliveryEvent(
   await getDb()
     .update(emailDeliveries)
     .set({ state, updatedAt: new Date() })
-    .where(eq(emailDeliveries.providerId, providerId));
+    .where(
+      and(
+        eq(emailDeliveries.providerId, providerId),
+        ne(emailDeliveries.state, "dead"),
+      ),
+    );
 }

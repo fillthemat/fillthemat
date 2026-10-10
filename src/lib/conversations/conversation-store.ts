@@ -232,7 +232,15 @@ export async function endInactiveConversations(
 /** Fail fast by default; WhatsApp can wait. Claims older than ten minutes recover. */
 export async function claimGeneration(
   conversationId: string,
-  { wait = false, now = new Date() }: { wait?: boolean; now?: Date } = {},
+  {
+    wait = false,
+    now = new Date(),
+    sleep = defaultSleep,
+  }: {
+    wait?: boolean;
+    now?: Date;
+    sleep?: (milliseconds: number) => Promise<void>;
+  } = {},
 ): Promise<GenerationLock | undefined> {
   const db = getDb();
   const attempts = wait ? 120 : 1;
@@ -266,7 +274,7 @@ export async function claimGeneration(
         },
       };
     }
-    if (wait) await new Promise((resolve) => setTimeout(resolve, 25));
+    if (wait) await sleep(25);
   }
   return undefined;
 }
@@ -394,3 +402,5 @@ export async function attachConversationContact(
     .returning({ id: conversations.id });
   return conversation?.id;
 }
+
+import { sleep as defaultSleep } from "@/lib/sleep";
