@@ -80,16 +80,10 @@ async function pressButton(waId: string, buttonId: string) {
   await send(buttonReplyPayload({ phoneNumberId, waId, wamid, buttonId }));
 }
 
-// The message in `payload` through the webhook, then the worker the
-// webhook would wake.
+// Delivers `payload` through the webhook, then runs the worker the webhook would wake.
 async function send(payload: unknown) {
-  await receive(payload);
-  await runWhatsAppWorkerOnce(randomUUID());
-}
-
-// The message in `payload` through the webhook; its job is immediately due.
-async function receive(payload: unknown) {
   await POST(post(payload));
+  await runWhatsAppWorkerOnce(randomUUID());
 }
 
 // Whether a reply has been sent to `waId`.
@@ -295,13 +289,15 @@ describe("a WhatsApp worker run with several messages to answer", () => {
     const waIds = ["16505550141", "16505550142", "16505550143"];
     for (const waId of waIds) {
       const wamid = wamidFrom(waId);
-      await receive(
-        textInboundPayload({
-          phoneNumberId,
-          waId,
-          wamid,
-          text: "What can my son try?",
-        }),
+      await POST(
+        post(
+          textInboundPayload({
+            phoneNumberId,
+            waId,
+            wamid,
+            text: "What can my son try?",
+          }),
+        ),
       );
     }
     const slowLangfuse = holdSpanExports();
