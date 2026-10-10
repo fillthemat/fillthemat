@@ -17,6 +17,7 @@ import {
   type RetryFailure,
   retryDecision,
 } from "@/lib/retry-policy";
+import { enqueueJobFallback } from "./job-fallback";
 import type { InboundWhatsAppMessage } from "./parse";
 
 /** A claim is fenced by owner, timestamp and execution count, not just row ID. */
@@ -173,20 +174,24 @@ export async function failJob(
 ): Promise<"retrying" | "dead" | "deferred"> {
   const db = getDb();
   const decision = retryDecision(failure, job.attempts, now);
-  const rows = await db
-    .update(whatsappJobs)
-    .set({
-      state: decision.action === "stop" ? "dead" : "failed",
-      nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
-      lastError: message.slice(0, 500),
-      failureReason: failure.reason,
-      terminalCause: decision.action === "stop" ? decision.cause : null,
-      claimedAt: null,
-      claimedBy: null,
-      updatedAt: now,
-    })
-    .where(ownedClaim(job))
-    .returning();
+  const rows = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(whatsappJobs)
+      .set({
+        state: decision.action === "stop" ? "dead" : "failed",
+        nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
+        lastError: message.slice(0, 500),
+        failureReason: failure.reason,
+        terminalCause: decision.action === "stop" ? decision.cause : null,
+        claimedAt: null,
+        claimedBy: null,
+        updatedAt: now,
+      })
+      .where(ownedClaim(job))
+      .returning();
+    if (rows[0]) await enqueueJobFallback(tx, rows[0], now);
+    return rows;
+  });
   if (rows.length === 0) return "deferred";
   if (decision.action === "stop") {
     logDeadTransition({
@@ -268,7 +273,10 @@ export async function recoverStuckWhatsAppJobs(
         })
         .where(ownedClaim(job))
         .returning();
-      if (row?.state === "dead") dead.push(row);
+      if (row?.state === "dead") {
+        await enqueueJobFallback(tx, row, now);
+        dead.push(row);
+      }
     }
     return { recovered: stale.length, dead };
   });
