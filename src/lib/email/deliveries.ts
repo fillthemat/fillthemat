@@ -37,6 +37,7 @@ import {
   ownerBookingEmail,
   ownerCancellationEmail,
   ownerLeadEmail,
+  ownerWhatsAppConfirmationFailedEmail,
   prospectCancellationEmail,
   prospectConfirmationEmail,
   prospectReminderEmail,
@@ -96,6 +97,12 @@ async function renderDelivery(
     case "owner_cancellation":
       if (!booking) throw new InternalFailure("missing_booking");
       return { ...ownerCancellationEmail(school, booking), attachments: [] };
+    case "owner_whatsapp_confirmation_failed":
+      if (!booking) throw new InternalFailure("missing_booking");
+      return {
+        ...ownerWhatsAppConfirmationFailedEmail(school, booking),
+        attachments: [],
+      };
     case "owner_lead": {
       if (!delivery.leadId) throw new InternalFailure("missing_lead");
       const db = getDb();

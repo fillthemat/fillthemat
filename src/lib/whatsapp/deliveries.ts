@@ -6,7 +6,6 @@ import {
   inArray,
   lt,
   lte,
-  ne,
   notInArray,
   sql,
 } from "drizzle-orm";
@@ -22,6 +21,10 @@ import {
   type RetryFailure,
   retryDecision,
 } from "@/lib/retry-policy";
+import {
+  bookingConfirmationIsStale,
+  onWhatsAppDeliveryDead,
+} from "./confirmation-delivery";
 import {
   type WhatsAppWorkerDependencies,
   whatsappWorkerDependencies,
@@ -49,29 +52,42 @@ async function failDelivery(
   message: string,
   now: Date,
 ): Promise<WhatsAppDeliveryResult> {
-  const decision = retryDecision(failure, delivery.attempts, now);
-  const reason = failure.kind === "internal" ? failure.reason : failure.kind;
+  const stale = await bookingConfirmationIsStale(delivery, now);
+  const reason = stale
+    ? "booking_confirmation_stale"
+    : failure.kind === "internal"
+      ? failure.reason
+      : failure.kind;
+  const decision = retryDecision(
+    stale ? { kind: "internal", reason } : failure,
+    delivery.attempts,
+    now,
+  );
   const code =
     failure.kind === "whatsapp_error"
       ? failure.code
       : failure.kind === "internal" && failure.reason === delivery.failureReason
         ? delivery.failureCode
         : null;
-  const [row] = await getDb()
-    .update(whatsappDeliveries)
-    .set({
-      state: decision.action === "stop" ? "dead" : "failed",
-      nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
-      lastError: message.slice(0, 500),
-      failureReason: reason,
-      failureCode: code,
-      terminalCause: decision.action === "stop" ? decision.cause : null,
-      claimedAt: null,
-      claimedBy: null,
-      updatedAt: now,
-    })
-    .where(ownedClaim(delivery))
-    .returning();
+  const row = await getDb().transaction(async (tx) => {
+    const [row] = await tx
+      .update(whatsappDeliveries)
+      .set({
+        state: decision.action === "stop" ? "dead" : "failed",
+        nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
+        lastError: message.slice(0, 500),
+        failureReason: reason,
+        failureCode: code,
+        terminalCause: decision.action === "stop" ? decision.cause : null,
+        claimedAt: null,
+        claimedBy: null,
+        updatedAt: now,
+      })
+      .where(ownedClaim(delivery))
+      .returning();
+    if (row?.state === "dead") await onWhatsAppDeliveryDead(tx, row, now);
+    return row;
+  });
   if (!row) return "deferred";
   if (decision.action === "stop")
     logDeadTransition({
@@ -278,6 +294,14 @@ export async function sendWhatsAppDelivery(
     !delivery.claimedBy
   )
     return "deferred";
+  if (await bookingConfirmationIsStale(delivery, dependencies.now())) {
+    return failDelivery(
+      delivery,
+      { kind: "internal", reason: "booking_confirmation_stale" },
+      "booking_confirmation_stale",
+      dependencies.now(),
+    );
+  }
   if (delivery.attempts >= MAX_EXECUTIONS) {
     return failDelivery(
       delivery,
@@ -330,6 +354,10 @@ export async function sendWhatsAppDelivery(
     .update(whatsappDeliveries)
     .set({
       attempts: sql`${whatsappDeliveries.attempts} + 1`,
+      // Starting a new execution invalidates receipts for the prior send,
+      // even if this request fails synchronously and gets no new provider ID.
+      providerId: null,
+      statusAt: null,
       updatedAt: dependencies.now(),
     })
     .where(
@@ -383,6 +411,7 @@ export async function sendWhatsAppDelivery(
       .set({
         state: "sent",
         providerId,
+        statusAt: null,
         sentAt: dependencies.now(),
         lastError: null,
         failureReason: null,
@@ -496,69 +525,137 @@ const STATE_RANK: Record<string, number> = {
  * Apply Meta delivery-status callbacks by `provider_id` (wamid), guarded by the
  * status timestamp so an out-of-order callback cannot regress a delivery.
  */
-export async function applyWhatsAppStatuses(statuses: InboundWhatsAppStatus[]) {
+export async function applyWhatsAppStatuses(
+  statuses: InboundWhatsAppStatus[],
+  overrides: Pick<Partial<WhatsAppWorkerDependencies>, "now"> = {},
+) {
   const db = getDb();
+  const clock = overrides.now ?? (() => new Date());
   for (const status of statuses) {
-    const [delivery] = await db
-      .select()
-      .from(whatsappDeliveries)
-      .where(eq(whatsappDeliveries.providerId, status.wamid))
-      .limit(1);
-    if (!delivery || delivery.state === "dead") continue;
+    // Serialize the current provider attempt with claims and other callbacks.
+    // No outbound network calls take place while holding this lock.
+    const transitioned = await db.transaction(async (tx) => {
+      const [delivery] = await tx
+        .select()
+        .from(whatsappDeliveries)
+        .where(eq(whatsappDeliveries.providerId, status.wamid))
+        .for("update")
+        .limit(1);
+      if (!delivery || delivery.state === "dead") return;
 
-    const statusAt =
-      status.timestamp != null ? new Date(status.timestamp * 1000) : new Date();
-    if (
-      delivery.statusAt &&
-      statusAt.getTime() <= delivery.statusAt.getTime()
-    ) {
-      continue;
-    }
+      const now = clock();
+      const statusAt =
+        status.timestamp != null
+          ? new Date(status.timestamp * 1000)
+          : (delivery.statusAt ?? delivery.sentAt ?? now);
+      if (!Number.isFinite(statusAt.getTime())) return;
+      if (
+        status.timestamp != null &&
+        delivery.statusAt &&
+        statusAt <= delivery.statusAt
+      )
+        return;
 
-    if (status.status === "failed") {
-      if (delivery.state === "read") continue;
-      const lastError = [
-        status.errorCode != null ? `code=${status.errorCode}` : null,
-        status.errorMessage,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .slice(0, 500);
-      await db
+      if (status.status === "failed") {
+        // One failure decision per accepted send, including timestamp-less
+        // replays. Positive delivery evidence is never eligible for resending.
+        if (delivery.state !== "sent") return;
+        const parsedCode = status.errorCode?.trim()
+          ? Number(status.errorCode)
+          : Number.NaN;
+        const code = Number.isInteger(parsedCode) ? parsedCode : null;
+        const decision = retryDecision(
+          {
+            ok: false,
+            kind: "whatsapp_error",
+            code,
+            subcode: status.errorSubcode ?? null,
+            details: status.errorDetails ?? null,
+            status: 0,
+            message: status.errorMessage ?? "delivery_failed",
+          },
+          delivery.attempts,
+          now,
+        );
+        const [row] = await tx
+          .update(whatsappDeliveries)
+          .set({
+            state: decision.action === "stop" ? "dead" : "failed",
+            nextAttemptAt:
+              decision.action === "retry" ? decision.at : undefined,
+            statusAt,
+            lastError:
+              [
+                status.errorCode != null ? `code=${status.errorCode}` : null,
+                status.errorMessage,
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .slice(0, 500) || "delivery_failed",
+            failureReason: "whatsapp_error",
+            failureCode: code,
+            terminalCause: decision.action === "stop" ? decision.cause : null,
+            claimedAt: null,
+            claimedBy: null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(whatsappDeliveries.id, delivery.id),
+              eq(whatsappDeliveries.providerId, status.wamid),
+              eq(whatsappDeliveries.state, delivery.state),
+              eq(whatsappDeliveries.attempts, delivery.attempts),
+            ),
+          )
+          .returning();
+        if (row?.state === "dead") await onWhatsAppDeliveryDead(tx, row, now);
+        return row;
+      }
+
+      const currentRank = STATE_RANK[delivery.state] ?? 0;
+      const nextRank = STATE_RANK[status.status] ?? 0;
+      if (nextRank < currentRank) return;
+      // A later sent receipt is not proof a failed send was delivered. Only
+      // delivered/read may cancel its scheduled retry for this same attempt.
+      if (
+        ["pending", "claimed", "failed"].includes(delivery.state) &&
+        status.status === "sent"
+      )
+        return;
+      await tx
         .update(whatsappDeliveries)
         .set({
-          state: "failed",
+          state: status.status,
           statusAt,
-          lastError: lastError || "delivery_failed",
-          updatedAt: new Date(),
+          lastError: null,
+          failureReason: null,
+          failureCode: null,
+          terminalCause: null,
+          claimedAt: null,
+          claimedBy: null,
+          updatedAt: now,
         })
         .where(
           and(
             eq(whatsappDeliveries.id, delivery.id),
-            ne(whatsappDeliveries.state, "dead"),
+            eq(whatsappDeliveries.providerId, status.wamid),
+            eq(whatsappDeliveries.state, delivery.state),
+            eq(whatsappDeliveries.attempts, delivery.attempts),
           ),
         );
-      continue;
-    }
-
-    const currentRank = STATE_RANK[delivery.state] ?? 0;
-    const nextRank = STATE_RANK[status.status] ?? 0;
-    if (nextRank <= currentRank) continue;
-
-    await db
-      .update(whatsappDeliveries)
-      .set({
-        state: status.status,
-        statusAt,
-        lastError: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(whatsappDeliveries.id, delivery.id),
-          ne(whatsappDeliveries.state, "dead"),
-        ),
-      );
+    });
+    // Only an actual terminal transition may log or enqueue a notification.
+    if (transitioned?.state === "dead")
+      logDeadTransition({
+        queue: "whatsapp_delivery",
+        id: transitioned.id,
+        schoolId: transitioned.schoolId,
+        reason: transitioned.failureReason ?? "whatsapp_error",
+        code: transitioned.failureCode,
+        terminalCause: transitioned.terminalCause ?? "attempts_exhausted",
+        executions: transitioned.attempts,
+        runId: "status_callback",
+      });
   }
 }
 
@@ -589,7 +686,9 @@ export async function recoverStuckWhatsAppDeliveries(
       .for("update", { skipLocked: true });
     const dead: WhatsAppDelivery[] = [];
     for (const delivery of stale) {
-      const reason = delivery.failureReason ?? "worker_crashed";
+      const reason = (await bookingConfirmationIsStale(delivery, now, tx))
+        ? "booking_confirmation_stale"
+        : (delivery.failureReason ?? "worker_crashed");
       const decision = retryDecision(
         { kind: "internal", reason },
         delivery.attempts,
@@ -612,7 +711,10 @@ export async function recoverStuckWhatsAppDeliveries(
         })
         .where(ownedClaim(delivery))
         .returning();
-      if (row?.state === "dead") dead.push(row);
+      if (row?.state === "dead") {
+        await onWhatsAppDeliveryDead(tx, row, now);
+        dead.push(row);
+      }
     }
     return { recovered: stale.length, dead };
   });

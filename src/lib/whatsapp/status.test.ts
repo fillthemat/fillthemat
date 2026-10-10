@@ -5,6 +5,40 @@ import textInbound from "@/test/fixtures/whatsapp/text-inbound.json";
 import { parseInboundWhatsAppStatuses } from "./status";
 
 describe("parseInboundWhatsAppStatuses", () => {
+  it("preserves structured failure details and subcode for the shared policy", () => {
+    const parsed = parseInboundWhatsAppStatuses({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                statuses: [
+                  {
+                    id: "wamid.details",
+                    status: "failed",
+                    timestamp: "1",
+                    errors: [
+                      {
+                        code: 1,
+                        error_subcode: 100,
+                        message: "Send failed",
+                        error_data: { details: "Invalid parameter" },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(parsed[0]).toMatchObject({
+      errorCode: "1",
+      errorSubcode: 100,
+      errorDetails: "Invalid parameter",
+    });
+  });
   it("extracts a delivered status", () => {
     const parsed = parseInboundWhatsAppStatuses(statusDelivered);
     expect(parsed).toHaveLength(1);
