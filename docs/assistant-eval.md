@@ -109,8 +109,9 @@ evaluator**, implemented as an LLM-as-judge through Vercel AI Gateway. Its binar
 `reply-rules` score and explanation are recorded in Langfuse alongside the
 deterministic tool/intent scores. It is not a hosted auto-evaluation rule and
 does not require storing the short-lived Vercel OIDC token in a Langfuse LLM
-connection. Judge calls are traced under the experiment. No substring matching
-or second model judgment is used for tool calls or intents.
+connection. Judge calls have a separate `judge-assistant-reply` evaluator trace
+with case/run metadata; their scores attach to the experiment case. No substring
+matching or second model judgment is used for tool calls or intents.
 
 The run refuses changed/missing hosted cases rather than silently seeding or
 changing expectations. To change cases, create a new versioned dataset name and

@@ -52,6 +52,17 @@ it("rejects runs with different models, cases or judge configurations", () => {
     ).toThrow(field);
   }
 });
+it("does not allow duplicated candidate cases to hide a failing result", () => {
+  expect(() =>
+    compareRuns(baseline, {
+      ...baseline,
+      cases: [
+        baseline.cases[0],
+        { ...baseline.cases[0], scores: [{ name: "reply-rules", value: 0 }] },
+      ],
+    }),
+  ).toThrow("Duplicate");
+});
 it("cannot use a baseline with missing metrics, wrong or repeated case IDs as a release gate", () => {
   const required = [
     { caseId: "faq", scores: ["reply-rules", "bookingIntent", "leadRequest"] },

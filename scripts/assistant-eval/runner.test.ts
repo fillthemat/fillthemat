@@ -41,4 +41,84 @@ it("scores tool calls and public reply intents through the real assistant withou
   expect(result.reply.bookingIntent).toBeNull();
   expect(result.reply.leadRequest).toBeNull();
   expect(result.scores.map((s) => s.value)).toEqual([1, 1, 1, 1, 1]);
+
+  const contactModel = new MockLanguageModelV4({
+    doGenerate: async (params) => {
+      if (params.prompt.at(-1)?.role === "tool")
+        return {
+          content: [
+            { type: "text", text: "Please confirm your contact request." },
+          ],
+          finishReason: { unified: "stop", raw: undefined },
+          usage,
+          warnings: [],
+        };
+      const toolName = params.tools?.some(
+        (tool) => tool.name === "request_contact",
+      )
+        ? "request_contact"
+        : "capture_lead";
+      return {
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "contact",
+            toolName,
+            input:
+              '{"participantName":"Sam","participantAge":5,"statedNeed":"Contact me about a trial"}',
+          },
+        ],
+        finishReason: { unified: "tool-calls", raw: undefined },
+        usage,
+        warnings: [],
+      };
+    },
+  });
+  const contactCase = cases.find((row) => row.id === "explicit-contact");
+  if (!contactCase) throw new Error("Missing contact case");
+  const contact = await runCase(contactCase, contactModel);
+  expect(contact.reply.leadRequest).toEqual({
+    participantName: "Sam",
+    participantAge: 5,
+    trialOfferingId: null,
+    statedNeed: "Contact me about a trial",
+  });
+  expect(contact.scores.map((s) => s.value)).toEqual([1, 1, 1, 1]);
+
+  const bookingCase = cases.find((row) => row.id === "happy-booking");
+  if (!bookingCase?.expectedOutput.bookingIntent)
+    throw new Error("Missing booking case");
+  const bookingModel = new MockLanguageModelV4({
+    doGenerate: [
+      {
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "booking",
+            toolName: "prepare_booking",
+            input: JSON.stringify({
+              offeringId: "00000000-0000-4000-8000-000000000002",
+              slotId: bookingCase.expectedOutput.bookingIntent.slotId,
+              participantName: "Sam",
+              participantAge: 5,
+            }),
+          },
+        ],
+        finishReason: { unified: "tool-calls", raw: undefined },
+        usage,
+        warnings: [],
+      },
+      {
+        content: [{ type: "text", text: "Please confirm the trial booking." }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage,
+        warnings: [],
+      },
+    ],
+  });
+  const booking = await runCase(bookingCase, bookingModel);
+  expect(booking.reply.bookingIntent?.participantName).toBe("Sam");
+  expect(booking.reply.bookingIntent?.participantAge).toBe(5);
+  expect(booking.reply.leadRequest).toBeNull();
+  expect(booking.scores.map((s) => s.value)).toEqual([1, 1, 1, 1]);
 });

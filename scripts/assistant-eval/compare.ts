@@ -52,6 +52,13 @@ export function compareRuns(
   baseline: RunReport,
   candidate: RunReport,
 ): Regression[] {
+  for (const report of [baseline, candidate]) {
+    if (
+      new Set(report.cases.map((row) => row.caseId)).size !==
+      report.cases.length
+    )
+      throw new Error("Duplicate case ID");
+  }
   for (const field of [
     "model",
     "judgeModel",

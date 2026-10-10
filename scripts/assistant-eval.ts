@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { LangfuseClient } from "@langfuse/client";
+import { startActiveObservation } from "@langfuse/tracing";
 import { gateway, wrapLanguageModel } from "ai";
 import { z } from "zod";
 import { registerTracing } from "../src/lib/tracing/register";
@@ -195,12 +196,28 @@ async function run() {
         async ({ output, metadata }) => {
           const result = output as CaseResult;
           const testCase = caseFor(metadata);
-          const judged = await judgeReply(
-            testCase,
-            result.reply.text,
-            pacedModel(judgeModel),
+          return startActiveObservation(
+            "judge-assistant-reply",
+            async (span) => {
+              span.update({
+                input: result.reply.text,
+                metadata: {
+                  caseId: testCase.id,
+                  runName,
+                  judgeHash,
+                  judgeModel,
+                },
+              });
+              const judged = await judgeReply(
+                testCase,
+                result.reply.text,
+                pacedModel(judgeModel),
+              );
+              span.update({ output: judged });
+              return judged;
+            },
+            { asType: "evaluator" },
           );
-          return judged;
         },
       ],
     });
@@ -220,7 +237,7 @@ async function run() {
         })),
       })),
     };
-    await mkdir(dirname(resolve(outputPath)), { recursive: true });
+    await mkdir(dirname(resolve(outputPath)), { recursive: true, mode: 0o700 });
     await writeFile(
       outputPath,
       JSON.stringify(
@@ -238,6 +255,7 @@ async function run() {
         null,
         2,
       ),
+      { mode: 0o600 },
     );
     const incomplete =
       report.cases.length !== cases.length ||
