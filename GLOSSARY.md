@@ -52,6 +52,7 @@ The recurring schedule and capacity for a trial offering.
 
 **Trial Occurrence**:
 A specific dated instance of a trial window, with its own booking capacity.
+_Avoid_: Slot, timeslot
 
 **FAQ**:
 A question a school has answered in advance for people interested in a trial.
