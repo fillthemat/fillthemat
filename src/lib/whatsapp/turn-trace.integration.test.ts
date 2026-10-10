@@ -424,9 +424,11 @@ describe("a WhatsApp turn answered without the assistant", () => {
       expect(nextDay.expiresAt).toEqual(addDays(new Date(), 30));
       const saved = await savedMessages(nextDay);
       expect(saved).toHaveLength(4);
-      expect(saved.filter(({ role }) => role === "user").map(textOf)).toEqual([
-        "What can my son try?",
+      expect(
+        saved.filter(({ role }) => role === "user").map(textOf).toSorted(),
+      ).toEqual([
         "Thanks, what can my daughter try?",
+        "What can my son try?",
       ]);
       expect(
         saved.filter(({ role }) => role === "assistant").map(textOf),

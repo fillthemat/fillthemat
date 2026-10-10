@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
 import {
@@ -17,6 +17,7 @@ import {
   WHATSAPP_MAX_BODY_BYTES,
   WHATSAPP_STUB_VERIFY_TOKEN,
 } from "@/lib/whatsapp/config";
+import { drainDueWhatsAppDeliveries } from "@/lib/whatsapp/deliveries";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import {
   authSql,
@@ -69,6 +70,32 @@ async function deliveryRows() {
     .where(eq(whatsappDeliveries.schoolId, schoolId));
 }
 
+async function runWorker() {
+  // Make this fixture's jobs due explicitly: the shared DB clock can run
+  // slightly ahead of Node, so a default now() is not always due immediately.
+  await db
+    .update(whatsappJobs)
+    .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+    .where(
+      and(
+        eq(whatsappJobs.phoneNumberId, phoneNumberId),
+        eq(whatsappJobs.state, "pending"),
+      ),
+    );
+  const runId = randomUUID();
+  await runWhatsAppWorkerOnce(runId);
+  await db
+    .update(whatsappDeliveries)
+    .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+    .where(
+      and(
+        eq(whatsappDeliveries.schoolId, schoolId),
+        eq(whatsappDeliveries.state, "pending"),
+      ),
+    );
+  await drainDueWhatsAppDeliveries(runId);
+}
+
 async function conversationForWa(id: string) {
   const rows = await db
     .select()
@@ -108,6 +135,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db
+    .delete(whatsappJobs)
+    .where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
   await db.delete(users).where(eq(users.id, ownerId));
   await deleteAuthUser(sql, ownerId);
   await sql.end({ timeout: 5 });
@@ -148,7 +178,7 @@ describe("POST /api/webhooks/whatsapp (enqueue-then-ack)", () => {
 
 describe("worker + status flow", () => {
   it("runs the agent to completion and advances delivery pending→claimed→sent", async () => {
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
 
     const rows = await messageRows();
     const userRows = rows.filter((row) => row.role === "user");
@@ -212,7 +242,7 @@ describe("worker + status flow", () => {
     const before = await messageRows();
     await POST(post(inboundPayload()));
     expect(await jobCount()).toBe(1);
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
     const after = await messageRows();
     expect(after.length).toBe(before.length);
   });
@@ -227,7 +257,8 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     return db
       .select({ id: messages.id, role: messages.role })
       .from(messages)
-      .where(eq(messages.conversationId, conversationId));
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(asc(messages.id));
   }
 
   it("routes a second distinct message from the same wa_id into one conversation", async () => {
@@ -241,7 +272,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
         .status,
     ).toBe(200);
 
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
 
     const conversation = requireRow(
       await conversationForWa(id),
@@ -259,7 +290,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
       (await POST(post(inboundFor(id, `wamid.inactive-a.${suffix}`, "Hello"))))
         .status,
     ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
     const original = requireRow(await conversationForWa(id), "conversation");
     const originalMessages = await conversationMessages(original.id);
     await db
@@ -273,7 +304,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
         )
       ).status,
     ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
     const current = requireRow(
       await conversationForWa(id),
       "current conversation",
@@ -295,7 +326,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     expect(
       (await POST(post(inboundFor(id, `wamid.lock-a.${suffix}`)))).status,
     ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
 
     const conversation = requireRow(
       await conversationForWa(id),
@@ -312,7 +343,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     expect(
       (await POST(post(inboundFor(id, `wamid.lock-b.${suffix}`)))).status,
     ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
 
     const jobs = await db
       .select()
@@ -337,7 +368,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
       .update(whatsappJobs)
       .set({ nextAttemptAt: new Date(Date.now() - 1000) })
       .where(eq(whatsappJobs.id, deferred.id));
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
 
     const after = await conversationMessages(conversation.id);
     expect(after).toHaveLength(before.length + 2);
@@ -346,48 +377,119 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     ).toBeNull();
   });
 
-  it("caps a conversation at MAX_CHAT_MESSAGES_PER_CONVERSATION", async () => {
-    const id = "16505553333";
-    expect(
-      (await POST(post(inboundFor(id, `wamid.cap-seed.${suffix}`)))).status,
-    ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+  it.each(["question", "confirmation"] as const)(
+    "ends a conversation at its message limit on a %s with an unsaved notice, then answers the next message in a new conversation",
+    async (kind) => {
+      const id = kind === "question" ? "16505553333" : "16505553334";
+      const capSuffix = `${suffix}-${kind}`;
+      expect(
+        (await POST(post(inboundFor(id, `wamid.cap-seed.${capSuffix}`))))
+          .status,
+      ).toBe(200);
+      await runWorker();
 
-    const conversation = requireRow(
-      await conversationForWa(id),
-      "conversation",
-    );
-    const existing = await conversationMessages(conversation.id);
-    const fill = MAX_CHAT_MESSAGES_PER_CONVERSATION - existing.length;
-
-    if (fill > 0) {
-      await db.insert(messages).values(
-        Array.from({ length: fill }, (_, index) => ({
-          conversationId: conversation.id,
-          messageId: `wamid.cap-fill-${index}.${suffix}`,
-          role: "user" as const,
-          parts: [{ type: "text", text: `fill ${index}` }],
-          completion: "complete" as const,
-        })),
+      const conversation = requireRow(
+        await conversationForWa(id),
+        "conversation",
       );
-    }
+      const existing = await conversationMessages(conversation.id);
+      const fill = MAX_CHAT_MESSAGES_PER_CONVERSATION - existing.length;
 
-    expect(
-      (await POST(post(inboundFor(id, `wamid.cap-over.${suffix}`)))).status,
-    ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+      if (fill > 0) {
+        await db.insert(messages).values(
+          Array.from({ length: fill }, (_, index) => ({
+            conversationId: conversation.id,
+            messageId: `wamid.cap-fill-${index}.${capSuffix}`,
+            role: "user" as const,
+            parts: [{ type: "text", text: `fill ${index}` }],
+            completion: "complete" as const,
+          })),
+        );
+      }
 
-    expect(await conversationMessages(conversation.id)).toHaveLength(
-      MAX_CHAT_MESSAGES_PER_CONVERSATION,
-    );
-  });
+      const before = await conversationMessages(conversation.id);
+      expect(
+        (
+          await POST(
+            post(
+              inboundFor(
+                id,
+                `wamid.cap-over.${capSuffix}`,
+                kind === "confirmation"
+                  ? `confirm_booking:${randomUUID()}`
+                  : "Hello?",
+              ),
+            ),
+          )
+        ).status,
+      ).toBe(200);
+      await runWorker();
+
+      expect(await conversationMessages(conversation.id)).toEqual(before);
+      const [ended] = await db
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, conversation.id));
+      expect(ended?.endedAt).toBeInstanceOf(Date);
+      expect(ended?.endReason).toBe("message_limit");
+      expect(ended?.generatingAt).toBeNull();
+      expect(await conversationForWa(id)).toBeUndefined();
+      const [notice] = await db
+        .select()
+        .from(whatsappDeliveries)
+        .where(
+          eq(
+            whatsappDeliveries.providerIdempotencyKey,
+            `wa-notice/${id}/wamid.cap-over.${capSuffix}`,
+          ),
+        );
+      expect(notice?.body).toBe(
+        "This conversation has reached its message limit. Your next message starts a fresh conversation.",
+      );
+      expect(notice?.state).toBe("sent");
+
+      expect(
+        (
+          await POST(
+            post(inboundFor(id, `wamid.cap-next.${capSuffix}`, "Hello again")),
+          )
+        ).status,
+      ).toBe(200);
+      await runWorker();
+      const current = requireRow(
+        await conversationForWa(id),
+        "new conversation",
+      );
+      expect(current.id).not.toBe(conversation.id);
+      expect(current.generatingAt).toBeNull();
+      const currentMessages = await conversationMessages(current.id);
+      expect(
+        currentMessages.filter(({ role }) => role === "user"),
+      ).toHaveLength(1);
+      expect(
+        currentMessages.filter(({ role }) => role === "assistant"),
+      ).toHaveLength(1);
+      expect(await conversationMessages(conversation.id)).toEqual(before);
+      const deliveries = await db
+        .select()
+        .from(whatsappDeliveries)
+        .where(
+          and(
+            eq(whatsappDeliveries.schoolId, schoolId),
+            eq(whatsappDeliveries.recipientWaId, id),
+          ),
+        );
+      expect(deliveries).toHaveLength(3);
+      expect(deliveries.every(({ state }) => state === "sent")).toBe(true);
+    },
+  );
 
   it("answers the next inbound message after an abandoned generation lock", async () => {
     const id = "16505554444";
     expect(
       (await POST(post(inboundFor(id, `wamid.abandoned-a.${suffix}`)))).status,
     ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
     const conversation = requireRow(
       await conversationForWa(id),
       "conversation",
@@ -403,7 +505,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     expect(
       (await POST(post(inboundFor(id, wamid, "Can I try a class?")))).status,
     ).toBe(200);
-    await runWhatsAppWorkerOnce(randomUUID());
+    await runWorker();
 
     const after = await conversationMessages(conversation.id);
     expect(after.filter((row) => row.role === "user")).toHaveLength(

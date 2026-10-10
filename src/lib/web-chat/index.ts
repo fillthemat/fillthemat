@@ -5,6 +5,7 @@ import { streamedReply } from "@/lib/ai/assistant";
 import {
   appendMessage,
   claimGeneration,
+  endConversation,
   findConversation,
   findOrCreateConversation,
   loadTranscript,
@@ -88,6 +89,7 @@ export async function startWebTurn({
   try {
     const history = await loadTranscript(conversation.id);
     if (history.length >= MAX_CHAT_MESSAGES_PER_CONVERSATION) {
+      await endConversation(conversation.id, "message_limit", now);
       return { ok: false, reason: "message_limit" };
     }
     if (history.some(({ id }) => id === message.id)) {

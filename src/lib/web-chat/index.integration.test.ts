@@ -692,7 +692,7 @@ describe("a rejected web chat message", () => {
     expect(await exportedTraces()).toEqual([]);
   });
 
-  it("refuses once the conversation is at its message limit, saves nothing, releases the lock, and is not traced", async () => {
+  it("ends the conversation at its message limit, refuses without saving or tracing, and answers the next message in a new conversation", async () => {
     const messageIds = Array.from(
       { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
       (_, index) => `message-${index + 1}`,
@@ -707,8 +707,37 @@ describe("a rejected web chat message", () => {
     expect(await savedMessageIds(conversationId)).toEqual(
       messageIds.toSorted(),
     );
-    expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
+    const [ended] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
+    expect(ended?.endedAt).toBeInstanceOf(Date);
+    expect(ended?.endReason).toBe("message_limit");
+    expect(ended?.generatingAt).toBeNull();
     expect(await exportedTraces()).toEqual([]);
+    expect(
+      await loadWebTranscript({ slug, preview: false, resumeToken }),
+    ).toEqual({ ok: true, messages: [] });
+
+    await (
+      await sendMessage(resumeToken, "fresh-question", "Hello again")
+    ).text();
+    const current = await conversationFor(resumeToken);
+    expect(current.id).not.toBe(conversationId);
+    expect(current.generatingAt).toBeNull();
+    expect(await savedMessageIds(current.id)).toContain("fresh-question");
+    expect(await savedMessages(current.id)).toHaveLength(2);
+    expect(await savedMessageIds(conversationId)).toEqual(
+      messageIds.toSorted(),
+    );
+    const transcript = await loadWebTranscript({
+      slug,
+      preview: false,
+      resumeToken,
+    });
+    if (!transcript.ok) throw new Error(transcript.reason);
+    expect(transcript.messages).toHaveLength(2);
+    expect(transcript.messages.map(({ id }) => id)).toContain("fresh-question");
   });
 
   it("answers in a new conversation after inactivity and keeps the ended conversation's transcript", async () => {
