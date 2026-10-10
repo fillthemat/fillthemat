@@ -157,3 +157,16 @@ parts. The model replied rather than erroring, but declined the requested recap;
 this probe establishes replay compatibility, not semantic reply quality (the
 fixed eval gate checks the latter). Private report: `issue-99-replay.json` in the
 session's OpenCode temporary directory.
+
+**#99 eval gate:** same assistant/judge model `google/gemini-2.5-flash`, candidate
+paced at `--interval-ms 40000`. Complete 12-case baseline experiment
+`spec-92-baseline-e76e0cc-paced-20261009` (`1cdaf02e-bb96-4d19-b337-46cdf7bb5fe6`)
+compared with `spec-92-issue-99-glossary-0a98541-20261009`
+(`8b6b1a60-d2ea-4564-b5a8-0fabc97e76f0`): **compare exit 0, no per-case
+regressions**. Private reports are `spec-92-baseline.json` and
+`issue-99-candidate.json` in the same OpenCode temporary directory. Every metric
+passed for ten cases; `explicit-contact` and `chosen-occurrence-missing-name`
+retain their baseline `reply-rules` failures (premature contact promise and not
+asking the participant's name). `no-open-occurrences` improved from a failing
+reply rule to passing. No prompt/description changes were made to fix existing
+baseline failures; those belong to the separate prompt redesign (#98).

@@ -95,7 +95,7 @@ Langfuse session: conversation_id
       model step 1 (generation)
       list_trial_offerings (tool, linked by toolCallId/step index)
       model step 2 (generation)
-      list_trial_slots (tool, if actually invoked)
+      list_trial_occurrences (tool, if actually invoked)
       model step 3 (generation)
     transcript.persist
     turn completion / stream outcome
@@ -195,7 +195,7 @@ Use injectable tracing/export seams and scripted model responses; ordinary CI mu
 | Scenario | Required evidence |
 | --- | --- |
 | Three-turn happy path | One session, three accepted-turn traces, canonical message IDs, correctly ordered generations and tools |
-| Promises lookup but stops | Technically completed trace with no `list_trial_slots` invocation; annotation remains separate |
+| Promises lookup but stops | Technically completed trace with no `list_trial_occurrences` invocation; annotation remains separate |
 | User prompts recovery | New turn in the same session; actual slot tool input/output visible |
 | Tool error / invalid arguments | Failed tool or validation evidence with safe error and terminal outcome, not silent success |
 | Model error after text begins | Partial output plus failed stream/generation outcome; UI reports failure |
