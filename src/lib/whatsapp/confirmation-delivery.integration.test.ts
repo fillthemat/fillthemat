@@ -24,7 +24,11 @@ import type { EmailMessage, EmailSendOutcome } from "@/lib/email/dependencies";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import type { WhatsAppSendOutcome } from "./client";
-import { applyWhatsAppStatuses, enqueueWhatsAppDelivery } from "./deliveries";
+import {
+  applyWhatsAppStatuses,
+  drainDueWhatsAppDeliveries,
+  enqueueWhatsAppDelivery,
+} from "./deliveries";
 import { runWhatsAppWorkerOnce } from "./worker";
 
 loadLocalEnv();
@@ -242,7 +246,8 @@ describe("booking confirmation delivery through the worker", () => {
       }),
     );
     for (let execution = 1; execution <= 5; execution++) {
-      await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+      // Observe each individual failure before the in-run loop can retry it.
+      await drainDueWhatsAppDeliveries(randomUUID(), 25, dependencies(send));
       const row = await stored(id);
       expect(row.attempts).toBe(execution);
       expect(row.state).toBe(execution < 5 ? "failed" : "dead");

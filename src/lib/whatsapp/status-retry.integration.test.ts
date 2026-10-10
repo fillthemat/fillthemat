@@ -17,11 +17,11 @@ import type { WhatsAppSendOutcome } from "./client";
 import {
   applyWhatsAppStatuses,
   claimDueWhatsAppDeliveries,
+  drainDueWhatsAppDeliveries,
   enqueueWhatsAppDelivery,
   sendWhatsAppDelivery,
 } from "./deliveries";
 import type { InboundWhatsAppStatus } from "./status";
-import { runWhatsAppWorkerOnce } from "./worker";
 
 loadLocalEnv();
 const db = getDb();
@@ -96,7 +96,15 @@ async function delivery(id: string) {
   return row;
 }
 async function run() {
-  return runWhatsAppWorkerOnce(randomUUID(), dependencies);
+  // Callback assertions observe one claim batch; in-run timing is covered by
+  // the worker suite rather than advancing beyond the callback's due gate here.
+  return {
+    deliveries: await drainDueWhatsAppDeliveries(
+      randomUUID(),
+      25,
+      dependencies,
+    ),
+  };
 }
 function status(
   wamid: string | null,

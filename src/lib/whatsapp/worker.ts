@@ -7,6 +7,7 @@ import {
   schools,
   type WhatsAppBookingIntent,
   type WhatsAppJob,
+  whatsappDeliveries,
 } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
 import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
@@ -565,6 +566,34 @@ export async function drainWhatsAppJobs(
     }
     const result = await processWhatsAppJob(job, runId, dependencies);
     counts[result] += 1;
+    if (
+      opts.retryOnly &&
+      result === "dead" &&
+      (!opts.deadline || dependencies.now() < opts.deadline)
+    ) {
+      // Exhaustion can enqueue an apology after the initial fresh sweep. Send
+      // only this job's side effect inline, never reopen the global fresh lane.
+      const fallback = await getDb()
+        .select({ id: whatsappDeliveries.id })
+        .from(whatsappDeliveries)
+        .where(
+          eq(
+            whatsappDeliveries.providerIdempotencyKey,
+            `job-fallback/${job.id}`,
+          ),
+        )
+        .limit(1);
+      if (
+        fallback.length &&
+        (!opts.deadline || dependencies.now() < opts.deadline)
+      ) {
+        await attemptWhatsAppDeliveriesNow(
+          fallback.map((row) => row.id),
+          runId,
+          dependencies,
+        );
+      }
+    }
   }
   return counts;
 }

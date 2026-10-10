@@ -236,21 +236,21 @@ describe("prospect apology after WhatsApp job exhaustion", () => {
       sent.push(input);
       return { ok: false, kind: "network_error", message: "temporary outage" };
     };
-    for (let execution = 1; execution <= 5; execution++) {
-      const result = await runWhatsAppWorkerOnce(randomUUID(), {
-        now: () => clock,
-        transport,
-      });
-      const rows = await deliveries();
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        attempts: execution,
-        state: execution === 5 ? "dead" : "failed",
-        terminalCause: execution === 5 ? "attempts_exhausted" : null,
-      });
-      expect(result.deliveries.dead).toBe(execution === 5 ? 1 : 0);
-      clock = rows[0].nextAttemptAt;
-    }
+    const result = await runWhatsAppWorkerOnce(randomUUID(), {
+      now: () => clock,
+      sleep: async (milliseconds) => {
+        clock = new Date(clock.getTime() + milliseconds);
+      },
+      transport,
+    });
+    const rows = await deliveries();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      attempts: 5,
+      state: "dead",
+      terminalCause: "attempts_exhausted",
+    });
+    expect(result.deliveries.dead).toBe(1);
     await runWhatsAppWorkerOnce(randomUUID(), { now: () => clock, transport });
     expect(sent).toHaveLength(5);
     expect(await deliveries()).toHaveLength(1);
@@ -361,21 +361,20 @@ describe("prospect apology after WhatsApp job exhaustion", () => {
         statement: "raise exception 'temporary storage outage'",
       },
       async () => {
-        for (let execution = 1; execution <= 5; execution++) {
-          const result = await runWhatsAppWorkerOnce(randomUUID(), {
-            now: () => clock,
-            transport,
-          });
-          const [row] = await db
-            .select()
-            .from(whatsappJobs)
-            .where(eq(whatsappJobs.id, job.id));
-          expect(row.attempts).toBe(execution);
-          expect(row.state).toBe(execution === 5 ? "dead" : "failed");
-          expect(result.jobs.dead).toBe(execution === 5 ? 1 : 0);
-          if (execution < 5) expect(sent).toEqual([]);
-          clock = row.nextAttemptAt;
-        }
+        const result = await runWhatsAppWorkerOnce(randomUUID(), {
+          now: () => clock,
+          sleep: async (milliseconds) => {
+            expect(sent).toEqual([]);
+            clock = new Date(clock.getTime() + milliseconds);
+          },
+          transport,
+        });
+        const [row] = await db
+          .select()
+          .from(whatsappJobs)
+          .where(eq(whatsappJobs.id, job.id));
+        expect(row).toMatchObject({ attempts: 5, state: "dead" });
+        expect(result.jobs).toMatchObject({ claimed: 5, retrying: 4, dead: 1 });
       },
     );
     expect(sent).toEqual([

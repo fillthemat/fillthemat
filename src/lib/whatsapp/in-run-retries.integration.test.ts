@@ -31,6 +31,7 @@ const phoneNumberId = `in-run-${randomUUID()}`;
 const start = new Date("1890-01-01T12:00:00Z");
 const jobIds: string[] = [];
 let schoolId: string;
+let fixtureOrder = 0;
 
 beforeAll(async () => {
   const school = await seedSchool(sql, {
@@ -90,6 +91,10 @@ async function insertDelivery() {
     start,
   );
   if (!id) throw new Error("delivery not inserted");
+  await db
+    .update(whatsappDeliveries)
+    .set({ createdAt: new Date(start.getTime() + fixtureOrder++) })
+    .where(eq(whatsappDeliveries.id, id));
   return id;
 }
 
@@ -354,6 +359,14 @@ describe("bounded in-run WhatsApp retries", () => {
   it("releases unstarted jobs and skips the delivery sweep when a job uses the budget", async () => {
     const first = await insertJob();
     const second = await insertJob();
+    await db
+      .update(whatsappJobs)
+      .set({ createdAt: start })
+      .where(eq(whatsappJobs.id, first.id));
+    await db
+      .update(whatsappJobs)
+      .set({ createdAt: new Date(start.getTime() + 1) })
+      .where(eq(whatsappJobs.id, second.id));
     const deliveryId = await insertDelivery();
     let calls = 0;
     const fake = fakeRun(async () => {
