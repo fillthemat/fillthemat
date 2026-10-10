@@ -22,9 +22,9 @@ import {
   prospectReminderEmail,
 } from "./templates";
 
-function nextBackoff(attempts: number): Date {
+function nextBackoff(attempts: number) {
   const minutes = Math.min(60, 2 ** Math.max(0, attempts - 1));
-  return new Date(Date.now() + minutes * 60_000);
+  return sql`now() + make_interval(mins => ${minutes})`;
 }
 
 function icsAttachment(booking: Booking, method: "PUBLISH" | "CANCEL") {

@@ -4,7 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { whatsappJobs } from "@/db/schema";
 import { loadLocalEnv, requireRow } from "@/test/integration-env";
-import { claimDueWhatsAppJobs, enqueueInboundJobs } from "./jobs";
+import {
+  claimDueWhatsAppJobs,
+  enqueueInboundJobs,
+  failJob,
+  rescheduleJob,
+} from "./jobs";
 
 loadLocalEnv();
 const db = getDb();
@@ -63,6 +68,56 @@ describe.each([
   ["behind", "2000-01-01T00:00:00Z"],
   ["ahead", "2100-01-01T00:00:00Z"],
 ])("claiming with the server clock %s the database", (_skew, serverTime) => {
+  it("schedules failed jobs' retries from the database clock", async () => {
+    const job = await insertJob();
+    skewServerClock(serverTime);
+    await failJob(job.id, 0, "retry me");
+    const [retry] = await db
+      .select({
+        attempts: whatsappJobs.attempts,
+        dueAt: whatsappJobs.nextAttemptAt,
+        remainingMs:
+          sql<number>`extract(epoch from (${whatsappJobs.nextAttemptAt} - now())) * 1000`.mapWith(
+            Number,
+          ),
+      })
+      .from(whatsappJobs)
+      .where(eq(whatsappJobs.id, job.id));
+    expect(retry?.attempts).toBe(1);
+    expect(retry?.dueAt).toBeInstanceOf(Date);
+    expect(retry?.remainingMs).toBeGreaterThan(55_000);
+    expect(retry?.remainingMs).toBeLessThanOrEqual(60_000);
+    expect(await claimDueWhatsAppJobs(randomUUID(), { ids: [job.id] })).toEqual(
+      [],
+    );
+  });
+
+  it("reschedules busy jobs two seconds after the database's current time", async () => {
+    const job = await insertJob({ state: "claimed" });
+    skewServerClock(serverTime);
+    await rescheduleJob(job.id, 2000);
+    const [retry] = await db
+      .select({
+        state: whatsappJobs.state,
+        claimedBy: whatsappJobs.claimedBy,
+        claimedAt: whatsappJobs.claimedAt,
+        remainingMs:
+          sql<number>`extract(epoch from (${whatsappJobs.nextAttemptAt} - now())) * 1000`.mapWith(
+            Number,
+          ),
+      })
+      .from(whatsappJobs)
+      .where(eq(whatsappJobs.id, job.id));
+    expect(retry?.state).toBe("pending");
+    expect(retry?.claimedBy).toBeNull();
+    expect(retry?.claimedAt).toBeNull();
+    expect(retry?.remainingMs).toBeGreaterThan(0);
+    expect(retry?.remainingMs).toBeLessThanOrEqual(2000);
+    expect(await claimDueWhatsAppJobs(randomUUID(), { ids: [job.id] })).toEqual(
+      [],
+    );
+  });
+
   it("claims a freshly enqueued inbound job immediately", async () => {
     skewServerClock(serverTime);
     const wamid = randomUUID();

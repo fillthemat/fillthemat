@@ -3,9 +3,9 @@ import { getDb } from "@/db";
 import { whatsappJobs } from "@/db/schema";
 import type { InboundWhatsAppMessage } from "./parse";
 
-function nextBackoff(attempts: number): Date {
+function nextBackoff(attempts: number) {
   const minutes = Math.min(60, 2 ** Math.max(0, attempts - 1));
-  return new Date(Date.now() + minutes * 60_000);
+  return sql`now() + make_interval(mins => ${minutes})`;
 }
 
 /**
@@ -117,7 +117,7 @@ export async function rescheduleJob(
     .update(whatsappJobs)
     .set({
       state: "pending",
-      nextAttemptAt: new Date(Date.now() + delayMs),
+      nextAttemptAt: sql`now() + (${delayMs} * interval '1 millisecond')`,
       claimedAt: null,
       claimedBy: null,
       updatedAt: new Date(),

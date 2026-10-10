@@ -13,7 +13,7 @@ import { getDb } from "@/db";
 import { emailDeliveries } from "@/db/schema";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
-import { claimDueDeliveries } from "./deliveries";
+import { claimDueDeliveries, sendDelivery } from "./deliveries";
 
 loadLocalEnv();
 const db = getDb();
@@ -87,6 +87,29 @@ describe.each([
   ["behind", "2000-01-01T00:00:00Z"],
   ["ahead", "2100-01-01T00:00:00Z"],
 ])("claiming with the server clock %s the database", (_skew, serverTime) => {
+  it("schedules failed sends' retries from the database clock", async () => {
+    const delivery = await insertDelivery();
+    skewServerClock(serverTime);
+    expect(await sendDelivery(delivery.id)).toBe("failed");
+    const [retry] = await db
+      .select({
+        attempts: emailDeliveries.attempts,
+        dueAt: emailDeliveries.nextAttemptAt,
+        remainingMs:
+          sql<number>`extract(epoch from (${emailDeliveries.nextAttemptAt} - now())) * 1000`.mapWith(
+            Number,
+          ),
+      })
+      .from(emailDeliveries)
+      .where(eq(emailDeliveries.id, delivery.id));
+    expect(retry?.attempts).toBe(1);
+    expect(retry?.dueAt).toBeInstanceOf(Date);
+    expect(retry?.remainingMs).toBeGreaterThan(55_000);
+    expect(retry?.remainingMs).toBeLessThanOrEqual(60_000);
+    expect(
+      await claimDueDeliveries(randomUUID(), 25, { ids: [delivery.id] }),
+    ).toEqual([]);
+  });
   it("claims database-due deliveries, but not future retries or sent deliveries", async () => {
     const pendingDue = await insertDelivery();
     const retryDue = await insertDelivery({ state: "failed" });

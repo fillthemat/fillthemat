@@ -16,6 +16,7 @@ import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
   claimDueWhatsAppDeliveries,
   enqueueWhatsAppDelivery,
+  sendWhatsAppDelivery,
 } from "./deliveries";
 
 loadLocalEnv();
@@ -92,6 +93,29 @@ describe.each([
   ["behind", "2000-01-01T00:00:00Z"],
   ["ahead", "2100-01-01T00:00:00Z"],
 ])("claiming with the server clock %s the database", (_skew, serverTime) => {
+  it("schedules failed sends' retries from the database clock", async () => {
+    const delivery = await insertDelivery();
+    skewServerClock(serverTime);
+    expect(await sendWhatsAppDelivery(delivery.id)).toBe("window_closed");
+    const [retry] = await db
+      .select({
+        attempts: whatsappDeliveries.attempts,
+        dueAt: whatsappDeliveries.nextAttemptAt,
+        remainingMs:
+          sql<number>`extract(epoch from (${whatsappDeliveries.nextAttemptAt} - now())) * 1000`.mapWith(
+            Number,
+          ),
+      })
+      .from(whatsappDeliveries)
+      .where(eq(whatsappDeliveries.id, delivery.id));
+    expect(retry?.attempts).toBe(1);
+    expect(retry?.dueAt).toBeInstanceOf(Date);
+    expect(retry?.remainingMs).toBeGreaterThan(55_000);
+    expect(retry?.remainingMs).toBeLessThanOrEqual(60_000);
+    expect(
+      await claimDueWhatsAppDeliveries(randomUUID(), { ids: [delivery.id] }),
+    ).toEqual([]);
+  });
   it("claims a freshly enqueued reply immediately", async () => {
     skewServerClock(serverTime);
     const id = await enqueueWhatsAppDelivery({
