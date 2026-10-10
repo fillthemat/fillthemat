@@ -36,6 +36,26 @@ gate.** These are requirement-based labels, not human-annotated production gold
 answers. Review failing judge comments and calibrate the rubric with a human;
 model judgments are not guaranteed ground truth.
 
+## Recorded baseline
+
+The completed old-assistant baseline (commit `e76e0cc`, October 9, 2026) is
+**`spec-92-baseline-e76e0cc-paced-20261009`**, experiment ID
+`1cdaf02e-bb96-4d19-b337-46cdf7bb5fe6`.
+[View the experiment in Langfuse](https://us.cloud.langfuse.com/project/cmuvyfd3403hqad0cggv1s062/datasets/cmv1sgos605i4ad0ketqpen68/runs/1cdaf02e-bb96-4d19-b337-46cdf7bb5fe6).
+Both assistant and judge used `google/gemini-2.5-flash`, paced at 20 seconds/request.
+All 12 cases completed and every deterministic tool/intent check passed. The
+draft reply judge failed three cases:
+
+- `explicit-contact`: promised school contact before platform consent.
+- `no-open-occurrences`: offered no alternative next step.
+- `chosen-occurrence-missing-name`: did not ask for the participant's name.
+
+Self-comparison of the saved report exits 0. This is a complete baseline with
+existing failures, not an all-passing release gate. It predates the separate
+judge evaluator tracing described below. The private local report is
+`/private/var/folders/v4/_thfqpb96l57qc29x9ph7x_c0000gn/T/opencode/spec-92-baseline.json`;
+preserve it outside Git for later comparisons (temporary storage is not archival).
+
 ## Seed and run
 
 Run from the checkout containing this runner. Load production Langfuse keys and
