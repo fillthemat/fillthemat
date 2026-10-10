@@ -4,6 +4,18 @@ import { InternalFailure, retryDecision } from "./retry-policy";
 const now = new Date("2020-01-01T12:00:00Z");
 
 describe("Meta send retry policy (§1 decision matrix)", () => {
+  it.each([0, 4, 5])(
+    "stops a stale booking confirmation ahead of the execution budget (%s)",
+    (executions) => {
+      expect(
+        retryDecision(
+          { kind: "internal", reason: "booking_confirmation_stale" },
+          executions,
+          now,
+        ),
+      ).toEqual({ action: "stop", cause: "stale" });
+    },
+  );
   it.each([
     4,
     80007,
