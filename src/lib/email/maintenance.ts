@@ -60,8 +60,7 @@ export async function runMaintenance() {
       if (result === "sent") sentCount += 1;
       else failedCount += 1;
     }
-    // #63 renames the persisted counter; it counts ended conversations now.
-    const purgedCount = await endInactiveConversations();
+    const endedConversationCount = await endInactiveConversations();
     const [updated] = await db
       .update(cronRuns)
       .set({
@@ -69,7 +68,7 @@ export async function runMaintenance() {
         reminderCount,
         sentCount,
         failedCount,
-        purgedCount,
+        endedConversationCount,
         result: "success",
       })
       .where(eq(cronRuns.id, run.id))

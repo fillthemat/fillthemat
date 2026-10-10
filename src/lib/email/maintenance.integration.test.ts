@@ -66,7 +66,6 @@ describe("maintenance", () => {
           messageId: randomUUID(),
           role: "user",
           parts: content,
-          purgeAt: oldDeadline,
         })),
       )
       .returning();
@@ -83,6 +82,12 @@ describe("maintenance", () => {
     const run = await runMaintenance();
     runIds.push(run.id);
     expect(run.result).toBe("success");
+    expect(run.endedConversationCount).toBe(2);
+    const [recordedRun] = await db
+      .select()
+      .from(cronRuns)
+      .where(eq(cronRuns.id, run.id));
+    expect(recordedRun?.endedConversationCount).toBe(2);
     const kept = await db
       .select()
       .from(conversations)
@@ -108,6 +113,7 @@ describe("maintenance", () => {
     expect(expired?.state).toBe("expired");
     const again = await runMaintenance();
     runIds.push(again.id);
+    expect(again.endedConversationCount).toBe(0);
     expect(
       await db
         .select()

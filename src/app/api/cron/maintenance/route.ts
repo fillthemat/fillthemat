@@ -12,6 +12,6 @@ export async function GET(request: Request) {
     sentCount: run.sentCount,
     failedCount: run.failedCount,
     reminderCount: run.reminderCount,
-    purgedCount: run.purgedCount,
+    endedConversationCount: run.endedConversationCount,
   });
 }
