@@ -173,6 +173,42 @@ function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
   };
 }
 describe("booking confirmation delivery through the worker", () => {
+  it("enqueues one owner email when duplicate failure callbacks stop an accepted confirmation", async () => {
+    now = new Date("2018-01-01T17:59:00Z");
+    const id = await enqueue();
+    const wamid = `accepted-confirmation/${randomUUID()}`;
+    const send = async (): Promise<WhatsAppSendOutcome> => ({
+      ok: true,
+      kind: "accepted",
+      providerId: wamid,
+    });
+    await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+    const callback = {
+      wamid,
+      recipientId: null,
+      status: "failed" as const,
+      timestamp: now.getTime() / 1000,
+      errorCode: "131026",
+      errorMessage: "undeliverable",
+    };
+    await Promise.all([
+      applyWhatsAppStatuses([callback], { now: () => now }),
+      applyWhatsAppStatuses([callback], { now: () => now }),
+    ]);
+    expect(await stored(id)).toMatchObject({
+      state: "dead",
+      attempts: 1,
+      terminalCause: "permanent",
+    });
+    expect(await emails()).toMatchObject([
+      {
+        kind: "owner_whatsapp_confirmation_failed",
+        bookingId,
+        providerIdempotencyKey: `owner-whatsapp-confirmation-failed/${bookingId}`,
+      },
+    ]);
+    expect(await emails()).toHaveLength(1);
+  });
   it("stops a failed in-flight confirmation as stale when class starts during the request", async () => {
     now = new Date("2018-01-01T17:59:59Z");
     const id = await enqueue();

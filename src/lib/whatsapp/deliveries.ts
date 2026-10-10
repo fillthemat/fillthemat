@@ -496,7 +496,7 @@ export async function applyWhatsAppStatuses(
   const clock = overrides.now ?? (() => new Date());
   for (const status of statuses) {
     // Serialize the current provider attempt with claims and other callbacks.
-    // No transport or notification work takes place while holding this lock.
+    // No outbound network calls take place while holding this lock.
     const transitioned = await db.transaction(async (tx) => {
       const [delivery] = await tx
         .select()
@@ -571,6 +571,7 @@ export async function applyWhatsAppStatuses(
             ),
           )
           .returning();
+        if (row?.state === "dead") await onWhatsAppDeliveryDead(tx, row, now);
         return row;
       }
 
