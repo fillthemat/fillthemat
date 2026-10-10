@@ -19,8 +19,8 @@ It began as a spike-and-plan (no code in that pass). Implementation landed in la
 
 | Layer | Where | Why it survives |
 | --- | --- | --- |
-| Assistant | `src/lib/ai/assistant.ts` — `ToolLoopAgent` + `stopWhen: isStepCount(8)` + tools `list_trial_offerings` / `list_trial_slots` / `prepare_booking` / `capture_lead`; WhatsApp calls its `completedReply`. Model from `src/lib/ai/language-model.ts`: `gateway(BOOKING_AGENT_MODEL)`, or a scripted local model outside production without a Gateway token | Pure function of (school, school catalog, messages). No browser or stream dependency. |
-| Immutable safety rules | `src/lib/ai/system-prompt.ts:1-10` — agent MAY answer/qualify/list/prepare but "MUST NOT create a booking or a lead"; tenant data delimited + treated as untrusted (`:98-115`, `assertTenantCannotOverride` test) | Hostile-input invariant, channel-independent. |
+| Assistant | `src/lib/ai/assistant.ts` — `ToolLoopAgent` + `stopWhen: isStepCount(8)` + tools `list_trial_offerings` / `list_trial_occurrences` / `prepare_booking` / `request_contact`; WhatsApp calls its `completedReply`. Model from `src/lib/ai/language-model.ts`: `gateway(BOOKING_AGENT_MODEL)`, or a scripted local model outside production without a Gateway token | Pure function of (school, school catalog, messages). No browser or stream dependency. |
+| Immutable safety rules | `src/lib/ai/instructions.ts` (`PLATFORM_INSTRUCTIONS`) — the assistant never tells someone they are booked or will be contacted; booking and contact requests still need their confirmation through the platform. Tenant data is delimited and treated as untrusted (`assertTenantCannotOverride` test). Tool-specific requirements live in `src/lib/ai/tools/`. | Honesty and hostile-input invariants, channel-independent. |
 | Slot math | `src/lib/schedule/occurrences.ts:77-145` (`listOpenSlots`, 14-day horizon, 120-min lead) + `slot-id.ts` encode/parse | Pure. |
 | Booking write core | `src/lib/schedule/book-slot.ts` — single transaction, `(school_id, idempotency_key)` replay, `FOR UPDATE`, atomic `bookedCount < capacity` increment, contact/participant upsert, delivery enqueue, funnel event | The canonical write path; WhatsApp calls it with platform-minted keys. |
 | Public gates | `getPublicSchoolBySlug` / `getSchoolForLandingAccess` (`src/lib/public.ts:29-66`) — approved+published | Same gate semantics apply to WhatsApp. |
@@ -84,7 +84,7 @@ User            Meta              /api/webhooks/whatsapp        Agent (server)  
  |                |--------------------->| verify sig + dedupe      |                    |                |
  |                | 200                   | lock conversation       |                    |                |
  |                |                       | load history → agent    |                    |                |
- |                |                       |------------------------>| list_trial_slots  |                |
+ |                |                       |------------------------>| list_trial_occurrences |                |
  |                |                       |        slot list (text) |                    |                |
  |  "1" (slot)    |                       |-------------------------|                    |                |
  |<---------------| webhook (button/text) |  agent → prepare_booking|                    |                |
@@ -539,8 +539,8 @@ for idle/recovered work. The daily sweeper is the safety net after an active run
 
 - `src/lib/public.ts:29-66` → **`src/lib/schools/public.ts`** (`getPublicSchoolBySlug` /
   `getSchoolForLandingAccess` live there).
-- `system-prompt.ts` immutable rule: "…created only by the platform confirmation **forms**" →
-  **"confirmation flow"** (the invariant stays; the wording must not imply a web form).
+- `src/lib/ai/instructions.ts` keeps the channel-independent honesty rule: booking and contact
+  requests still need confirmation through the platform, without implying a web form or school follow-up.
 - D4's "inline send" = inline **inside the worker** after the agent completes — never inside the webhook.
 - Confirm `WHATSAPP_API_VERSION` (`v23.0`) is still a live Graph version at rollout (Meta EOLs versions).
 - Phase 4: add **plain-text conversion + length split (>4096 chars)** for agent replies before enqueueing.

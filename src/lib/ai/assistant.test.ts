@@ -3,6 +3,7 @@ import { simulateReadableStream, type UIMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
+import { legacyAssistantHistory } from "@/test/assistant-legacy-history";
 import {
   type AssistantInput,
   type AssistantUIMessage,
@@ -11,7 +12,7 @@ import {
   streamedReply,
 } from "./assistant";
 import { GATEWAY_TOKEN_ENV_VARS } from "./gateway-token";
-import { PLATFORM_INSTRUCTIONS } from "./system-prompt";
+import { PLATFORM_INSTRUCTIONS } from "./instructions";
 
 type ModelStep = Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>>;
 type ModelStreamPart =
@@ -251,49 +252,19 @@ describe("the assistant's instructions", () => {
       role: "system",
       content: `${PLATFORM_INSTRUCTIONS}
 
-<school_name>
-Tiger Dojo
-</school_name>
-
-<timezone>
-America/New_York
-</timezone>
-
-<city>
-Austin
-</city>
-
-<address>
-12 Main St
-</address>
-
-<phone>
-+1 512 555 0100
-</phone>
-
-<website>
-https://tigerdojo.test
-</website>
-
-<parking_notes>
-Park behind the building.
-</parking_notes>
-
-<access_notes>
-Step-free entrance on Oak St.
-</access_notes>
-
-<trial_guidance>
-Arrive 10 minutes early.
-</trial_guidance>
-
-<pricing>
-$120 a month.
-</pricing>
-
-<welcome_message>
-Welcome to Tiger Dojo!
-</welcome_message>
+<school_profile>
+name: Tiger Dojo
+timezone: America/New_York
+city: Austin
+address: 12 Main St
+phone: +1 512 555 0100
+website: https://tigerdojo.test
+parking_notes: Park behind the building.
+access_notes: Step-free entrance on Oak St.
+trial_guidance: Arrive 10 minutes early.
+pricing: $120 a month.
+welcome_message: Welcome to Tiger Dojo!
+</school_profile>
 
 <faqs>
 Q1: Do I need a gi?
@@ -367,6 +338,28 @@ describe("the assistant's completed reply", () => {
     });
   });
 
+  it("returns ineligible_age and no Booking Intent for a participant outside the offering's age range", async () => {
+    const model = scriptedModel(
+      toolCallStep("prepare_booking", {
+        offeringId: kidsBjj.id,
+        slotId: openSlotId,
+        participantName: "Ana",
+        participantAge: 13,
+      }),
+      textStep(
+        "Kids BJJ is for ages 5 to 12. Shall we look at other offerings?",
+      ),
+    );
+
+    const reply = await completedReply({ ...input, model });
+
+    expect(toolOutputSentBackToModel(model)).toEqual({
+      type: "json",
+      value: { ok: false, reason: "ineligible_age" },
+    });
+    expect(reply.bookingIntent).toBeNull();
+  });
+
   it.each([
     {
       attempt: "an unavailable slot",
@@ -433,11 +426,31 @@ describe("the assistant's completed reply", () => {
     expect(reply.bookingIntent).toBeNull();
   });
 
-  it("returns a Lead Request when it captures a request to be contacted", async () => {
+  it("lists open trial occurrences through list_trial_occurrences", async () => {
+    const model = scriptedModel(
+      toolCallStep("list_trial_occurrences", { offeringId: kidsBjj.id }),
+      textStep("Wednesday at 6:00 PM is available."),
+    );
+    const reply = await completedReply({ ...input, model });
+
+    expect(toolOutputSentBackToModel(model)).toMatchObject({
+      type: "json",
+      value: {
+        noMatch: false,
+        slots: expect.arrayContaining([
+          expect.objectContaining({ slotId: openSlotId }),
+        ]),
+      },
+    });
+    expect(reply.bookingIntent).toBeNull();
+    expect(reply.leadRequest).toBeNull();
+  });
+
+  it("returns a Lead Request through request_contact", async () => {
     const reply = await completedReply({
       ...input,
       model: scriptedModel(
-        toolCallStep("capture_lead", {
+        toolCallStep("request_contact", {
           participantName: "Sam",
           participantAge: 34,
           statedNeed: "Adult evening classes",
@@ -495,6 +508,45 @@ describe("the assistant's completed reply with no model passed", () => {
 describe("the assistant's streamed reply", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("replays saved pre-rename occurrence and contact tool parts without registering aliases", async () => {
+    const model = streamingModel([
+      textStep("Wednesday at 6:00 PM; contact request for Sam."),
+    ]);
+    let finish: ReplyFinish | undefined;
+    const response = await streamedReply({
+      ...input,
+      messages: JSON.parse(JSON.stringify(legacyAssistantHistory())),
+      model,
+      onFinish: (value) => {
+        finish = value;
+      },
+    });
+    await response.text();
+
+    expect(finish?.completion).toBe("complete");
+    expect(finish?.reply.parts).toContainEqual(
+      expect.objectContaining({
+        type: "text",
+        text: "Wednesday at 6:00 PM; contact request for Sam.",
+      }),
+    );
+    const call = model.doStreamCalls[0];
+    expect(call.tools?.map((tool) => tool.name)).toEqual([
+      "list_trial_offerings",
+      "list_trial_occurrences",
+      "prepare_booking",
+      "request_contact",
+    ]);
+    const historyNames = call.prompt.flatMap((message) =>
+      message.role === "tool"
+        ? message.content.map((part) =>
+            part.type === "tool-result" ? part.toolName : null,
+          )
+        : [],
+    );
+    expect(historyNames).toEqual(["list_trial_slots", "capture_lead"]);
   });
 
   const kidsBjjListing = {

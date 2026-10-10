@@ -15,6 +15,7 @@
     "check:write": "biome check --write .",
     "lint": "oxlint .",
     "test": "vitest run",
+    "eval:assistant": "bun scripts/assistant-eval.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "db:generate": "bunx drizzle-kit generate",
@@ -30,6 +31,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.84",
     "@ai-sdk/react": "^4.0.131",
+    "@langfuse/client": "5.13.1",
     "@langfuse/otel": "^5.13.0",
     "@langfuse/tracing": "^5.13.0",
     "@langfuse/vercel-ai-sdk": "^5.13.0",

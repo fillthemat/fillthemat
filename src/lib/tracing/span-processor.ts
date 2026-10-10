@@ -102,7 +102,7 @@ function maskString(value: string): string {
   const start = value.trimStart()[0];
   if (start === "{" || start === "[") {
     try {
-      return JSON.stringify(maskJson(JSON.parse(value)));
+      return JSON.stringify(maskContactFields(JSON.parse(value)));
     } catch {
       // Not JSON after all.
     }
@@ -110,17 +110,18 @@ function maskString(value: string): string {
   return maskText(value);
 }
 
-function maskJson(value: unknown): unknown {
+/** ADR-0001 masking for decoded contact fields, without reparsing nested text. */
+export function maskContactFields(value: unknown): unknown {
   if (typeof value === "string") return maskText(value);
   if (typeof value === "number") {
     return maskText(String(value)) === String(value) ? value : "[phone]";
   }
-  if (Array.isArray(value)) return value.map(maskJson);
+  if (Array.isArray(value)) return value.map(maskContactFields);
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [
         maskText(key),
-        maskJson(item),
+        maskContactFields(item),
       ]),
     );
   }
