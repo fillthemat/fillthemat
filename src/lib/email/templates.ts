@@ -106,6 +106,23 @@ Fillthemat`;
   };
 }
 
+export function ownerWhatsAppConfirmationFailedEmail(
+  school: School,
+  booking: Booking,
+) {
+  return {
+    subject: `Please contact ${booking.participantNameSnapshot} about their trial booking`,
+    text: `We couldn't confirm this booking with ${booking.participantNameSnapshot} on WhatsApp. Please contact them to let them know they're booked at ${school.name}.
+
+Contact: ${booking.contactNameSnapshot} ${booking.contactPhoneSnapshot}${booking.contactEmailSnapshot ? ` <${booking.contactEmailSnapshot}>` : ""}
+Offering: ${booking.offeringNameSnapshot}
+Participant: ${booking.participantNameSnapshot}
+When: ${formatWhen(booking)}
+
+Fillthemat`,
+  };
+}
+
 export function ownerLeadEmail(
   school: School,
   lead: Lead,
