@@ -1,5 +1,8 @@
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
-import { bookSlot } from "@/lib/schedule/book-slot";
+import {
+  bookSlot,
+  findBookingByIdempotencyKey,
+} from "@/lib/schedule/book-slot";
 import { getPublicSchoolBySlug } from "@/lib/schools/public";
 import {
   emailBookingQuotaExceeded,
@@ -11,6 +14,7 @@ import { createBookingHandler } from "./handler";
 export const POST = createBookingHandler({
   getPublicSchoolBySlug,
   verifyTurnstile,
+  findBookingByIdempotencyKey,
   emailBookingQuotaExceeded,
   recipientQuotaExceeded,
   bookSlot,

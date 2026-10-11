@@ -51,11 +51,13 @@ export async function submitBooking(options: {
   buildBody: (idempotencyKey: string) => unknown;
   setPending: (pending: boolean) => void;
   setError: (error: string | null) => void;
+  resetVerification: () => void;
   onBooked: () => void;
 }): Promise<void> {
   const fetcher = options.fetcher ?? fetch;
   options.setPending(true);
   options.setError(null);
+  let confirmed = false;
   try {
     if (!options.key.current) {
       const response = await fetcher("/api/bookings/key", { method: "POST" });
@@ -97,9 +99,14 @@ export async function submitBooking(options: {
       return;
     }
     options.onBooked();
+    confirmed = true;
   } catch {
     options.setError(fallback);
   } finally {
-    options.setPending(false);
+    try {
+      if (!confirmed) options.resetVerification();
+    } finally {
+      options.setPending(false);
+    }
   }
 }

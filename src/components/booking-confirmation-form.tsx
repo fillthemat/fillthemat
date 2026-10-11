@@ -1,6 +1,6 @@
 "use client";
 
-import { Turnstile } from "@marsidev/react-turnstile";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { useRef, useState } from "react";
 import { submitBooking } from "./booking-submission";
 import { readConversationToken } from "./browser-token";
@@ -35,6 +35,7 @@ export function BookingConfirmationForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const bookingKeys = useRef<Record<string, { current: string | null }>>({});
+  const turnstile = useRef<TurnstileInstance | undefined>(undefined);
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   async function onSubmit(event: React.FormEvent) {
@@ -54,6 +55,10 @@ export function BookingConfirmationForm({
       key,
       setPending,
       setError,
+      resetVerification: () => {
+        setTurnstileToken("");
+        turnstile.current?.reset();
+      },
       buildBody: (idempotencyKey) => ({
         schoolSlug: values.slug,
         offeringId: values.offeringId,
@@ -116,7 +121,13 @@ export function BookingConfirmationForm({
         className="rounded-md border border-page-300 px-3 py-2"
       />
       {siteKey ? (
-        <Turnstile siteKey={siteKey} onSuccess={setTurnstileToken} />
+        <Turnstile
+          ref={turnstile}
+          siteKey={siteKey}
+          onSuccess={setTurnstileToken}
+          onExpire={() => setTurnstileToken("")}
+          onError={() => setTurnstileToken("")}
+        />
       ) : (
         <p className="text-page-error">Turnstile is not configured.</p>
       )}

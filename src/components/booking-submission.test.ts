@@ -13,6 +13,7 @@ function setup(fetcher = vi.fn()) {
     buildBody: vi.fn((idempotencyKey: string) => ({ idempotencyKey })),
     setPending: vi.fn(),
     setError: vi.fn(),
+    resetVerification: vi.fn(),
     onBooked: vi.fn(),
   };
   return options;
@@ -70,6 +71,7 @@ it.each([
     );
     expect(options.onBooked).not.toHaveBeenCalled();
     expect(options.setPending).toHaveBeenLastCalledWith(false);
+    expect(options.resetVerification).toHaveBeenCalledTimes(1);
   },
 );
 
@@ -109,6 +111,7 @@ it.each(["key", "booking"])(
       expect.stringContaining(reference),
     );
     expect(options.setPending).toHaveBeenLastCalledWith(false);
+    expect(options.resetVerification).toHaveBeenCalledTimes(1);
   },
 );
 
@@ -122,6 +125,7 @@ it.each(["key", "booking"])(
     expect(options.setError).toHaveBeenLastCalledWith(fallback);
     expect(options.setPending.mock.calls).toEqual([[true], [false]]);
     expect(options.onBooked).not.toHaveBeenCalled();
+    expect(options.resetVerification).toHaveBeenCalledTimes(1);
   },
 );
 
@@ -140,6 +144,7 @@ it.each([
   expect(options.setError).toHaveBeenLastCalledWith(fallback);
   expect(options.setPending).toHaveBeenLastCalledWith(false);
   expect(options.onBooked).not.toHaveBeenCalled();
+  expect(options.resetVerification).toHaveBeenCalledTimes(1);
 });
 
 it.each(["key_success", "key_error", "booking_error"])(
@@ -176,6 +181,14 @@ it.each([
 
 it("reuses the same idempotency key when retrying an uncertain network outcome", async () => {
   const options = setup();
+  let token = "first-token";
+  options.buildBody.mockImplementation((idempotencyKey) => ({
+    idempotencyKey,
+    turnstileToken: token,
+  }));
+  options.resetVerification.mockImplementation(() => {
+    token = "fresh-token";
+  });
   options.fetcher
     .mockResolvedValueOnce(Response.json({ idempotencyKey: key }))
     .mockRejectedValueOnce(new Error("network interrupted"))
@@ -184,6 +197,7 @@ it("reuses the same idempotency key when retrying an uncertain network outcome",
     );
   await submitBooking(options);
   expect(options.onBooked).not.toHaveBeenCalled();
+  expect(options.resetVerification).toHaveBeenCalledTimes(1);
   await submitBooking(options);
   expect(options.fetcher.mock.calls.map(([url]) => url)).toEqual([
     "/api/bookings/key",
@@ -191,6 +205,15 @@ it("reuses the same idempotency key when retrying an uncertain network outcome",
     "/api/bookings",
   ]);
   expect(options.buildBody.mock.calls).toEqual([[key], [key]]);
+  expect(
+    options.fetcher.mock.calls
+      .slice(1)
+      .map(([, init]) => JSON.parse(init.body)),
+  ).toEqual([
+    { idempotencyKey: key, turnstileToken: "first-token" },
+    { idempotencyKey: key, turnstileToken: "fresh-token" },
+  ]);
+  expect(options.resetVerification).toHaveBeenCalledTimes(1);
   expect(options.onBooked).toHaveBeenCalledTimes(1);
   expect(options.setPending.mock.calls).toEqual([
     [true],
@@ -208,6 +231,7 @@ it("calls success only after both successful requests", async () => {
   await submitBooking(options);
   expect(options.onBooked).toHaveBeenCalledTimes(1);
   expect(options.setError.mock.calls).toEqual([[null]]);
+  expect(options.resetVerification).not.toHaveBeenCalled();
   expect(options.setPending).toHaveBeenLastCalledWith(false);
 });
 

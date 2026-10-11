@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { attemptPendingForBooking } from "@/lib/email/deliveries";
 import { getRequestIp } from "@/lib/request";
-import type { bookSlot } from "@/lib/schedule/book-slot";
+import type {
+  BookSlotResult,
+  bookSlot,
+  findBookingByIdempotencyKey,
+} from "@/lib/schedule/book-slot";
 import type { getPublicSchoolBySlug } from "@/lib/schools/public";
 import type {
   emailBookingQuotaExceeded,
@@ -12,7 +16,7 @@ import type { verifyTurnstile } from "@/lib/security/turnstile";
 import { bookingRequestSchema } from "@/lib/validation";
 
 export type BookingFailure = {
-  event: "booking_failure" | "booking_delivery_degraded";
+  event: "request.failed" | "delivery.degraded";
   requestId: string;
   method: "POST";
   route: "/api/bookings";
@@ -21,12 +25,15 @@ export type BookingFailure = {
   error: string;
   schoolId?: string;
   databaseCode?: string;
-  deployment?: "production" | "preview" | "development";
+  diagnostic: { kind: "database"; code: string } | "unknown";
+  deploymentEnvironment?: "production" | "preview" | "development";
+  deploymentId?: string;
 };
 
 type Dependencies = {
   getPublicSchoolBySlug: typeof getPublicSchoolBySlug;
   verifyTurnstile: typeof verifyTurnstile;
+  findBookingByIdempotencyKey: typeof findBookingByIdempotencyKey;
   emailBookingQuotaExceeded: typeof emailBookingQuotaExceeded;
   recipientQuotaExceeded: typeof recipientQuotaExceeded;
   bookSlot: typeof bookSlot;
@@ -78,22 +85,39 @@ export function createBookingHandler(dependencies: Dependencies) {
     ) => {
       const deployment = process.env.VERCEL_ENV;
       const diagnosticCode = databaseCode(exception);
-      dependencies.logFailure({
-        event: degraded ? "booking_delivery_degraded" : "booking_failure",
+      const record: BookingFailure = {
+        event: degraded ? "delivery.degraded" : "request.failed",
         requestId,
         method: "POST",
         route: "/api/bookings",
         operation,
         status,
         error,
+        diagnostic: diagnosticCode
+          ? { kind: "database", code: diagnosticCode }
+          : "unknown",
         ...(schoolId ? { schoolId } : {}),
         ...(diagnosticCode ? { databaseCode: diagnosticCode } : {}),
         ...(deployment === "production" ||
         deployment === "preview" ||
         deployment === "development"
-          ? { deployment }
+          ? { deploymentEnvironment: deployment }
           : {}),
-      });
+        ...(process.env.VERCEL_DEPLOYMENT_ID
+          ? { deploymentId: process.env.VERCEL_DEPLOYMENT_ID }
+          : {}),
+      };
+      try {
+        dependencies.logFailure(record);
+      } catch {
+        // Retain the safe diagnostic if the configured sink fails. Neither sink
+        // may turn a committed booking (or an expected refusal) into a failure.
+        try {
+          console.error(JSON.stringify(record));
+        } catch {
+          // No functioning log sink remains; preserve the request outcome.
+        }
+      }
     };
     const refuse = (error: string, status: number, exception?: unknown) => {
       report(error, status, exception);
@@ -124,30 +148,43 @@ export function createBookingHandler(dependencies: Dependencies) {
         ))
       )
         return refuse("verification_failed", 403);
-      operation = "email_quota";
-      if (
-        await dependencies.emailBookingQuotaExceeded(
-          school.id,
-          body.contact.email,
+      operation = "booking.idempotency_lookup";
+      const existing = await dependencies.findBookingByIdempotencyKey(
+        school.id,
+        body.idempotencyKey,
+      );
+      let result: BookSlotResult;
+      if (existing) {
+        result = { ok: true, booking: existing, idempotent: true };
+      } else {
+        operation = "email_quota";
+        if (
+          await dependencies.emailBookingQuotaExceeded(
+            school.id,
+            body.contact.email,
+          )
         )
-      )
-        return refuse("rate_limited", 429);
-      operation = "recipient_quota";
-      if (
-        await dependencies.recipientQuotaExceeded(school.id, body.contact.email)
-      )
-        return refuse("rate_limited", 429);
-      operation = "booking";
-      const result = await dependencies.bookSlot({
-        school,
-        offeringId: body.offeringId,
-        slotId: body.slotId,
-        idempotencyKey: body.idempotencyKey,
-        contact: body.contact,
-        participant: body.participant,
-        landingSessionToken: body.landingSessionToken,
-        conversationResumeToken: body.conversationResumeToken,
-      });
+          return refuse("rate_limited", 429);
+        operation = "recipient_quota";
+        if (
+          await dependencies.recipientQuotaExceeded(
+            school.id,
+            body.contact.email,
+          )
+        )
+          return refuse("rate_limited", 429);
+        operation = "booking.create";
+        result = await dependencies.bookSlot({
+          school,
+          offeringId: body.offeringId,
+          slotId: body.slotId,
+          idempotencyKey: body.idempotencyKey,
+          contact: body.contact,
+          participant: body.participant,
+          landingSessionToken: body.landingSessionToken,
+          conversationResumeToken: body.conversationResumeToken,
+        });
+      }
       if (!result.ok) {
         const status =
           result.code === "ineligible" || result.code === "invalid_slot"
@@ -159,13 +196,13 @@ export function createBookingHandler(dependencies: Dependencies) {
         );
       }
       if (!result.idempotent) {
-        operation = "delivery";
+        operation = "booking.confirmation_delivery";
         try {
           await dependencies.attemptPendingForBooking(result.booking.id);
         } catch (error) {
           // The transaction already committed and queued delivery. A failed
           // inline attempt must not invite another booking; the worker retries.
-          report("delivery_failed", 200, error, true);
+          report("delivery_retry_pending", 200, error, true);
         }
       }
       return Response.json({

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { submitBooking } from "@/components/booking-submission";
 import { createBookingHandler } from "./handler";
 
@@ -34,6 +34,34 @@ function request(payload: string = JSON.stringify(body), headers = {}) {
 }
 
 describe("booking HTTP failures", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("logs the standard diagnostic and trusted deployment context", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_DEPLOYMENT_ID", "deployment-test-id");
+    const { dependencies, handler } = setup();
+    dependencies.bookSlot.mockRejectedValue(
+      new Error("private", {
+        cause: { code: "42703" },
+      }),
+    );
+    const response = await handler(request());
+    const json = await response.json();
+    expect(dependencies.logFailure).toHaveBeenCalledExactlyOnceWith({
+      event: "request.failed",
+      operation: "booking.create",
+      requestId: json.requestId,
+      method: "POST",
+      route: "/api/bookings",
+      status: 500,
+      error: "internal_error",
+      diagnostic: { kind: "database", code: "42703" },
+      databaseCode: "42703",
+      schoolId: "school-internal-id",
+      deploymentEnvironment: "preview",
+      deploymentId: "deployment-test-id",
+    });
+  });
   it("carries the unexpected failure's log request ID into the client support message", async () => {
     const { dependencies, handler } = setup();
     dependencies.bookSlot.mockRejectedValue(
@@ -53,6 +81,7 @@ describe("booking HTTP failures", () => {
       fetcher: vi.fn().mockImplementation(() => handler(request())),
       setPending: vi.fn(),
       setError,
+      resetVerification: vi.fn(),
       onBooked,
     });
     const record = dependencies.logFailure.mock.calls[0][0];
@@ -106,9 +135,22 @@ describe("booking HTTP failures", () => {
     expect(dependencies.logFailure.mock.calls[0][0]).not.toHaveProperty(
       "databaseCode",
     );
+    expect(dependencies.logFailure.mock.calls[0][0].diagnostic).toBe("unknown");
     expect(JSON.stringify(dependencies.logFailure.mock.calls)).not.toContain(
       "SENTINEL",
     );
+  });
+  it("omits unavailable deployment fields and maps code-shaped non-allowlisted codes to unknown", async () => {
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("VERCEL_DEPLOYMENT_ID", "");
+    const { dependencies, handler } = setup();
+    dependencies.bookSlot.mockRejectedValue({ code: "ABCDE" });
+    expect((await handler(request())).status).toBe(500);
+    const record = dependencies.logFailure.mock.calls[0][0];
+    expect(record.diagnostic).toBe("unknown");
+    expect(record).not.toHaveProperty("databaseCode");
+    expect(record).not.toHaveProperty("deploymentEnvironment");
+    expect(record).not.toHaveProperty("deploymentId");
   });
   function setup() {
     const dependencies = {
@@ -116,6 +158,7 @@ describe("booking HTTP failures", () => {
         .fn()
         .mockResolvedValue({ id: "school-internal-id" }),
       verifyTurnstile: vi.fn().mockResolvedValue(true),
+      findBookingByIdempotencyKey: vi.fn().mockResolvedValue(null),
       emailBookingQuotaExceeded: vi.fn().mockResolvedValue(false),
       recipientQuotaExceeded: vi.fn().mockResolvedValue(false),
       bookSlot: vi.fn().mockResolvedValue({
@@ -134,6 +177,31 @@ describe("booking HTTP failures", () => {
     };
     return { dependencies, handler: createBookingHandler(dependencies) };
   }
+
+  it("returns an existing booking before quotas can refuse its retry", async () => {
+    const { dependencies, handler } = setup();
+    const result = await dependencies.bookSlot();
+    dependencies.bookSlot.mockClear();
+    dependencies.findBookingByIdempotencyKey.mockResolvedValue(result.booking);
+    dependencies.emailBookingQuotaExceeded.mockResolvedValue(true);
+    dependencies.recipientQuotaExceeded.mockResolvedValue(true);
+    const response = await handler(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      bookingId: "booking-id",
+      idempotent: true,
+    });
+    expect(
+      dependencies.findBookingByIdempotencyKey,
+    ).toHaveBeenCalledExactlyOnceWith(
+      "school-internal-id",
+      body.idempotencyKey,
+    );
+    expect(dependencies.emailBookingQuotaExceeded).not.toHaveBeenCalled();
+    expect(dependencies.recipientQuotaExceeded).not.toHaveBeenCalled();
+    expect(dependencies.bookSlot).not.toHaveBeenCalled();
+    expect(dependencies.attemptPendingForBooking).not.toHaveBeenCalled();
+  });
 
   it.each([
     ["too_large", 413],
@@ -194,6 +262,7 @@ describe("booking HTTP failures", () => {
 
   it.each([
     "verifyTurnstile",
+    "findBookingByIdempotencyKey",
     "emailBookingQuotaExceeded",
     "recipientQuotaExceeded",
     "bookSlot",
@@ -252,9 +321,10 @@ describe("booking HTTP failures", () => {
     expect((await response.json()).bookingId).toBe("booking-id");
     expect(dependencies.logFailure).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        event: "booking_delivery_degraded",
-        operation: "delivery",
-        error: "delivery_failed",
+        event: "delivery.degraded",
+        operation: "booking.confirmation_delivery",
+        error: "delivery_retry_pending",
+        diagnostic: "unknown",
         status: 200,
       }),
     );
@@ -262,6 +332,69 @@ describe("booking HTTP failures", () => {
       "SENTINEL",
     );
   });
+  it("preserves a saved booking and safely falls back when the logger throws", async () => {
+    const { dependencies, handler } = setup();
+    dependencies.attemptPendingForBooking.mockRejectedValue(
+      new Error("SENTINEL_PROVIDER"),
+    );
+    dependencies.logFailure.mockImplementation(() => {
+      throw new Error("SENTINEL_LOGGER");
+    });
+    const fallbackLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await handler(request());
+      expect(response.status).toBe(200);
+      expect((await response.json()).bookingId).toBe("booking-id");
+      expect(dependencies.logFailure).toHaveBeenCalledTimes(1);
+      expect(fallbackLog).toHaveBeenCalledExactlyOnceWith(expect.any(String));
+      expect(JSON.parse(fallbackLog.mock.calls[0][0])).toMatchObject({
+        event: "delivery.degraded",
+        error: "delivery_retry_pending",
+        diagnostic: "unknown",
+      });
+      expect(JSON.stringify(fallbackLog.mock.calls)).not.toContain("SENTINEL");
+    } finally {
+      fallbackLog.mockRestore();
+    }
+  });
+  it.each(["invalid", "internal_error", "delivery_retry_pending"])(
+    "preserves the %s outcome even when both log sinks throw",
+    async (error) => {
+      const { dependencies, handler } = setup();
+      dependencies.logFailure.mockImplementation(() => {
+        throw new Error("SENTINEL_LOGGER");
+      });
+      if (error === "internal_error")
+        dependencies.bookSlot.mockRejectedValue(new Error("SENTINEL_DB"));
+      if (error === "delivery_retry_pending")
+        dependencies.attemptPendingForBooking.mockRejectedValue(
+          new Error("SENTINEL_PROVIDER"),
+        );
+      const fallbackLog = vi.spyOn(console, "error").mockImplementation(() => {
+        throw new Error("SENTINEL_FALLBACK");
+      });
+      try {
+        const response = await handler(
+          request(error === "invalid" ? "{}" : undefined),
+        );
+        expect(response.status).toBe(
+          error === "invalid" ? 400 : error === "internal_error" ? 500 : 200,
+        );
+        const envelope = await response.json();
+        if (error === "delivery_retry_pending")
+          expect(envelope.bookingId).toBe("booking-id");
+        else
+          expect(envelope).toMatchObject({
+            error,
+            requestId: expect.any(String),
+          });
+        expect(dependencies.logFailure).toHaveBeenCalledTimes(1);
+        expect(fallbackLog).toHaveBeenCalledTimes(1);
+      } finally {
+        fallbackLog.mockRestore();
+      }
+    },
+  );
   it("correlates a wrapped database failure without exposing exception data", async () => {
     const logFailure = vi.fn();
     const handler = createBookingHandler({
@@ -273,6 +406,7 @@ describe("booking HTTP failures", () => {
         }),
       ),
       verifyTurnstile: vi.fn(),
+      findBookingByIdempotencyKey: vi.fn(),
       emailBookingQuotaExceeded: vi.fn(),
       recipientQuotaExceeded: vi.fn(),
       bookSlot: vi.fn(),
