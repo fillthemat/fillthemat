@@ -31,7 +31,7 @@ Do **not** point production at `127.0.0.1` database URLs.
 
 ```bash
 bun run db:migrate:prod
-bun --no-env-file --env-file=.env.production.local scripts/check-migrations.ts
+bun run db:check:prod
 ```
 
 Confirm `app.schools` exists. Revokes and `auth.users` FK are in `drizzle/0000_*.sql` and require the hosted `auth` schema (they do).
@@ -47,7 +47,7 @@ The manual check accepts `DIRECT_URL` when `DATABASE_URL` is absent. If both are
    - In Supabase Auth: Google enabled, Site URL = production `https://…`, additional redirects:
      - `https://<fillthemat-host>/auth/callback`
      - `https://<fillthemat-host>/**` (preview URLs if you use them)
-     - keep local callback URLs if you still run `bun dev`
+      - keep local callback URLs if you still run `bun run dev`
 
 ## 2. Hostname and Vercel env
 
@@ -86,7 +86,7 @@ Notes:
 Pull is optional; do not overwrite `.env.local` OIDC token carelessly:
 
 ```bash
-bunx vercel env pull
+bun run vercel:env:pull
 ```
 
 ## 3. Resend and cron
@@ -112,20 +112,20 @@ From the repo (linked project), first apply any pending hosted migrations using 
 ```bash
 bun run check
 bun run test
-bun --no-env-file --env-file=.env.production.local scripts/check-migrations.ts
+bun run db:check:prod
 bun run build
-bunx vercel --prod
+bun run vercel:deploy:prod
 ```
 
 First production deploy will use `vercel.ts` (`bunVersion: 1.4.x`, `framework: nextjs`, cron).
 
-Vercel's build command runs `bun run db:check` before the Next.js build **only when `VERCEL_ENV=production`**; Preview and Development builds skip it. It refuses production deployment if any checked-in migration is absent or its recorded hash differs. The check reads the migration journal, not live columns; it never migrates automatically. Connections time out after 10 seconds and journal statements after 5 seconds. A failed check leaves the previous deployment serving: apply pending migrations explicitly before retrying. A hash mismatch or a missing migration at/below the latest applied timestamp needs manual repair; `db:migrate:prod` will not fix it because Drizzle only applies newer timestamps. Local `bun run build` remains database-independent; `bun run db:check` checks the local stack by default. `vercel deploy --prebuilt` and deployment rollbacks skip this build-time gate, so run the manual check before using them.
+Vercel runs `bun run build:vercel`, which runs `bun run db:check` before the Next.js build **only when `VERCEL_ENV=production`**; Preview and Development builds skip the gate. It refuses production deployment if any checked-in migration is absent or its recorded hash differs. The check reads the migration journal, not live columns; it never migrates automatically. Connections time out after 10 seconds and journal statements after 5 seconds. A failed check leaves the previous deployment serving: apply pending migrations explicitly before retrying. A hash mismatch or a missing migration at/below the latest applied timestamp needs manual repair; `bun run db:migrate:prod` will not fix this. Local `bun run build` remains database-independent. `bun run db:check` uses the supplied environment; `bun run db:check:prod` explicitly loads `.env.production.local`, matching `bun run db:migrate:prod`. `bun run vercel:deploy:prod --prebuilt` and deployment rollbacks skip this build-time gate, so run `bun run db:check:prod` before using them.
 
 ### Booking incident: 2026-10-11
 
 At 18:00:29 UTC, `POST /api/bookings` returned 500 after Siteverify passed. The booking transaction failed while inserting its email outbox rows: Postgres `42703`, `column "failure_reason" of relation "email_deliveries" does not exist`. The hosted journal ended at `0009`; the deployed code required `0010`–`0013`, including `0011_youthful_grey_gargoyle`, which adds that column. The transaction rolled back, so no booking was saved. Redacted recipient: `<REDACTED>`.
 
-Operator repair: run `bun run db:migrate:prod` with the hosted session-pooler `DIRECT_URL`, then the read-only check above. These commands must use the same hosted project as the runtime `DATABASE_URL`. Do not bypass the outbox transaction or add a duplicate migration: the required migrations already exist. The deployment gate prevents a repeat; it cannot repair an already-serving deployment. Diagnosis made no production writes or deploys.
+Operator repair: run `bun run db:migrate:prod` with the hosted session-pooler `DIRECT_URL`, then `bun run db:check:prod`. These commands must use the same hosted project as the runtime `DATABASE_URL`. Do not bypass the outbox transaction or add a duplicate migration: the required migrations already exist. The deployment gate prevents a repeat; it cannot repair an already-serving deployment. Diagnosis made no production writes or deploys.
 
 Local regression/replay (isolated database on the running local stack, no changes to the shared application schema):
 
@@ -133,7 +133,7 @@ Local regression/replay (isolated database on the running local stack, no change
 bun run test:integration src/app/api/bookings/schema.integration.test.ts
 ```
 
-Preview deploy (`bunx vercel`, no `--prod`) needs its own Supabase or you accept that preview shares production data. The plan says never share production data with preview; if you only have one hosted project, **only use `--prod`** until a second Supabase exists.
+Preview deploy (`bun run vercel:deploy`) needs its own Supabase or you accept that preview shares production data. The plan says never share production data with preview; if you only have one hosted project, **only use `bun run vercel:deploy:prod`** until a second Supabase exists.
 
 ## 6. Post-deploy smoke (current product, not full plan)
 

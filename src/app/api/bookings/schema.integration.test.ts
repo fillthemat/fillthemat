@@ -98,7 +98,7 @@ function bookingRequest() {
 }
 
 function checkDeploymentMigrations(env: Partial<NodeJS.ProcessEnv> = {}) {
-  return spawnSync("bun", ["--no-env-file", "scripts/check-migrations.ts"], {
+  return spawnSync("bun", ["run", "db:check"], {
     env: { ...process.env, DATABASE_URL: localUrl.toString(), ...env },
     encoding: "utf8",
     timeout: 15_000,

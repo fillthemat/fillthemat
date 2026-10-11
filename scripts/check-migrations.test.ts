@@ -5,7 +5,7 @@ it("logs safe connection error identifiers, never the URL or credentials", () =>
   const url = "postgres://private_user:private_password@127.0.0.1:1/private_db";
   const result = spawnSync(
     "bun",
-    ["--no-env-file", "scripts/check-migrations.ts"],
+    ["run", "db:check"],
     {
       env: { ...process.env, DATABASE_URL: url },
       encoding: "utf8",
