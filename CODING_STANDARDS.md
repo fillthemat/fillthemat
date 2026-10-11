@@ -30,7 +30,9 @@ Existing examples: `src/app/api/chat/route.ts` handles malformed JSON and exhaus
 - Unexpected and explicitly degraded failures MUST each emit one structured diagnostic at their owning boundary, including failures after response commitment; they MUST NOT be silently swallowed.
 - Expected refusals (such as 409/429) MAY emit a diagnostic when operationally useful.
 - Each failure MUST be logged at most once, not catch-and-log at every layer.
-- Each diagnostic record MUST be a structured object or JSON record with `event`, `operation` (stage), `requestId`, `method`, `route` (static path/template, not query text), `status`, `error` (stable code), and `diagnostic` (allowlisted classification or `unknown`).
+- Each diagnostic record MUST contain `event`, `operation` (stage), `requestId`, `method`, `route` (static path/template, not query text), `status`, `error` (stable code), and `diagnostic` (allowlisted classification or `unknown`).
+- Structured log records MUST be written as one JSON string per line using `console.error(JSON.stringify(record))`, never `console.error("label", { ... })`.
+- Vercel stores label-plus-object logs as plain text, preventing the production-log tool (#117) from parsing records or matching their request IDs.
 - Records MUST include trusted deployment context when available, using `deploymentEnvironment` for the environment and `deploymentId` for the deployment ID.
 - Unavailable deployment fields MUST be omitted rather than read from request headers.
 - Diagnostics MUST explicitly select safe fields.
@@ -71,8 +73,8 @@ These are contract sketches, not references to unimplemented helpers. For both l
 | Degraded delivery | Preserve the committed booking, persist retry state, emit `delivery.degraded` below | Return “booking failed” after commit, or silently discard delivery failure |
 | Client fallback | Unknown/non-JSON response → “We couldn't confirm your booking. Please try again.”; append a provided support reference | Render raw response text, invent an ID, or invoke `onBooked` on failure |
 
-```json
-{
+```ts
+console.error(JSON.stringify({
   "event": "request.failed",
   "operation": "booking.create",
   "requestId": "synthetic-request-1",
@@ -82,11 +84,11 @@ These are contract sketches, not references to unimplemented helpers. For both l
   "error": "internal_error",
   "deploymentEnvironment": "test",
   "diagnostic": { "kind": "database", "code": "42703" }
-}
+}));
 ```
 
-```json
-{
+```ts
+console.error(JSON.stringify({
   "event": "delivery.degraded",
   "operation": "booking.confirmation_delivery",
   "requestId": "synthetic-request-1",
@@ -95,7 +97,7 @@ These are contract sketches, not references to unimplemented helpers. For both l
   "status": 200,
   "error": "delivery_retry_pending",
   "diagnostic": "unknown"
-}
+}));
 ```
 
 ## Tests and Standards-review checklist
@@ -110,6 +112,7 @@ Changed failure paths MUST have deterministic tests using real Requests at the H
 - [ ] Degraded side effects remain observable without misreporting primary-operation outcomes.
 - [ ] Post-commit failures preserve response status/headers without claiming a failed stream completed successfully.
 - [ ] Minimum log fields, including available trusted deployment context, are present.
+- [ ] Each structured log record is emitted as one JSON string per line, not a label plus an object.
 - [ ] Wrapped allowlisted diagnostic codes survive classification.
 - [ ] Sensitive sentinels in exceptions/causes are absent from serialized logs/error responses.
 - [ ] Clients test every known code and unknown/non-JSON/malformed bodies.
