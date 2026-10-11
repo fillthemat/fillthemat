@@ -27,7 +27,7 @@ Do **not** point production at `127.0.0.1` database URLs.
    - Publishable/anon key → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - Transaction pooler URI (port **6543**, `?pgbouncer=true` or Supavisor transaction mode) → `DATABASE_URL`
    - Direct URI (port **5432**) → `DIRECT_URL`
-4. Apply application migrations against `DIRECT_URL` **before every deployment that adds migrations**, never at app startup. Put the hosted session-pooler URI in gitignored `.env.production.local`, then:
+4. Apply application migrations against `DIRECT_URL` **before every production deployment that adds migrations**, never at app startup. Put `DIRECT_URL=<hosted session-pooler URI>` (port **5432**) in gitignored `.env.production.local`, then:
 
 ```bash
 bun run db:migrate:prod
@@ -35,6 +35,8 @@ bun --no-env-file --env-file=.env.production.local scripts/check-migrations.ts
 ```
 
 Confirm `app.schools` exists. Revokes and `auth.users` FK are in `drizzle/0000_*.sql` and require the hosted `auth` schema (they do).
+
+The manual check accepts `DIRECT_URL` when `DATABASE_URL` is absent. If both are set, it checks `DATABASE_URL`; both must point to the same hosted project.
 
 5. Turn on Google in that project:
    - New (or additional) Google Web OAuth client **or** extra redirect URIs on the existing client.
@@ -105,7 +107,7 @@ Test keys (always pass) are acceptable while the URL is private. For any shared 
 
 ## 5. Deploy
 
-From the repo (linked project), first apply any pending hosted migrations using section 1. Then run the read-only check against the hosted runtime `DATABASE_URL`:
+From the repo (linked project), first apply any pending hosted migrations using section 1. Then run the read-only check against hosted `DATABASE_URL` (or `DIRECT_URL` when only that is set in `.env.production.local`):
 
 ```bash
 bun run check
@@ -117,7 +119,7 @@ bunx vercel --prod
 
 First production deploy will use `vercel.ts` (`bunVersion: 1.4.x`, `framework: nextjs`, cron).
 
-Vercel's build command runs `bun run db:check` before the Next.js build. It refuses deployment if any checked-in migration is absent or its recorded hash differs. The check only reads the migration journal; it never migrates automatically. A failed check leaves the previous deployment serving, so apply pending migrations explicitly before retrying. Local `bun run build` remains database-independent; `bun run db:check` checks the local stack by default.
+Vercel's build command runs `bun run db:check` before the Next.js build **only when `VERCEL_ENV=production`**; Preview and Development builds skip it. It refuses production deployment if any checked-in migration is absent or its recorded hash differs. The check reads the migration journal, not live columns; it never migrates automatically. Connections time out after 10 seconds and journal statements after 5 seconds. A failed check leaves the previous deployment serving: apply pending migrations explicitly before retrying. A hash mismatch or a missing migration at/below the latest applied timestamp needs manual repair; `db:migrate:prod` will not fix it because Drizzle only applies newer timestamps. Local `bun run build` remains database-independent; `bun run db:check` checks the local stack by default. `vercel deploy --prebuilt` and deployment rollbacks skip this build-time gate, so run the manual check before using them.
 
 ### Booking incident: 2026-10-11
 

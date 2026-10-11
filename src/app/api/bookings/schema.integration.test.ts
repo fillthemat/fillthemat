@@ -4,12 +4,12 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres from "postgres";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
-import { loadLocalEnv, requireRow } from "@/test/integration-env";
+import { loadLocalEnv } from "@/test/integration-env";
 
 loadLocalEnv();
-const localUrl = new URL(
-  requireRow(process.env.DATABASE_URL, "local database URL"),
-);
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error("Missing local DATABASE_URL");
+const localUrl = new URL(databaseUrl);
 if (!["localhost", "127.0.0.1", "[::1]"].includes(localUrl.hostname)) {
   throw new Error("Booking schema reproduction requires a local database");
 }
@@ -97,17 +97,15 @@ function bookingRequest() {
   });
 }
 
-function checkDeploymentMigrations() {
+function checkDeploymentMigrations(env: NodeJS.ProcessEnv = {}) {
   return spawnSync("bun", ["--no-env-file", "scripts/check-migrations.ts"], {
-    env: { ...process.env, DATABASE_URL: localUrl.toString() },
+    env: { ...process.env, DATABASE_URL: localUrl.toString(), ...env },
     encoding: "utf8",
     timeout: 15_000,
   });
 }
 
 it("blocks deploying the incident schema, then completes the same booking after migration", async () => {
-  const { config } = await import("../../../../vercel");
-  expect(config.buildCommand).toBe("bun run db:check && bun run build");
   const before = checkDeploymentMigrations();
   expect(before.status).toBe(1);
   expect(before.stderr).toContain("0011_youthful_grey_gargoyle");
@@ -138,4 +136,68 @@ it("blocks deploying the incident schema, then completes the same booking after 
   expect(
     await fixture`select count(*)::int as count from app.email_deliveries`,
   ).toEqual([{ count: 2 }]);
+});
+
+it("checks the operator DIRECT_URL when DATABASE_URL is absent", () => {
+  const result = checkDeploymentMigrations({
+    DATABASE_URL: "",
+    DIRECT_URL: localUrl.toString(),
+  });
+  expect(result.status, result.stderr).toBe(0);
+});
+
+it("prefers the runtime DATABASE_URL when DIRECT_URL points elsewhere", () => {
+  const result = checkDeploymentMigrations({
+    DIRECT_URL:
+      "postgres://private_user:private_password@127.0.0.1:1/private_db",
+  });
+  expect(result.status, result.stderr).toBe(0);
+});
+
+it("requires manual repair for an applied migration with a different hash", async () => {
+  const migration = migrations[0];
+  await fixture`update drizzle.__drizzle_migrations set hash = 'changed' where created_at = ${migration.folderMillis}`;
+  try {
+    const result = checkDeploymentMigrations();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "applied migration 0000_left_white_tiger hash differs",
+    );
+    expect(result.stderr).toContain(
+      "needs manual repair; db:migrate:prod will not fix this",
+    );
+  } finally {
+    await fixture`update drizzle.__drizzle_migrations set hash = ${migration.hash} where created_at = ${migration.folderMillis}`;
+  }
+});
+
+it("requires manual repair for a missing migration older than the latest applied timestamp", async () => {
+  const migration = migrations[0];
+  await fixture`delete from drizzle.__drizzle_migrations where created_at = ${migration.folderMillis}`;
+  try {
+    const result = checkDeploymentMigrations();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "migration 0000_left_white_tiger out-of-order",
+    );
+    expect(result.stderr).toContain(
+      "needs manual repair; db:migrate:prod will not fix this",
+    );
+  } finally {
+    await fixture`insert into drizzle.__drizzle_migrations (hash, created_at) values (${migration.hash}, ${migration.folderMillis})`;
+  }
+});
+
+it("fails promptly when reading the journal is blocked, without logging credentials", async () => {
+  await fixture.begin(async (tx) => {
+    await tx`lock table drizzle.__drizzle_migrations in access exclusive mode`;
+    const result = checkDeploymentMigrations();
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("code=57014");
+    expect(result.stderr).toContain("name=PostgresError");
+    expect(result.stderr).not.toContain(localUrl.toString());
+  });
+  const result = checkDeploymentMigrations();
+  expect(result.status, result.stderr).toBe(0);
 });
