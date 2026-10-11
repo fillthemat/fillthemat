@@ -97,7 +97,7 @@ function bookingRequest() {
   });
 }
 
-function checkDeploymentMigrations(env: NodeJS.ProcessEnv = {}) {
+function checkDeploymentMigrations(env: Partial<NodeJS.ProcessEnv> = {}) {
   return spawnSync("bun", ["--no-env-file", "scripts/check-migrations.ts"], {
     env: { ...process.env, DATABASE_URL: localUrl.toString(), ...env },
     encoding: "utf8",
