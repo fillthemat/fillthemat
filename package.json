@@ -8,6 +8,7 @@
     "dev:stop": "bun scripts/stop-dev-local.ts",
     "setup": "bun scripts/setup-local.ts",
     "doctor": "bun scripts/doctor-local.ts",
+    "logs:prod": "bun --no-env-file scripts/logs-prod.ts",
     "db:seed": "bun scripts/seed-local.ts",
     "build": "bun run --bun next build",
     "start": "bun run --bun next start",
