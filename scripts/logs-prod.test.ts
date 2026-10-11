@@ -1,4 +1,16 @@
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import jsonStringLog from "./fixtures/vercel-json-string-log.json";
 import { runProductionLogs } from "./logs-prod";
 
 const window = [
@@ -40,7 +52,7 @@ describe("production logs command", () => {
     const result = runProductionLogs(["--help"], cli);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("--request-id-kind");
-    expect(result.stdout).toContain("vercel login");
+    expect(result.stdout).toContain("bunx vercel@63.1.2 login");
     expect(result.stdout).toContain("prj_LMCslFWBFnxPN3ISKqidTBp3kIA7");
     expect(cli).not.toHaveBeenCalled();
   });
@@ -59,6 +71,8 @@ describe("production logs command", () => {
       [...window, "--since", window[1]],
       [...window, "--request-id", "a@b.com"],
       [...window, "--request-id-kind", "app"],
+      [...window, "--request-id", platformId, "--request-id-kind", "app"],
+      [...window, "--request-id", "not-a-uuid", "--request-id-kind", "app"],
       [...window, "--deployment", "https://other.vercel.app"],
     ].map((args) => ({ args })),
   )("rejects invalid/unbounded arguments before fetching: %j", ({ args }) => {
@@ -166,22 +180,10 @@ describe("production logs command", () => {
     expect(JSON.parse(result.stdout).requestId).toBe(platformId);
   });
 
-  it("filters application IDs in structured messages locally, not native platform search or raw substring matches", () => {
+  it("matches the Vercel message shape of console.error(JSON.stringify(record)), not native platform search or raw substrings", () => {
     const cli = vi.fn(
       jsonCli([
-        {
-          ...record,
-          logs: [
-            {
-              message: JSON.stringify({
-                requestId: appId,
-                error: "internal_error",
-                email: "private@example.test",
-                code: "23505",
-              }),
-            },
-          ],
-        },
+        jsonStringLog,
         { ...record, logs: [{ message: `SQL params ${appId}` }] },
         {
           ...record,
@@ -204,7 +206,7 @@ describe("production logs command", () => {
     expect(JSON.parse(result.stdout)).toMatchObject({
       appRequestIds: [appId],
       errorCodes: ["internal_error"],
-      diagnosticCodes: ["23505"],
+      diagnosticCodes: ["42703"],
     });
     expect(result.stdout).not.toContain("private");
   });
@@ -291,10 +293,18 @@ describe("production logs command", () => {
       }));
       expect(result.status).toBe(1);
       expect(result.stdout).toBe("");
-      expect(result.stderr).toContain("vercel login");
+      expect(result.stderr).toContain("bunx vercel@63.1.2 login");
       expect(result.stderr).toContain("whoami");
       expect(result.stderr).toContain("teams ls");
       expect(result.stderr).toContain("Manual-auth handoff");
+      for (const command of [
+        "bunx vercel@63.1.2 login",
+        "bunx vercel@63.1.2 whoami",
+        "bunx vercel@63.1.2 teams ls",
+        "bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat",
+      ]) {
+        expect(result.stderr.split("\n")).toContain(command);
+      }
       expect(result.stderr).not.toContain("secret-token");
       expect(result.stderr).not.toContain("user@");
     },
@@ -310,6 +320,18 @@ describe("production logs command", () => {
     expect(result.stderr).toContain("project/team access");
     expect(result.stderr).not.toContain("No matching records");
     expect(result.stderr).not.toContain("secret-token");
+  });
+
+  it("reserves exit 2 for argument errors, mapping Vercel exit 2 to 1", () => {
+    const result = runProductionLogs(window, () => ({
+      status: 2,
+      stdout: "",
+      stderr: "Query failed",
+    }));
+    expect(result.status).toBe(1);
+    expect(runProductionLogs(["--help"], emptyCli).stdout).toContain(
+      "CLI exit 2 maps to 1",
+    );
   });
 
   it("handles child process timeout, missing executable and thrown invocation without raw errors", () => {
@@ -340,4 +362,68 @@ describe("production logs command", () => {
     expect(result.stderr).toContain("incomplete");
     expect(result.stderr).not.toContain("secret-token");
   });
+
+  it.each([
+    { status: 0, blocked: false },
+    { status: 7, blocked: false },
+    { status: 0, blocked: true },
+    { status: 7, blocked: true },
+  ])(
+    "recursively cleans CLI files without masking the result: %j",
+    ({ status, blocked }) => {
+      const folder = mkdtempSync(join(tmpdir(), "logs-prod-test-"));
+      const marker = join(folder, "cwd");
+      let cliCwd: string | undefined;
+      try {
+        writeFileSync(
+          join(folder, "bunx"),
+          `#!/bin/sh
+mkdir cli-cache
+printf 'raw-secret' > cli-cache/log
+printf '%s' "$PWD" > "$CWD_RECORD"
+if [ "$BLOCK_CLEANUP" = 1 ]; then chmod 500 cli-cache; fi
+exit "$CLI_STATUS"
+`,
+          { mode: 0o700 },
+        );
+        const result = spawnSync(
+          "bun",
+          ["--no-env-file", "scripts/logs-prod.ts", ...window],
+          {
+            encoding: "utf8",
+            timeout: 10_000,
+            env: {
+              ...process.env,
+              PATH: `${folder}:${process.env.PATH}`,
+              CWD_RECORD: marker,
+              BLOCK_CLEANUP: blocked ? "1" : "0",
+              CLI_STATUS: String(status),
+            },
+          },
+        );
+        cliCwd = readFileSync(marker, "utf8");
+        expect(result.status).toBe(status);
+        expect(result.stdout).toBe("");
+        expect(result.stderr).toContain(
+          status === 0 ? "No matching records" : "Vercel logs query failed",
+        );
+        expect(result.stderr).not.toContain("raw-secret");
+        if (blocked) {
+          expect(result.stderr).toContain(
+            "Temporary log directory cleanup failed",
+          );
+          expect(result.stderr).not.toContain(cliCwd);
+        } else {
+          expect(existsSync(cliCwd)).toBe(false);
+        }
+      } finally {
+        if (cliCwd && existsSync(cliCwd)) {
+          if (existsSync(join(cliCwd, "cli-cache")))
+            chmodSync(join(cliCwd, "cli-cache"), 0o700);
+          rmSync(cliCwd, { recursive: true, force: true });
+        }
+        rmSync(folder, { recursive: true, force: true });
+      }
+    },
+  );
 });

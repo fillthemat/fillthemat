@@ -15,7 +15,7 @@ bunx vercel@63.1.2 logs --help
 
 Complete when identity is the intended authorized account, team `fillthemat` is accessible, and project inspection reports ID `prj_LMCslFWBFnxPN3ISKqidTBp3kIA7`. That project belongs to team ID `team_cMaH5LMAT9HrsFfyYEwZgYfh`. Unexpected identity/project: stop and resolve access, not the local link.
 
-The script owns the target constants, passes explicit project/team plus `--environment production`, and runs the CLI in a private empty directory outside Git. This avoids stale `.vercel` links, local config, and implicit worktree branch filtering. It queries production deployments across the window, including superseded deployments; it does not assume the currently active deployment served an old request. An optional `--deployment dpl_...` narrows the lookup further while preserving the project/team/production constraints. Verify the deployment belongs to this project's Production environment in the dashboard first. Deployment URLs and arbitrary target overrides are intentionally unsupported.
+The script fixes project/team and Production, querying all deployments in the window from a private non-Git directory to avoid stale links/config and implicit branch filters. Optional `--deployment dpl_...` narrows that target; verify its Production membership in the dashboard first.
 
 **Product Preview** (a school owner's unpublished page) is application behavior; it can run on the production deployment. It is not Vercel's `preview` deployment environment.
 
@@ -36,7 +36,7 @@ bun run logs:prod --since 2026-10-11T17:59:00Z --until 2026-10-11T18:02:00Z --re
 
 **Platform ID:** Vercel's runtime Request Id, exposed as `id` in this CLI's JSON record. The default uses native `vercel logs --request-id`, then checks ID/window locally. This is distinct from an application's support reference and from an `x-vercel-id` routing header; use the runtime Logs tab's Request Id, not an assumed header equivalent.
 
-**Application ID:** a server-generated support reference logged in structured JSON as `requestId`. `--request-id-kind app` fetches the bounded window and matches that field exactly in parsed log messages; it does not send the application ID to Vercel's native platform filter. Free-text substring matches could select SQL parameters/message bodies, so those are deliberately excluded. Sanitized output retains UUID application IDs. Missing/unstructured historical IDs: use the incident time window, then correlate safe route/status metadata and the platform ID. A missing ID is not proof the request never happened.
+**Application ID:** a server-generated UUID support reference. Lookup depends on the app logging one JSON string per line with `console.error(JSON.stringify(record))`, where `record.requestId` holds the reference. `--request-id-kind app` fetches the bounded window and exactly matches that field in parsed messages, never Vercel's native platform filter or free-text substrings. Missing/unstructured historical IDs: use the incident window and correlate safe route/status metadata and the platform ID. A missing ID is not proof the request never happened.
 
 Complete when sanitized records match the window, route/status and known reference, or the result is classified as empty, incomplete, or a failure below. Stdout is sanitized JSON Lines; stderr carries notices. Raw output, unknown fields, and arbitrary exception prose are never emitted. There is no raw-output switch.
 
@@ -45,27 +45,31 @@ Complete when sanitized records match the window, route/status and known referen
 - **Exit 0 with records:** sanitized results, not a completeness guarantee. The CLI retrieves runtime sources (serverless, edge function/middleware), excluding build logs and static traffic.
 - **Exit 0, `No matching records`:** the query succeeded but returned no matching retained records. Check UTC window, ID kind, target, deployment, retention, and cap before concluding anything about the incident.
 - **Incomplete warning:** default cap is 100 fetched records, adjustable with `--limit` up to 1000. The cap is checked **before** local application-ID filtering. Reaching it or a CLI truncation notice warns even when no app ID matches. This CLI has no documented cursor/pagination flag; split into smaller, overlapping windows and deduplicate by timestamp/platform ID. Do not claim exhaustive history from a single capped query. Upstream per-request truncation is not always detectable.
-- **Exit 2:** invalid/missing arguments; use `--help`.
-- **Other nonzero exit:** auth/query/process/format failure, not an empty result. Child exit codes propagate; timeout/spawn/buffer/format failures return 1. Raw diagnostics and partial output are suppressed. Verify identity/access, CLI contract and window; narrow the window/cap for a 60-second timeout or 16 MiB buffer failure. If still failing, use this project's dashboard **Logs** tab with Production and the same UTC window (not the deployment build-log tile).
+- **Exit 2:** the script's invalid/missing arguments, including a non-UUID application ID; use `--help`.
+- **Other nonzero exit:** auth/query/process/format failure, not an empty result. Vercel CLI exit 2 maps to 1; other child codes propagate. Timeout/spawn/buffer/format failures return 1. Raw diagnostics and partial output are suppressed. Verify identity/access, CLI contract and window; narrow the window/cap for a 60-second timeout or 16 MiB buffer failure. If still failing, use this project's dashboard **Logs** tab with Production and the same UTC window (not the deployment build-log tile).
 
-Retention is plan-dependent and can expire during diagnosis. At implementation, Vercel's authoritative [Runtime Logs limits](https://vercel.com/docs/logs/runtime#limits) listed Hobby **1 hour**, Pro **1 day**, Enterprise **3 days**, and Observability Plus **30 days** (up to 14 consecutive days per query). Check the current plan/docs; do not change plans/configuration to retrieve logs. Vercel also caps each request at 256 log lines/1 MiB total, up to 256 KiB per line; older lines can be unavailable. No script can guarantee access to expired or discarded history.
+History and per-request truncation depend on the plan and current [Runtime Logs limits](https://vercel.com/docs/logs/runtime#limits). Check those limits without changing production settings; expired or discarded logs cannot be recovered by this script.
 
 ## Auth recovery / manual-auth handoff
 
 The 2026-10-11 incident required re-authenticating the CLI before logs worked. Stale credentials can look like missing project access. When the wrapper reports auth failure, or identity/access checks fail:
 
-1. Ask an authorized human to run `bunx vercel@63.1.2 login` (`vercel login` using the pinned CLI). Interactive browser/device approval is a **manual-auth handoff**; an unattended agent stops the live lookup here and reports the blocker while completing offline work.
-2. Re-run `whoami`, `teams ls`, and `project inspect` from step 1. Complete only when the expected account/team/project are verified.
-3. Retry the exact bounded `bun run logs:prod` command. Record success/empty/failure and the UTC lookup window, not credentials.
+Interactive browser/device approval is a **manual-auth handoff**: an unattended agent stops the live lookup and reports the blocker while completing offline work. Ask an authorized human to:
+
+1. Run `bunx vercel@63.1.2 login`.
+2. Run `bunx vercel@63.1.2 whoami` and verify the expected account.
+3. Run `bunx vercel@63.1.2 teams ls` and verify team access.
+4. Run `bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat` and verify the project ID above.
+5. Retry the exact bounded `bun run logs:prod` command. Record success/empty/failure and the UTC window, not credentials.
 
 Never print/read auth tokens, credential files, or environment-secret values to troubleshoot. Do not automatically log out, delete/replace credentials, pull production environment files, relink the project, or change production configuration. If an existing environment token overrides interactive identity, ask the human to correct their credential context privately and re-verify access.
 
 ## Sharing and sensitive storage
 
-The wrapper keeps raw CLI output only in memory and removes its private temporary directory after the child finishes. It retains a narrow allowlist: timestamps, validated platform IDs/UUID application IDs, known static API routes, HTTP method/status, log level, stable booking error codes and classified database codes. Unknown routes become `[redacted]`; SQL prose is discarded after extracting an explicit allowlisted `code` (e.g. `42703`). New routes/codes need an explicit allowlist change and tests, not permissive prose output.
+The wrapper keeps raw CLI output in memory and recursively removes its private temporary directory after the child finishes. A cleanup failure warns without hiding the query result; ask a human to check private temporary storage. Output retains only allowlisted timestamps, IDs, static API routes, method/status, level, booking error codes and database codes. Routes outside the `/api/*` allowlist, including page routes, show as `[redacted]`. SQL prose is discarded after extracting an explicit allowlisted `code` (e.g. `42703`). New routes/codes need an allowlist change and tests.
 
 Review even sanitized excerpts before sharing: never include names, ages, emails, phone/IP addresses, message/request bodies, SQL/parameters, provider payloads, cookies/authorization headers, bearer/resume/session/Turnstile tokens, idempotency keys, or secrets. Sanitization discards these fields/messages rather than promising a regex can scrub arbitrary prose. Share the smallest useful excerpt with its window and completeness caveat; never commit downloaded logs.
 
-If an authorized human must export raw dashboard logs for private analysis, treat them as sensitive: use an approved temporary location **outside the repo**, create a dedicated directory with mode `0700` and files with mode `0600` (`umask 077` before export), keep them out of tool transcripts/issues/PRs, and delete the exact exported files then the empty directory immediately after analysis. Verify cleanup. Do not put raw logs in shared temporary folders or source control.
+Human-only raw exports: use an approved private directory outside the repo (`0700`, files `0600`; `umask 077`). Keep them out of transcripts/issues/PRs and source control; delete the exact exports and directory after analysis and verify cleanup.
 
-CLI interface verified against `bunx vercel@63.1.2 logs --help` and [Vercel CLI logs documentation](https://vercel.com/docs/cli/logs) on 2026-10-11. The docs describe automatic branch detection and `--no-branch`, although this version's help omits that flag; using a non-Git cwd avoids depending on it. Before changing the pin, re-check help, JSON schema, branch/target behavior, and tests. Live incident evidence belongs in the PR as sanitized output, not a raw fixture.
+CLI interface verified against `bunx vercel@63.1.2 logs --help` and [Vercel CLI logs documentation](https://vercel.com/docs/cli/logs) on 2026-10-11. Branch filtering is avoided through the non-Git cwd, not a CLI flag. Before changing the pin, re-check help, JSON schema, branch/target behavior, and tests. Live incident evidence belongs in the PR as sanitized output, not a raw fixture.

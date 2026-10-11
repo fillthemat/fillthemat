@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmdirSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,12 +56,13 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const PLATFORM_ID = /^(?:[a-z0-9]{3,12}-\d{13}-\d{12}|req_[A-Za-z0-9]{8,80})$/;
 const HELP = `Usage: bun run logs:prod --since UTC_ISO --until UTC_ISO [options]
 Read-only production runtime logs for ${SCOPE}/fillthemat (${PROJECT}).
-Requires Bun, network access, and authorized Vercel CLI credentials (vercel login).
+Requires Bun, network access, and authorized Vercel CLI credentials (bunx vercel@63.1.2 login).
 Uses bunx vercel@63.1.2; first use downloads the pinned CLI.
 
 --since / --until    Required bounded UTC timestamps: YYYY-MM-DDTHH:mm:ss[.sss]Z
 --request-id ID      Exact request ID filter (optional, combined with the window)
 --request-id-kind    platform (default, native Vercel filter) or app (local structured filter)
+                    app requires a UUID logged as one JSON string per line
 --deployment ID      Optional dpl_ ID, still constrained to production in this project/team
 --limit N            Fetch cap, 1–1000 (default 100); reaching it warns of incomplete results
 --help               Show this help without fetching logs
@@ -69,7 +70,8 @@ Uses bunx vercel@63.1.2; first use downloads the pinned CLI.
 Output: sanitized JSON Lines on stdout; empty/truncation notices on stderr.
 Only allowlisted metadata/diagnostic codes are retained; raw messages and unknown fields
 are omitted. No raw-output mode. Exit 0 includes valid empty results; 2 means bad arguments;
-CLI failures propagate a nonzero exit. See docs/agents/production-logs.md for auth recovery.
+CLI exit 2 maps to 1; other CLI failures propagate a nonzero exit.
+See docs/agents/production-logs.md for auth recovery.
 `;
 
 function utcDate(value: string | undefined): number {
@@ -133,6 +135,8 @@ function parseArgs(args: string[]) {
       "Request ID kind requires an ID and must be app or platform.",
     );
   const deployment = values["--deployment"];
+  if (kind === "app" && requestId && !UUID.test(requestId))
+    throw new Error("Application request ID must be a UUID.");
   if (deployment && !/^dpl_[A-Za-z0-9]+$/.test(deployment))
     throw new Error("--deployment requires a dpl_ ID, not a URL.");
   return { values, since, until, limit, requestId, kind, deployment };
@@ -175,6 +179,7 @@ function sanitize(record: Record<string, unknown>, timestamp: number) {
           if (DB_CODES.has(match[1])) diagnosticCodes.add(match[1]);
         }
         try {
+          // App logs use console.error(JSON.stringify(record)): one JSON message, with a trailing newline.
           visit(JSON.parse(field), depth + 1);
         } catch {
           /* Unstructured prose is omitted. */
@@ -280,10 +285,19 @@ export function runProductionLogs(args: string[], cli: Cli): Result {
         result.stderr + result.stdout,
       );
     const hint = auth
-      ? "Vercel authentication failed. Manual-auth handoff: ask an authorized human to run bunx vercel@63.1.2 login (vercel login), then whoami, teams ls and project inspect fillthemat --scope fillthemat; retry this command. Never print tokens."
-      : "Vercel logs query failed. Verify project/team access, time window, deployment and retention; check whoami and teams ls. If credentials are stale, ask a human to run vercel login and retry.";
+      ? `Vercel authentication failed. Manual-auth handoff: ask an authorized human to run:
+bunx vercel@63.1.2 login
+bunx vercel@63.1.2 whoami
+bunx vercel@63.1.2 teams ls
+bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat
+Verify the expected account/team/project, then retry this bounded command. Never print tokens.`
+      : `Vercel logs query failed. Verify project/team access, time window, deployment and retention:
+bunx vercel@63.1.2 whoami
+bunx vercel@63.1.2 teams ls
+bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat
+If credentials are stale, use the manual-auth handoff in the guide and retry.`;
     return {
-      status: result.status,
+      status: result.status === 2 ? 1 : result.status,
       stdout: "",
       stderr: `${hint} CLI diagnostics suppressed; see docs/agents/production-logs.md.\n`,
     };
@@ -362,7 +376,14 @@ function invokeVercel(args: string[]): CliResult {
       maxBuffer: 16 * 1024 * 1024,
     });
   } finally {
-    rmdirSync(cwd);
+    try {
+      rmSync(cwd, { recursive: true, force: true });
+    } catch {
+      // Preserve the query/spawn result, and never expose raw filesystem diagnostics.
+      process.stderr.write(
+        "Temporary log directory cleanup failed; ask an authorized human to check private temporary storage. Raw diagnostics suppressed.\n",
+      );
+    }
   }
 }
 

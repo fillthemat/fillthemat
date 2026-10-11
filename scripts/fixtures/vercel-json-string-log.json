@@ -1,0 +1,17 @@
+{
+  "id": "gnktd-1791741629602-003823914326",
+  "timestamp": 1791741629602,
+  "projectId": "prj_LMCslFWBFnxPN3ISKqidTBp3kIA7",
+  "requestMethod": "POST",
+  "requestPath": "/api/bookings",
+  "responseStatusCode": 500,
+  "environment": "production",
+  "source": "serverless",
+  "level": "error",
+  "logs": [
+    {
+      "level": "error",
+      "message": "{\"requestId\":\"550e8400-e29b-41d4-a716-446655440000\",\"errorCode\":\"internal_error\",\"databaseCode\":\"42703\",\"email\":\"private@example.test\"}\n"
+    }
+  ]
+}

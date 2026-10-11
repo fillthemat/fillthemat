@@ -12,8 +12,6 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 After making changes, run `bun run lint` and fix all errors.
 
-Production incidents, runtime logs, or Vercel auth recovery: read `docs/agents/production-logs.md` before retrieving or sharing logs.
-
 ## Local development
 
 Before running the app, changing env files, Supabase config, auth, or onboarding docs, read **`docs/local-development.md`**. That is the source of truth for running the stack (the landed `bun run setup` bootstrap, seed credentials, degradable vendors, and the worktree port contract). Do not add a vendored skill for this; keep third-party skills in `skills-lock.json` only.
@@ -55,3 +53,7 @@ Use the five default triage labels. See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 Use a single-context layout. See `docs/agents/domain.md`.
+
+### Production logs
+
+Production incidents, runtime logs, or Vercel auth recovery: read `docs/agents/production-logs.md` before retrieving or sharing logs.
