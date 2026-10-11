@@ -297,6 +297,7 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
     expect(log).toHaveBeenCalledWith("whatsapp_lead_email_attempt_failed", {
       leadId: lead.id,
       runId: expect.any(String),
+      error: "test lead email failure",
     });
     await POST(post(payload));
     await runWhatsAppWorkerOnce(randomUUID(), { transport });
@@ -307,6 +308,45 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
         .select()
         .from(whatsappDeliveries)
         .where(eq(whatsappDeliveries.recipientWaId, waId)),
+    ).toMatchObject([{ state: "sent", attempts: 1 }]);
+    const [ownerEmail] = await db
+      .select()
+      .from(emailDeliveries)
+      .where(eq(emailDeliveries.leadId, lead.id));
+    const sendEmail = vi.fn(async () => ({
+      ok: true as const,
+      kind: "accepted" as const,
+      providerId: "owner-lead-email",
+    }));
+    const emailDependencies = { transport: { send: sendEmail } };
+    const emailScope = { ids: [ownerEmail.id] };
+    expect(
+      await emailDelivery.runEmailSendOnce(
+        randomUUID(),
+        emailDependencies,
+        emailScope,
+      ),
+    ).toMatchObject({ sent: 1 });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: ownerEmail.recipient,
+        idempotencyKey: `owner-lead/${lead.id}`,
+      }),
+    );
+    expect(
+      await emailDelivery.runEmailSendOnce(
+        randomUUID(),
+        emailDependencies,
+        emailScope,
+      ),
+    ).toMatchObject({ claimed: 0, sent: 0 });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(
+      await db
+        .select()
+        .from(emailDeliveries)
+        .where(eq(emailDeliveries.id, ownerEmail.id)),
     ).toMatchObject([{ state: "sent", attempts: 1 }]);
   });
 

@@ -302,7 +302,7 @@ async function handleAssistantTurn(
                   title: "Choose another time",
                 },
               ],
-              windowExpiresAt: addHours(now, 24),
+              windowExpiresAt: addHours(ctx.dependencies.now(), 24),
             },
             { ...options, now: ctx.dependencies.now() },
           );
@@ -357,12 +357,13 @@ async function handleAssistantTurn(
   if (leadId) {
     try {
       await attemptPendingForLead(leadId);
-    } catch {
+    } catch (error) {
       // The durable email outbox has its own retry lifecycle. An immediate
       // email-attempt failure must not fail this Turn or suppress its reply.
       console.error("whatsapp_lead_email_attempt_failed", {
         leadId,
         runId: ctx.runId,
+        error: error instanceof Error ? error.message : error,
       });
     }
   }
