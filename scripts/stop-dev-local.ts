@@ -23,16 +23,14 @@ function listenPids(port: number): number[] {
 }
 
 const siteUrl = readEnvFile(".env.local").NEXT_PUBLIC_SITE_URL;
-if (!siteUrl) {
+if (!siteUrl?.trim()) {
   console.log("Nothing to stop: no local app port configured.");
   process.exit(0);
 }
 
 const port = portFromSiteUrl(siteUrl);
 if (port === undefined) {
-  fail(
-    "Invalid or missing NEXT_PUBLIC_SITE_URL in .env.local. Run bun run setup.",
-  );
+  fail("Invalid NEXT_PUBLIC_SITE_URL in .env.local. Run bun run setup.");
 }
 
 const pids = listenPids(port);

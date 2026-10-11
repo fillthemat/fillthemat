@@ -73,14 +73,26 @@ describe("dev:stop", () => {
     },
   );
 
+  it.each(["   ", "\t \t"])(
+    "treats a whitespace-only local site URL as nothing to stop: %j",
+    (siteUrl) => {
+      const result = runStop(`NEXT_PUBLIC_SITE_URL="${siteUrl}"\n`);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(/nothing to stop/i);
+      expect(result.stderr).toBe("");
+      expect(existsSync(result.listenLog)).toBe(false);
+    },
+  );
+
   it.each(["https://fillthemat.com", "http://127.0.0.1:3005"])(
     "still rejects an invalid configured origin: %s",
     (siteUrl) => {
       const result = runStop(`NEXT_PUBLIC_SITE_URL=${siteUrl}\n`);
 
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain(
-        "Invalid or missing NEXT_PUBLIC_SITE_URL",
+      expect(result.stderr).toBe(
+        "Invalid NEXT_PUBLIC_SITE_URL in .env.local. Run bun run setup.\n",
       );
       expect(existsSync(result.listenLog)).toBe(false);
     },
