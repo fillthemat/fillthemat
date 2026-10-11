@@ -9,7 +9,7 @@ import {
   notInArray,
   sql,
 } from "drizzle-orm";
-import { getDb } from "@/db";
+import { getDb, type TransactionOptions } from "@/db";
 import {
   schools,
   type WhatsAppDelivery,
@@ -180,9 +180,9 @@ export type EnqueueWhatsAppDelivery = {
 
 export async function enqueueWhatsAppDelivery(
   input: EnqueueWhatsAppDelivery,
-  now = new Date(),
+  { now = new Date(), transaction }: TransactionOptions & { now?: Date } = {},
 ): Promise<string | null> {
-  const db = getDb();
+  const db = transaction ?? getDb();
   const [row] = await db
     .insert(whatsappDeliveries)
     .values({
@@ -461,7 +461,7 @@ export async function enqueueAndAttemptWhatsAppDelivery(
   runId: string,
   dependencies: WhatsAppWorkerDependencies,
 ) {
-  const id = await enqueueWhatsAppDelivery(input, dependencies.now());
+  const id = await enqueueWhatsAppDelivery(input, { now: dependencies.now() });
   if (id) await attemptWhatsAppDeliveriesNow([id], runId, dependencies);
   return id;
 }

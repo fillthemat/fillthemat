@@ -140,7 +140,7 @@ async function enqueue(
         ],
         providerIdempotencyKey: randomUUID(),
       },
-      now,
+      { now },
     ),
     "delivery",
   );

@@ -71,7 +71,7 @@ async function enqueue(
       providerIdempotencyKey: `delivery-retry/${randomUUID()}`,
       windowExpiresAt: new Date("2019-01-02T12:00:00Z"),
     },
-    now,
+    { now },
   );
   if (!id) throw new Error("test enqueue failed");
   ids.push(id);

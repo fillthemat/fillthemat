@@ -90,7 +90,7 @@ async function insertDelivery() {
       body: "Hello",
       windowExpiresAt: new Date(start.getTime() + 86_400_000),
     },
-    start,
+    { now: start },
   );
   if (!id) throw new Error("delivery not inserted");
   await db

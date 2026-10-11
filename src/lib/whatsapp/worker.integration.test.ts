@@ -247,7 +247,7 @@ describe("WhatsApp worker dependencies", () => {
           windowExpiresAt: new Date("2020-01-02T12:00:00Z"),
           providerIdempotencyKey: `${type}/${suffix}`,
         },
-        now,
+        { now },
       );
       if (!id) throw new Error("failed to enqueue test delivery");
       const graph = {

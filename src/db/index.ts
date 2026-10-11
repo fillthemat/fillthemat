@@ -19,3 +19,14 @@ export function getDb() {
 }
 
 export type Database = ReturnType<typeof getDb>;
+export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+export type TransactionOptions = { transaction?: Transaction };
+
+/** Join the caller's atomic write, or own a transaction for standalone use. */
+export function withTransaction<T>(
+  write: (transaction: Transaction) => Promise<T>,
+  { transaction }: TransactionOptions = {},
+): Promise<T> {
+  return transaction ? write(transaction) : getDb().transaction(write);
+}
