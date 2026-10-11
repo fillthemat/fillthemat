@@ -19,5 +19,6 @@ export const POST = createBookingHandler({
   recipientQuotaExceeded,
   bookSlot,
   attemptPendingForBooking,
+  // One JSON argument lets Vercel's production-log reader parse request IDs.
   logFailure: (record) => console.error(JSON.stringify(record)),
 });
