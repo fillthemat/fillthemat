@@ -11,6 +11,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Linting
 
 After making changes, run `bun run lint` and fix all errors.
+Before opening a PR, run `bun run typecheck` and fix all errors.
 
 ## Local development
 
