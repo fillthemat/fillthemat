@@ -1,6 +1,7 @@
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { poppyClients, poppySessions, poppySessionTokens } from "@/db/schema";
+import { requireUnblockedPoppyClient } from "./admission";
 import { poppyTokenHash, verifyPoppyDpop } from "./dpop";
 import { PoppyError, poppyErrorResponse } from "./errors";
 import { isSchoolPoppyOn } from "./issuer";
@@ -65,6 +66,7 @@ export async function checkPoppyRequest(
         ),
       );
     if (!row) throw new PoppyError("invalid_token", 401);
+    await requireUnblockedPoppyClient(row.clientId);
     await verifyPoppyDpop(
       request,
       `${poppyAppOrigin()}${pathname}`,
