@@ -339,6 +339,7 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     expect(bookingRows).toHaveLength(1);
     const booking = bookingRows[0];
     expect(booking.contactEmailSnapshot).toBeNull();
+    expect(booking).toMatchObject({ channel: "whatsapp" });
     expect(booking.contactPhoneSnapshot).toBe(waA);
     expect(booking.conversationId).toBe(conversationId);
 

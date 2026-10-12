@@ -14,6 +14,7 @@ import {
   trialOfferings,
   trialWindows,
 } from "@/db/schema";
+import type { Channel } from "@/lib/channel";
 import {
   attachConversationContact,
   findConversation,
@@ -26,6 +27,7 @@ import { parseSlotId } from "./slot-id";
 
 export type BookSlotInput = {
   school: School;
+  channel: Channel;
   offeringId: string;
   slotId: string;
   idempotencyKey: string;
@@ -359,6 +361,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
         .insert(bookings)
         .values({
           schoolId: input.school.id,
+          channel: input.channel,
           contactId: contact.id,
           participantId: participant.id,
           trialOfferingId: offering.id,

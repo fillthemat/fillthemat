@@ -18,7 +18,7 @@ import {
   schools,
   users,
 } from "@/db/schema";
-import { hashWaId } from "@/lib/crypto";
+import { hashToken, hashWaId } from "@/lib/crypto";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import type { EmailMessage } from "@/lib/email/dependencies";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
@@ -73,6 +73,29 @@ afterAll(async () => {
 afterEach(() => vi.useRealTimers());
 
 describe("createLead (WhatsApp no-email path)", () => {
+  it("records web even when the landing session has a WhatsApp campaign source", async () => {
+    const [schoolRow] = await db
+      .select()
+      .from(schools)
+      .where(eq(schools.id, schoolId));
+    const token = randomUUID();
+    await db.insert(landingSessions).values({
+      schoolId,
+      sessionKeyHash: hashToken(token),
+      utmSource: "whatsapp",
+    });
+    const lead = await createLead({
+      school: requireRow(schoolRow, "school"),
+      contact: {
+        name: "Web Contact",
+        email: `${randomUUID()}@local.test`,
+        phone: "16505550001",
+      },
+      source: { channel: "web", landingSessionToken: token },
+    });
+    expect(lead).toMatchObject({ channel: "web" });
+  });
+
   it("sends the owner lead alert inline when the app clock is behind the database", async () => {
     const [schoolRow] = await db
       .select()
@@ -122,6 +145,7 @@ describe("createLead (WhatsApp no-email path)", () => {
     });
 
     expect(lead.schoolId).toBe(schoolId);
+    expect(lead).toMatchObject({ channel: "whatsapp" });
     expect(lead.participantName).toBe("Sam");
 
     const [contact] = await db

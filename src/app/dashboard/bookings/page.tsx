@@ -1,10 +1,11 @@
-import { and, desc, eq, gte, lt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { CancelBookingButton } from "@/components/dashboard/cancel-booking-button";
 import {
   bookingStatusVariant,
   formatBookingStatus,
   formatBookingWhen,
+  formatChannel,
   formatEmailState,
 } from "@/components/dashboard/format";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -19,10 +20,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getDb } from "@/db";
-import { bookings, emailDeliveries } from "@/db/schema";
+import { emailDeliveries } from "@/db/schema";
 import { requireOwnedSchool } from "@/lib/auth/current-school";
 import { cn } from "@/lib/utils";
 import { updateAttendanceAction } from "./actions";
+import { loadBookings } from "./queries";
 
 const FILTERS = [
   {
@@ -52,21 +54,12 @@ export default async function BookingsPage({
   const statusFilter = resolveStatus(params.status);
   const db = getDb();
   const now = new Date();
-  const rows = await db
-    .select()
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.schoolId, school.id),
-        activeFilter === "upcoming"
-          ? gte(bookings.startAt, now)
-          : activeFilter === "past"
-            ? lt(bookings.startAt, now)
-            : undefined,
-        statusFilter ? eq(bookings.status, statusFilter) : undefined,
-      ),
-    )
-    .orderBy(desc(bookings.startAt));
+  const rows = await loadBookings({
+    schoolId: school.id,
+    filter: activeFilter,
+    status: statusFilter,
+    now,
+  });
 
   const deliveries = await db
     .select()
@@ -160,6 +153,9 @@ export default async function BookingsPage({
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
+                  Channel: {formatChannel(booking.channel)}
+                </p>
+                <p className="text-xs text-muted-foreground">
                   <ContactLine
                     name={booking.contactNameSnapshot}
                     email={booking.contactEmailSnapshot}
@@ -185,6 +181,7 @@ export default async function BookingsPage({
                   <TableHead>Participant</TableHead>
                   <TableHead>Class</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Channel</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>
@@ -212,6 +209,9 @@ export default async function BookingsPage({
                       <Badge variant={bookingStatusVariant(booking.status)}>
                         {formatBookingStatus(booking.status)}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatChannel(booking.channel)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       <ContactLine
