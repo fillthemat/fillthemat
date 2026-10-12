@@ -687,6 +687,7 @@ export const poppyOperations = appSchema
         data?: Record<string, unknown>;
       }>(),
       bookingId: uuid("booking_id"),
+      leadId: uuid("lead_id"),
       ...timestamps,
     },
     (t) => [
@@ -709,6 +710,11 @@ export const poppyOperations = appSchema
         name: "poppy_operations_booking_fk",
       }).onDelete("restrict"),
       check("poppy_operations_revision", sql`${t.revision} > 0`),
+      foreignKey({
+        columns: [t.schoolId, t.leadId],
+        foreignColumns: [leads.schoolId, leads.id],
+        name: "poppy_operations_lead_fk",
+      }).onDelete("restrict"),
       check(
         "poppy_operations_state",
         sql`${t.state} IN ('proposed', 'in_progress', 'succeeded', 'failed', 'cancelled', 'expired')`,
@@ -769,6 +775,9 @@ export const leads = appSchema.table(
     id: uuid("id").primaryKey().defaultRandom(),
     schoolId: uuid("school_id").notNull(),
     channel: channelEnum("channel").notNull().default("web"),
+    poppyClientId: text("poppy_client_id").references(
+      () => poppyClients.clientId,
+    ),
     landingSessionId: uuid("landing_session_id").notNull(),
     contactId: uuid("contact_id").notNull(),
     participantName: text("participant_name"),

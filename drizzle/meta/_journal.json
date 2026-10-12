@@ -162,6 +162,13 @@
       "when": 1791818106476,
       "tag": "0022_many_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791818451500,
+      "tag": "0023_overrated_jean_grey",
+      "breakpoints": true
     }
   ]
 }
