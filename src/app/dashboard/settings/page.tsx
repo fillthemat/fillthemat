@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { requireOwnedSchool } from "@/lib/auth/current-school";
 import { listTimezones } from "@/lib/timezones";
+import { createWhatsAppConnection } from "@/lib/whatsapp/connection";
 import { serializeTimestamp } from "./form-utils";
 import { formatTimezone } from "./format";
 import { loadFaqs, loadOfferings, loadWindows } from "./queries";
@@ -12,6 +13,7 @@ import { OfferingsSection } from "./sections/offerings-section";
 import { PricingSection } from "./sections/pricing-section";
 import { ProfileSection } from "./sections/profile-section";
 import { ScheduleSection } from "./sections/schedule-section";
+import { WhatsAppSection } from "./sections/whatsapp-section";
 import { SettingsShell } from "./settings-shell";
 
 export default async function SettingsPage({
@@ -63,6 +65,13 @@ async function SectionContent({
   school: Awaited<ReturnType<typeof requireOwnedSchool>>["school"];
   location: string | null;
 }) {
+  if (section === "whatsapp") {
+    return (
+      <WhatsAppSection
+        connection={await createWhatsAppConnection().read(schoolId)}
+      />
+    );
+  }
   if (section === "profile") {
     const published = school.publishedAt != null;
     return (
