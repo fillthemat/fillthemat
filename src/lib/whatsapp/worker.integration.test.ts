@@ -277,6 +277,7 @@ describe("WhatsApp worker dependencies", () => {
         state: row.state,
         attempts: row.attempts,
         providerId: row.providerId,
+        sendOutcome: row.sendOutcome,
         sentAt: row.sentAt,
         nextAttemptAt: row.nextAttemptAt,
         lastError: row.lastError,
@@ -284,10 +285,13 @@ describe("WhatsApp worker dependencies", () => {
         state: "failed",
         attempts: 1,
         providerId: null,
+        sendOutcome: "unknown",
         sentAt: null,
         nextAttemptAt: new Date("2020-01-01T12:00:10Z"),
         lastError:
-          type === "http" ? "graph_http_503" : "graph_missing_message_id",
+          type === "http"
+            ? "graph_unconfirmed_http_503"
+            : "graph_missing_message_id",
       });
       await db.delete(whatsappDeliveries).where(eq(whatsappDeliveries.id, id));
     },

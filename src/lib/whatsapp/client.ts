@@ -7,6 +7,13 @@ import {
 import { whatsappTemplateComponents } from "./templates";
 
 export type WhatsAppSendFailure =
+  | {
+      ok: false;
+      kind: "unknown";
+      reason: "network_error" | "malformed_response";
+      status?: number;
+      message: string;
+    }
   | { ok: false; kind: "missing_credentials"; message: string }
   | { ok: false; kind: "network_error"; message: string }
   | {
@@ -93,6 +100,7 @@ function graphPost(
       "content-type": "application/json",
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30_000),
   })
     .then(async (response) => {
       let body: unknown;
@@ -103,8 +111,8 @@ function graphPost(
         invalidJson = true;
       }
       const json = record(body);
-      if (json.error && typeof json.error === "object") {
-        const error = record(json.error);
+      const error = record(json.error);
+      if (typeof error.code === "number" || typeof error.message === "string") {
         const details = record(error.error_data).details;
         return {
           ok: false as const,
@@ -121,6 +129,15 @@ function graphPost(
         };
       }
       if (!response.ok) {
+        if (response.status >= 500) {
+          return {
+            ok: false as const,
+            kind: "unknown" as const,
+            reason: "malformed_response" as const,
+            status: response.status,
+            message: `graph_unconfirmed_http_${response.status}`,
+          };
+        }
         return {
           ok: false as const,
           kind: "http_error" as const,
@@ -131,7 +148,8 @@ function graphPost(
       if (invalidJson) {
         return {
           ok: false as const,
-          kind: "malformed_response" as const,
+          kind: "unknown" as const,
+          reason: "malformed_response" as const,
           status: response.status,
           message: "graph_invalid_json",
         };
@@ -149,7 +167,8 @@ function graphPost(
       if (typeof providerId !== "string" || !providerId.trim()) {
         return {
           ok: false as const,
-          kind: "malformed_response" as const,
+          kind: "unknown" as const,
+          reason: "malformed_response" as const,
           status: response.status,
           message: "graph_missing_message_id",
         };
@@ -158,7 +177,8 @@ function graphPost(
     })
     .catch((error) => ({
       ok: false as const,
-      kind: "network_error" as const,
+      kind: "unknown" as const,
+      reason: "network_error" as const,
       message: error instanceof Error ? error.message : "send_failed",
     }));
 }
@@ -168,10 +188,12 @@ export function sendWhatsAppText(
     phoneNumberId,
     to,
     text,
+    callbackData,
   }: {
     phoneNumberId: string;
     to: string;
     text: string;
+    callbackData?: string;
   },
   dependencies?: WhatsAppGraphDependencies,
 ): Promise<WhatsAppSendOutcome> {
@@ -183,6 +205,7 @@ export function sendWhatsAppText(
       to,
       type: "text",
       text: { body: text },
+      ...(callbackData ? { biz_opaque_callback_data: callbackData } : {}),
     },
     dependencies,
   );
@@ -224,12 +247,14 @@ export function sendWhatsAppTemplate(
     templateName,
     languageCode,
     params,
+    callbackData,
   }: {
     phoneNumberId: string;
     to: string;
     templateName: string;
     languageCode: string;
     params: unknown[];
+    callbackData?: string;
   },
   dependencies?: WhatsAppGraphDependencies,
 ): Promise<WhatsAppSendOutcome> {
@@ -241,6 +266,7 @@ export function sendWhatsAppTemplate(
       recipient_type: "individual",
       to,
       type: "template",
+      ...(callbackData ? { biz_opaque_callback_data: callbackData } : {}),
       template: {
         name: templateName,
         language: { code: languageCode },
@@ -263,11 +289,13 @@ export function sendWhatsAppInteractive(
     to,
     body,
     buttons,
+    callbackData,
   }: {
     phoneNumberId: string;
     to: string;
     body: string;
     buttons: Array<{ id: string; title: string }>;
+    callbackData?: string;
   },
   dependencies?: WhatsAppGraphDependencies,
 ): Promise<WhatsAppSendOutcome> {
@@ -278,6 +306,7 @@ export function sendWhatsAppInteractive(
       recipient_type: "individual",
       to,
       type: "interactive",
+      ...(callbackData ? { biz_opaque_callback_data: callbackData } : {}),
       interactive: {
         type: "button",
         body: { text: body.slice(0, WHATSAPP_INTERACTIVE_BODY_CHAR_LIMIT) },
