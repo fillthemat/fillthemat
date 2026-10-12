@@ -26,11 +26,5 @@ jobs:
 
       - uses: ./.github/actions/setup-bun-ci
 
-      - name: Lint
-        run: bun run lint
-
-      - name: Check formatting and Biome rules
-        run: bun run check
-
-      - name: Check all project types (same config as build)
-        run: bun run typecheck
+      - name: Run lint, formatting, and type checks
+        run: bun run verify:checks

@@ -10,12 +10,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Coding standards
 
-Implementation and code review MUST read and apply [CODING_STANDARDS.md](CODING_STANDARDS.md).
+Code review MUST read and apply [CODING_STANDARDS.md](CODING_STANDARDS.md).
 
-## Linting
+## Verification
 
-After making changes, run `bun run lint` and fix all errors.
-Before opening a PR, run `bun run typecheck` and fix all errors.
+Before opening a PR, run `bun run verify`
 
 ## Local development
 
