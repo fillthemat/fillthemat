@@ -8,6 +8,8 @@
     "dev:stop": "bun scripts/stop-dev-local.ts",
     "setup": "bun scripts/setup-local.ts",
     "doctor": "bun scripts/doctor-local.ts",
+    "vercel": "bunx vercel@63.1.2",
+    "logs:prod": "bun --no-env-file scripts/logs-prod.ts",
     "db:seed": "bun scripts/seed-local.ts",
     "build": "bun run --bun next build",
     "build:vercel": "if [ \"$VERCEL_ENV\" = \"production\" ]; then bun run db:check; fi && bun run build",
