@@ -59,3 +59,7 @@ Use the five default triage labels. See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 Use a single-context layout. See `docs/agents/domain.md`.
+
+### Production logs
+
+Production incidents, runtime logs, or Vercel auth recovery: read `docs/agents/production-logs.md` before retrieving or sharing logs.
