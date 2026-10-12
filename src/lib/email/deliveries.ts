@@ -44,6 +44,7 @@ import {
   ownerBookingEmail,
   ownerCancellationEmail,
   ownerLeadEmail,
+  ownerPoppyDomainDroppedEmail,
   ownerWhatsAppConfirmationFailedEmail,
   prospectCancellationEmail,
   prospectConfirmationEmail,
@@ -138,6 +139,13 @@ async function renderDelivery(
         attachments: [],
       };
     }
+    case "owner_poppy_domain_dropped":
+      if (!delivery.domainSnapshot)
+        throw new InternalFailure("malformed_response");
+      return {
+        ...ownerPoppyDomainDroppedEmail(school, delivery.domainSnapshot),
+        attachments: [],
+      };
     default:
       throw new InternalFailure("unknown_email_kind");
   }

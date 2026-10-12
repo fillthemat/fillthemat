@@ -35,6 +35,7 @@ export const emailKindEnum = appSchema.enum("email_kind", [
   "owner_cancellation",
   "owner_lead",
   "owner_whatsapp_confirmation_failed",
+  "owner_poppy_domain_dropped",
 ]);
 
 export const emailStateEnum = appSchema.enum("email_state", [
@@ -613,6 +614,7 @@ export const emailDeliveries = appSchema.table(
     bookingId: uuid("booking_id"),
     leadId: uuid("lead_id"),
     kind: emailKindEnum("kind").notNull(),
+    domainSnapshot: text("domain_snapshot"),
     recipient: text("recipient").notNull(),
     providerIdempotencyKey: text("provider_idempotency_key").notNull(),
     state: emailStateEnum("state").notNull().default("pending"),
