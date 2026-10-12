@@ -124,6 +124,7 @@ async function makeConversation(waId: string): Promise<string> {
     .insert(conversations)
     .values({
       schoolId,
+      channel: "whatsapp",
       resumeTokenHash: hashToken(randomToken()),
       waIdHash,
       expiresAt: addDays(new Date(), 30),

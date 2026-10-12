@@ -76,6 +76,11 @@ export const conversationEndReasonEnum = appSchema.enum(
   ["inactivity", "message_limit"],
 );
 
+export const conversationChannelEnum = appSchema.enum("conversation_channel", [
+  "web",
+  "whatsapp",
+]);
+
 export const cronResultEnum = appSchema.enum("cron_result", [
   "success",
   "error",
@@ -377,6 +382,7 @@ export const conversations = appSchema.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     schoolId: uuid("school_id").notNull(),
+    channel: conversationChannelEnum("channel").notNull(),
     landingSessionId: uuid("landing_session_id"),
     contactId: uuid("contact_id"),
     resumeTokenHash: text("resume_token_hash").notNull(),

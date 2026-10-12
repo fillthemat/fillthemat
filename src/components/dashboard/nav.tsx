@@ -8,6 +8,11 @@ const LINKS = [
   { href: "/dashboard", label: "Overview", match: "exact" as const },
   { href: "/dashboard/bookings", label: "Bookings", match: "prefix" as const },
   { href: "/dashboard/leads", label: "Leads", match: "prefix" as const },
+  {
+    href: "/dashboard/conversations",
+    label: "Conversations",
+    match: "prefix" as const,
+  },
   { href: "/dashboard/settings", label: "Settings", match: "prefix" as const },
 ];
 
