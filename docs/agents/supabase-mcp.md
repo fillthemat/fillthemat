@@ -16,7 +16,7 @@ Until sign-in and these checks are complete, report live verification as blocked
 
 ## Deploy and outage checks
 
-1. Use `list_tables` with `schemas: ["drizzle"]` and compare the reported row count for `drizzle.__drizzle_migrations` with the number of entries in `drizzle/meta/_journal.json`. Report a mismatch before a deploy proceeds; matching counts are a quick check, not proof of matching migration history or hashes.
+1. Use `list_tables` with `schemas: ["drizzle"]` and compare the reported row count for `drizzle.__drizzle_migrations` with the number of entries in `drizzle/meta/_journal.json`. The count may be a statistics estimate that lags after a migration: if it differs, re-check, then have an operator run `bun run db:check:prod` for the exact answer before reporting a mismatch. Matching counts are a quick check, not proof of matching migration history or hashes.
 2. Use `list_tables` with `schemas: ["app"]` and `verbose: true` to confirm expected columns from `drizzle/` and `src/db/schema.ts`. App tables live in `app`, not `public`.
 3. For an authoritative Drizzle history/hash check, an operator with the production env file runs `bun run db:check:prod`. It reads `drizzle.__drizzle_migrations` without applying migrations.
 
