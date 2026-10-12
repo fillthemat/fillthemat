@@ -59,12 +59,17 @@ function checkSchemaDrift(directory: string) {
       );
     // Kit 0.x can catch generation errors and still exit 0. Require its explicit
     // no-op result too; closed stdin/timeouts fail safely on rename prompts.
+    const output = `${result.stdout}\n${result.stderr}`.trim();
+    if (/\bTTY\b|interactive\s+prompts?/i.test(output))
+      throw new Error(
+        "Schema drift detected (rename needs an interactive answer): run bun run db:generate.",
+      );
     if (
       result.status !== 0 ||
       !result.stdout.includes("No schema changes, nothing to migrate")
     )
       throw new Error(
-        `Schema drift check could not complete: ${result.error?.message ?? `${result.stdout}\n${result.stderr}`.trim()}`,
+        `Schema drift check could not complete: ${result.error?.message ?? output.split("\n").filter(Boolean).slice(-5).join("\n")}`,
       );
   } finally {
     rmSync(temporary, { recursive: true, force: true });

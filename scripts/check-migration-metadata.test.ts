@@ -12,7 +12,11 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
+import { entries } from "../drizzle/meta/_journal.json";
 import { scripts } from "../package.json";
+
+const latestEntry = entries[entries.length - 1];
+const latestSnapshot = `${String(latestEntry.idx).padStart(4, "0")}_snapshot.json`;
 
 let fixture: string;
 
@@ -40,8 +44,8 @@ afterEach(() => {
   }
 });
 
-function check(command = "db:check:consistency") {
-  return spawnSync("bun", ["run", command], {
+function check() {
+  return spawnSync("bun", ["run", "db:check:migrations"], {
     cwd: fixture,
     env: {
       ...process.env,
@@ -72,20 +76,24 @@ it("passes unchanged history without a database or leaving generated files behin
 });
 
 it("rejects a journal entry with a missing snapshot without database credentials", () => {
-  rmSync(join(fixture, "drizzle/meta/0013_snapshot.json"));
+  rmSync(join(fixture, "drizzle/meta", latestSnapshot));
   const result = check();
   expect(result.status).toBe(1);
-  expect(result.stderr).toContain("Missing snapshot: meta/0013_snapshot.json");
+  expect(result.stderr).toContain(`Missing snapshot: meta/${latestSnapshot}`);
+});
+
+it("rejects a journal entry with missing SQL", () => {
+  rmSync(join(fixture, "drizzle", `${latestEntry.tag}.sql`));
+  const result = check();
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain(`Missing SQL: ${latestEntry.tag}.sql`);
 });
 
 it.each([
-  ["drizzle/0013_public_logan.sql", "Missing SQL: 0013_public_logan.sql"],
   ["drizzle/orphan.sql", "Orphan SQL: orphan.sql"],
   ["drizzle/meta/9999_snapshot.json", "Orphan snapshot: 9999_snapshot.json"],
-])("rejects missing or orphan migration files: %s", (path, message) => {
-  const target = join(fixture, path);
-  if (path.includes("0013_public_logan")) rmSync(target);
-  else writeFileSync(target, "{}");
+])("rejects orphan migration files: %s", (path, message) => {
+  writeFileSync(join(fixture, path), "{}");
   const result = check();
   expect(result.status).toBe(1);
   expect(result.stderr).toContain(message);
@@ -112,28 +120,56 @@ it("fails closed when Drizzle catches a schema load error but exits zero", () =>
   const result = check();
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("Schema drift check could not complete");
+  const diagnostic = result.stderr
+    .split("\n")
+    .find((line) => line.startsWith("{"));
+  expect(diagnostic).toBeDefined();
+  expect(
+    JSON.parse(diagnostic ?? "{}").message.split("\n").length,
+  ).toBeLessThanOrEqual(5);
+});
+
+it("reports schema drift when a rename needs an interactive answer", () => {
+  const path = join(fixture, "src/db/schema.ts");
+  writeFileSync(
+    path,
+    readFileSync(path, "utf8").replace(
+      'timestamp("created_at",',
+      'timestamp("guardrail_renamed_created_at",',
+    ),
+  );
+  const result = check();
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain(
+    "Schema drift detected (rename needs an interactive answer): run bun run db:generate.",
+  );
 });
 
 it("rejects journal entries whose tag prefix disagrees with their index", () => {
   const path = join(fixture, "drizzle/meta/_journal.json");
   writeFileSync(
     path,
-    readFileSync(path, "utf8").replace('"idx": 13', '"idx": 12'),
+    readFileSync(path, "utf8").replace(
+      `"idx": ${latestEntry.idx}`,
+      `"idx": ${latestEntry.idx - 1}`,
+    ),
   );
   const result = check();
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("Invalid journal entry");
 });
 
-it("runs Drizzle's history check to reject colliding snapshot parents", () => {
+it("rejects colliding snapshot parents", () => {
+  const previousEntry = entries[entries.length - 2];
+  const previousSnapshot = `${String(previousEntry.idx).padStart(4, "0")}_snapshot.json`;
   const previous = JSON.parse(
-    readFileSync(join(fixture, "drizzle/meta/0012_snapshot.json"), "utf8"),
+    readFileSync(join(fixture, "drizzle/meta", previousSnapshot), "utf8"),
   );
-  const path = join(fixture, "drizzle/meta/0013_snapshot.json");
+  const path = join(fixture, "drizzle/meta", latestSnapshot);
   const snapshot = JSON.parse(readFileSync(path, "utf8"));
   snapshot.prevId = previous.prevId;
   writeFileSync(path, JSON.stringify(snapshot));
-  const result = check("db:check:history");
+  const result = check();
   expect(result.status).toBe(1);
-  expect(result.stdout).toContain("collision");
+  expect(result.stdout + result.stderr).toContain("collision");
 });

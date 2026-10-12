@@ -20,7 +20,8 @@ env:
 
 jobs:
   checks:
-    name: Migrations, lint, format, and typecheck
+    # This job name is a required check; do not change it without updating the Main ruleset.
+    name: Lint, format, and typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

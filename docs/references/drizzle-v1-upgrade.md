@@ -115,13 +115,13 @@ A manually repaired, incomplete, or inconsistent ledger may need investigation b
 Recommended additional CI step after installing the pinned v1 dependencies:
 
 ```sh
-bun run db:check:history --config=drizzle.config.ts --output=json
+bun run db:check:migrations --config=drizzle.config.ts --output=json
 ```
 
-Alternatively, avoiding config loading entirely:
+Alternatively, pass dialect/output flags to the final Kit check (the metadata/drift preflight still loads the project config):
 
 ```sh
-bun run db:check:history --dialect=postgresql --out=./drizzle --output=json
+bun run db:check:migrations --dialect=postgresql --out=./drizzle --output=json
 ```
 
 It needs local migration snapshots and a dialect, not database credentials. rc.4 emits an `ok` JSON envelope / exit 0 on success and `check_error` / exit 1 for snapshot problems or non-commutative branches. Run against the PR's merged migration history so both branches' snapshots are present; checking a single isolated branch cannot detect an unseen competing branch. ([check docs](https://orm.drizzle.team/docs/drizzle-kit-check), [rc.4 JSON contract](https://github.com/drizzle-team/drizzle-orm/blob/v1.0.0-rc.4/drizzle-kit/JSON_CONTRACT.md#check).)
