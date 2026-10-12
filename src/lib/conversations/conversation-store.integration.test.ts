@@ -1,18 +1,24 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { getDb } from "@/db";
+import { messages } from "@/db/schema";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
+  appendMessage,
   attachConversationContact,
   type ConversationIdentity,
   claimGeneration,
   endConversation,
   findConversation,
   findOrCreateConversation,
+  loadTranscript,
 } from "./conversation-store";
 
 loadLocalEnv();
 const sql = authSql();
+const db = getDb();
 const ownerIds = [randomUUID(), randomUUID()];
 const schoolIds: string[] = [];
 
@@ -34,6 +40,55 @@ afterAll(async () => {
 });
 
 describe("conversations", () => {
+  it("keeps append order when messages share a transaction timestamp", async () => {
+    const result = await findOrCreateConversation({
+      schoolId: schoolIds[0],
+      identity: { channel: "web", resumeToken: randomUUID() },
+    });
+    if (!result.ok) throw new Error("conversation refused");
+
+    await db.transaction(async (tx) => {
+      const options = { transaction: tx };
+      await appendMessage(
+        {
+          conversationId: result.conversation.id,
+          messageId: "user-message",
+          role: "user",
+          parts: [{ type: "text", text: "Question" }],
+        },
+        options,
+      );
+      await appendMessage(
+        {
+          conversationId: result.conversation.id,
+          messageId: "assistant-message",
+          role: "assistant",
+          parts: [{ type: "text", text: "Answer" }],
+        },
+        options,
+      );
+    });
+
+    const saved = await db
+      .select({ messageId: messages.messageId, createdAt: messages.createdAt })
+      .from(messages)
+      .where(eq(messages.conversationId, result.conversation.id));
+    const userMessage = saved.find(
+      ({ messageId }) => messageId === "user-message",
+    );
+    const assistantMessage = saved.find(
+      ({ messageId }) => messageId === "assistant-message",
+    );
+    expect(userMessage).toBeDefined();
+    expect(assistantMessage).toBeDefined();
+    expect(userMessage?.createdAt.getTime()).toBeLessThan(
+      assistantMessage?.createdAt.getTime() ?? Number.NEGATIVE_INFINITY,
+    );
+    expect(
+      (await loadTranscript(result.conversation.id)).map(({ role }) => role),
+    ).toEqual(["user", "assistant"]);
+  });
+
   it.each(["ended", "past-deadline"] as const)(
     "Book Trial does not attach a contact to a %s conversation",
     async (state) => {
