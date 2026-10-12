@@ -1,6 +1,6 @@
-import { and, desc, eq, gte, lt } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gte, lt } from "drizzle-orm";
 import { getDb } from "@/db";
-import { bookings } from "@/db/schema";
+import { bookings, poppyClients } from "@/db/schema";
 
 export function loadBookings({
   schoolId,
@@ -14,8 +14,12 @@ export function loadBookings({
   now?: Date;
 }) {
   return getDb()
-    .select()
+    .select({
+      ...getTableColumns(bookings),
+      poppyClientDisplayName: poppyClients.displayName,
+    })
     .from(bookings)
+    .leftJoin(poppyClients, eq(bookings.poppyClientId, poppyClients.clientId))
     .where(
       and(
         eq(bookings.schoolId, schoolId),

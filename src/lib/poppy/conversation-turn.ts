@@ -22,6 +22,7 @@ import { appendPoppyEvent, setPoppyState } from "./conversation-events";
 import { lockPoppyConversationRow } from "./conversation-lifecycle";
 import { poppyMessage } from "./conversation-requests";
 import { closePoppyConversationRow } from "./conversations";
+import { proposeBookingOperation, supportsOperations } from "./operations";
 
 async function nextMessage(conversationId: string) {
   const [receipt] = await getDb()
@@ -88,7 +89,10 @@ export async function completePoppyTurns(
                 school,
                 catalog: await loadSchoolCatalog(school.id),
                 now: new Date(),
-                poppy: { sender: message.sender },
+                poppy: {
+                  sender: message.sender,
+                  operationsSupported: supportsOperations(client.extensions),
+                },
                 abortSignal: AbortSignal.timeout(
                   Math.max(1, deadline - Date.now()),
                 ),
@@ -124,7 +128,9 @@ export async function completePoppyTurns(
               );
             }
             const text =
-              reply?.text ??
+              (reply?.operationError === "extension_required"
+                ? "extension_required: Your Personal Agent must support the Operations extension version 1 to propose and confirm a booking."
+                : reply?.text) ??
               "I couldn't complete that reply. Please try a new message.";
             const replyMessageId = await db.transaction(async (tx) => {
               const current = await lockPoppyConversationRow(
@@ -164,6 +170,17 @@ export async function completePoppyTurns(
               );
               // Channel-specific proposals attach to this Company message in
               // the same transaction as the completed Turn.
+              const operation = reply?.bookingIntent?.bookingTerms
+                ? await proposeBookingOperation(
+                    {
+                      schoolId: school.id,
+                      sessionId: receipt.sessionId,
+                      conversationId,
+                      terms: reply.bookingIntent.bookingTerms,
+                    },
+                    { transaction: tx },
+                  )
+                : undefined;
               await appendPoppyEvent(
                 current,
                 {
@@ -173,6 +190,15 @@ export async function completePoppyTurns(
                     role: "company",
                     sender: "agent",
                     text,
+                    ...(operation ? { operation } : {}),
+                    ...(reply?.operationError
+                      ? {
+                          data: {
+                            error: reply.operationError,
+                            extension: "operations",
+                          },
+                        }
+                      : {}),
                   },
                 },
                 tx,

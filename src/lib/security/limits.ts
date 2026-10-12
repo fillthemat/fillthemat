@@ -1,5 +1,5 @@
 import { and, eq, gte, sql } from "drizzle-orm";
-import { getDb } from "@/db";
+import { getDb, type TransactionOptions } from "@/db";
 import {
   bookings,
   emailDeliveries,
@@ -26,8 +26,9 @@ export async function emailBookingQuotaExceeded(
   schoolId: string,
   email: string,
   now = new Date(),
+  options: TransactionOptions = {},
 ): Promise<boolean> {
-  const db = getDb();
+  const db = options.transaction ?? getDb();
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -46,8 +47,9 @@ export async function recipientQuotaExceeded(
   schoolId: string,
   recipient: string,
   now = new Date(),
+  options: TransactionOptions = {},
 ): Promise<boolean> {
-  const db = getDb();
+  const db = options.transaction ?? getDb();
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })

@@ -651,6 +651,95 @@ export const poppyConversationMessages = appSchema
   )
   .enableRLS();
 
+export const poppyOperations = appSchema
+  .table(
+    "poppy_operations",
+    {
+      id: text("id").primaryKey(),
+      schoolId: uuid("school_id").notNull(),
+      sessionId: uuid("session_id").notNull(),
+      conversationId: uuid("conversation_id"),
+      kind: text("kind").notNull().$type<"booking" | "lead">(),
+      revision: integer("revision").notNull().default(1),
+      state: text("state")
+        .notNull()
+        .$type<
+          | "proposed"
+          | "in_progress"
+          | "succeeded"
+          | "failed"
+          | "cancelled"
+          | "expired"
+        >(),
+      summary: text("summary").notNull(),
+      terms: jsonb("terms").notNull().$type<Record<string, unknown>>(),
+      expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+      userApprovalRequired: boolean("user_approval_required")
+        .notNull()
+        .default(true),
+      confirmation: jsonb("confirmation").$type<{
+        revision: number;
+        approved_by: "user";
+        confirmed_at: string;
+      }>(),
+      result: jsonb("result").$type<{
+        summary: string;
+        data?: Record<string, unknown>;
+      }>(),
+      bookingId: uuid("booking_id"),
+      ...timestamps,
+    },
+    (t) => [
+      unique("poppy_operations_school_id_id").on(t.schoolId, t.id),
+      index("poppy_operations_session").on(t.sessionId),
+      index("poppy_operations_conversation").on(t.conversationId),
+      foreignKey({
+        columns: [t.schoolId, t.sessionId],
+        foreignColumns: [poppySessions.schoolId, poppySessions.id],
+        name: "poppy_operations_session_fk",
+      }).onDelete("cascade"),
+      foreignKey({
+        columns: [t.schoolId, t.conversationId],
+        foreignColumns: [conversations.schoolId, conversations.id],
+        name: "poppy_operations_conversation_fk",
+      }).onDelete("restrict"),
+      foreignKey({
+        columns: [t.schoolId, t.bookingId],
+        foreignColumns: [bookings.schoolId, bookings.id],
+        name: "poppy_operations_booking_fk",
+      }).onDelete("restrict"),
+      check("poppy_operations_revision", sql`${t.revision} > 0`),
+      check(
+        "poppy_operations_state",
+        sql`${t.state} IN ('proposed', 'in_progress', 'succeeded', 'failed', 'cancelled', 'expired')`,
+      ),
+      check("poppy_operations_kind", sql`${t.kind} IN ('booking', 'lead')`),
+    ],
+  )
+  .enableRLS();
+
+/** Issued terms are immutable even when a proposal is revised. */
+export const poppyOperationRevisions = appSchema
+  .table(
+    "poppy_operation_revisions",
+    {
+      operationId: text("operation_id")
+        .notNull()
+        .references(() => poppyOperations.id, { onDelete: "cascade" }),
+      revision: integer("revision").notNull(),
+      summary: text("summary").notNull(),
+      terms: jsonb("terms").notNull().$type<Record<string, unknown>>(),
+      expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    },
+    (t) => [
+      unique("poppy_operation_revisions_id_revision").on(
+        t.operationId,
+        t.revision,
+      ),
+    ],
+  )
+  .enableRLS();
+
 export const messages = appSchema.table(
   "messages",
   {
@@ -722,6 +811,10 @@ export const bookings = appSchema.table(
     channel: channelEnum("channel").notNull().default("web"),
     contactId: uuid("contact_id").notNull(),
     participantId: uuid("participant_id").notNull(),
+    poppyClientId: text("poppy_client_id").references(
+      () => poppyClients.clientId,
+    ),
+    poppySessionId: uuid("poppy_session_id"),
     trialOfferingId: uuid("trial_offering_id").notNull(),
     trialWindowId: uuid("trial_window_id").notNull(),
     trialOccurrenceId: uuid("trial_occurrence_id").notNull(),
@@ -747,6 +840,11 @@ export const bookings = appSchema.table(
   },
   (t) => [
     unique("bookings_school_id_id").on(t.schoolId, t.id),
+    foreignKey({
+      columns: [t.schoolId, t.poppySessionId],
+      foreignColumns: [poppySessions.schoolId, poppySessions.id],
+      name: "bookings_poppy_session_fk",
+    }).onDelete("restrict"),
     unique("bookings_school_idempotency").on(t.schoolId, t.idempotencyKey),
     uniqueIndex("bookings_active_participant_occurrence")
       .on(t.trialOccurrenceId, t.participantId)
@@ -1019,6 +1117,9 @@ export type SchoolDomain = typeof schoolDomains.$inferSelect;
 export type PoppyClient = typeof poppyClients.$inferSelect;
 export type PoppySession = typeof poppySessions.$inferSelect;
 export type PoppySessionToken = typeof poppySessionTokens.$inferSelect;
+export type PoppyOperation = typeof poppyOperations.$inferSelect;
+export type PoppyOperationRevision =
+  typeof poppyOperationRevisions.$inferSelect;
 export type Faq = typeof faqs.$inferSelect;
 export type TrialOffering = typeof trialOfferings.$inferSelect;
 export type TrialWindow = typeof trialWindows.$inferSelect;
