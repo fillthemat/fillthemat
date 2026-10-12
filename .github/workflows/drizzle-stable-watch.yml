@@ -1,0 +1,63 @@
+name: Drizzle stable release watch
+
+on:
+  schedule:
+    - cron: '17 9 1 * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: drizzle-stable-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Check Drizzle stable release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check npm tags and upstream issues
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          orm_latest=$(npm view drizzle-orm dist-tags.latest)
+          kit_latest=$(npm view drizzle-kit dist-tags.latest)
+          orm_rc=$(npm view drizzle-orm dist-tags.rc)
+          kit_rc=$(npm view drizzle-kit dist-tags.rc)
+
+          {
+            printf '## Drizzle release watch\n\n'
+            printf '| Package | latest | rc |\n| --- | --- | --- |\n'
+            printf '| drizzle-orm | %s | %s |\n' "$orm_latest" "${orm_rc:-not set}"
+            printf '| drizzle-kit | %s | %s |\n\n' "$kit_latest" "${kit_rc:-not set}"
+            for issue in 6166 6020 6455; do
+              state=$(gh api "repos/drizzle-team/drizzle-orm/issues/$issue" --jq .state)
+              printf -- '- [drizzle-team/drizzle-orm#%s](https://github.com/drizzle-team/drizzle-orm/issues/%s): %s\n' "$issue" "$issue" "$state"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # A stable SemVer with a nonzero major is >= 1.0.0; reject prereleases.
+          stable_v1='^[1-9][0-9]*\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$orm_latest" =~ $stable_v1 || ! "$kit_latest" =~ $stable_v1 ]]; then
+            printf '\nBoth packages must reach stable 1.0.0 on npm latest; no notification.\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          marker='<!-- drizzle-stable-watch:v1 -->'
+          headline='Drizzle 1.0 is stable on npm latest.'
+          comments=$(gh api --paginate --slurp "repos/$GH_REPO/issues/219/comments?per_page=100")
+          notified=$(jq --arg marker "$marker" --arg headline "$headline" \
+            'any(.[][]; (.body | contains($marker) or contains($headline)))' <<< "$comments")
+          if [[ "$notified" == false ]]; then
+            body=$(printf '%s\n%s\n\nBoth packages are >= 1.0.0: `drizzle-orm@%s` and `drizzle-kit@%s`.\n\n[Drizzle release notes](https://github.com/drizzle-team/drizzle-orm/releases). Ready to revisit the upgrade gates in #219.\n' "$marker" "$headline" "$orm_latest" "$kit_latest")
+            gh issue comment 219 --repo "$GH_REPO" --body "$body"
+          fi
+          # Retry the label even if a previous run posted its comment then failed.
+          gh issue edit 219 --repo "$GH_REPO" --add-label needs-triage
+          printf '\nStable release detected; #219 notified (or already notified) and labelled needs-triage.\n' >> "$GITHUB_STEP_SUMMARY"
