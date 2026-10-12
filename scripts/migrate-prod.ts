@@ -10,6 +10,13 @@ export async function migrateProduction(
   url: string,
   migrationsFolder = "drizzle",
 ) {
+  if (new URL(url).port === "6543")
+    throw Object.assign(
+      new Error("Transaction pooler is unsafe for migrations"),
+      {
+        code: "TRANSACTION_POOLER",
+      },
+    );
   const client = postgres(url, {
     prepare: false,
     max: 1,
@@ -17,17 +24,31 @@ export async function migrateProduction(
     connect_timeout: 10,
     onnotice: () => {},
   });
+  let failure: { error: unknown } | undefined;
   try {
     await client`select pg_advisory_lock(${migrationLockKey})`;
     try {
       await client`set lock_timeout = '5s'`;
       await migrate(drizzle(client), { migrationsFolder });
+    } catch (error) {
+      failure = { error };
     } finally {
-      await client`select pg_advisory_unlock(${migrationLockKey})`;
+      try {
+        await client`select pg_advisory_unlock(${migrationLockKey})`;
+      } catch (error) {
+        failure ??= { error };
+      }
     }
+  } catch (error) {
+    failure ??= { error };
   } finally {
-    await client.end({ timeout: 5 });
+    try {
+      await client.end({ timeout: 5 });
+    } catch (error) {
+      failure ??= { error };
+    }
   }
+  if (failure) throw failure.error;
 }
 
 async function main() {
@@ -63,12 +84,15 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   main().catch((error: unknown) => {
+    const code = errorCode(error);
     console.error(
       JSON.stringify({
         event: "production.migration.failed",
-        code: errorCode(error),
+        code,
         error:
-          "Production migration failed. Check DIRECT_URL and migrations; connection details are not logged.",
+          code === "TRANSACTION_POOLER"
+            ? "Production migration failed. Use a direct or session-pooler URL, not port 6543."
+            : "Production migration failed. Check DIRECT_URL and migrations; connection details are not logged.",
       }),
     );
     process.exitCode = 1;
