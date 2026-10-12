@@ -8,7 +8,10 @@ import { attemptPendingForBooking } from "@/lib/email/deliveries";
 import { InternalFailure } from "@/lib/retry-policy";
 import { bookSlot } from "@/lib/schedule/book-slot";
 import { whatsappBookingQuotaExceeded } from "@/lib/security/limits";
-import { bookingConfirmationIdempotencyKey } from "./confirmation";
+import {
+  BOOKING_CONFIRMATION_DELIVERY_PREFIX,
+  bookingConfirmationIdempotencyKey,
+} from "./confirmation";
 import { enqueueAndAttemptWhatsAppDelivery } from "./deliveries";
 import {
   type WhatsAppWorkerDependencies,
@@ -73,7 +76,7 @@ async function sendNotice({
  *   job/webhook retry replays into the same booking instead of double-booking.
  * - No-email contact → `bookSlot` stores a null email snapshot and skips the
  *   prospect email; the prospect confirmation is enqueued here as the
- *   `booking_confirmation` WhatsApp template and the owner email stays email.
+ *   plain in-window WhatsApp reply and the owner email stays email.
  */
 export async function confirmWhatsAppBooking(
   {
@@ -190,21 +193,16 @@ export async function confirmWhatsAppBooking(
     parts: [{ type: "text", text: transcript }],
   });
 
-  // No-email prospect confirmation → WhatsApp template (decision B / D8). The
-  // owner notification stays email and was enqueued by `bookSlot` already.
+  // Confirm in the chat without waiting for Meta template review. The owner
+  // notification stays email and was enqueued by `bookSlot` already.
   await enqueueAndAttemptWhatsAppDelivery(
     {
       schoolId,
       recipientWaId: waId,
       phoneNumberId,
-      providerIdempotencyKey: `booking-confirmation-template/${booking.id}`,
-      templateName: "booking_confirmation",
-      templateParams: [
-        school.name,
-        booking.participantNameSnapshot,
-        booking.offeringNameSnapshot,
-        when,
-      ],
+      providerIdempotencyKey: `${BOOKING_CONFIRMATION_DELIVERY_PREFIX}${booking.id}`,
+      body: transcript,
+      windowExpiresAt,
       bookingId: booking.id,
     },
     runId,

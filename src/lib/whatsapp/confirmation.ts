@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 
 export const CONFIRM_BUTTON_PREFIX = "confirm_booking:";
 export const CHOOSE_ANOTHER_TIME_BUTTON_ID = "choose_another_time";
+// Keep the original outbox key so replaying a pre-upgrade booking cannot send
+// a second confirmation. The delivery is now plain text, not a template.
+export const BOOKING_CONFIRMATION_DELIVERY_PREFIX =
+  "booking-confirmation-template/";
 
 const AFFIRMATIVE_ANSWERS = new Set(["yes", "confirm", "yep", "ok", "sure"]);
 
