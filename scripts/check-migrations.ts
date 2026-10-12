@@ -20,7 +20,7 @@ async function main() {
   const client = postgres(url, { prepare: false, max: 1, connect_timeout: 10 });
   try {
     // No DDL or migration execution: this gate must remain read-only, including
-    // on an empty database. Only an operator applies hosted migrations.
+    // on an empty database. The deploy migrator is a separate preceding step.
     await client.begin("READ ONLY", async (tx) => {
       // Transaction-local works through the runtime transaction pooler too.
       await tx`set local statement_timeout = '5s'`;

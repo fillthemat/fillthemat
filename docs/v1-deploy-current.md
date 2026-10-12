@@ -26,8 +26,10 @@ Do **not** point production at `127.0.0.1` database URLs.
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - Publishable/anon key → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - Transaction pooler URI (port **6543**, `?pgbouncer=true` or Supavisor transaction mode) → `DATABASE_URL`
-   - Direct URI (port **5432**) → `DIRECT_URL`
-4. Apply application migrations against `DIRECT_URL` **before every production deployment that adds migrations**, never at app startup. Put `DIRECT_URL=<hosted session-pooler URI>` (port **5432**) in gitignored `.env.production.local`, then:
+   - Direct or session-pooler URI (port **5432**) → `DIRECT_URL`
+4. Set `DIRECT_URL` in Vercel's **Production** environment. Production builds apply pending migrations automatically, never at app startup. `DIRECT_URL` and runtime `DATABASE_URL` must point to the same hosted project. Use the session pooler if the build cannot reach the direct IPv6 address.
+
+For operator recovery only, put the hosted `DIRECT_URL` in gitignored `.env.production.local`, then:
 
 ```bash
 bun run db:migrate:prod
@@ -79,7 +81,7 @@ Notes:
 
 - `CRON_SECRET` must be a long random string. Cron calls `GET /api/cron/maintenance` with `Authorization: Bearer <CRON_SECRET>`. Empty secret must never authenticate (code already rejects that).
 - `BOOKING_AGENT_MODEL` is required unless the team has paid Gateway access to `anthropic/claude-sonnet-4.6`. Locally a free-tier-allowed model was needed. Set the same model in Vercel.
-- `DIRECT_URL` is for operator migrate commands, not required on the serverless runtime if you never migrate from the app. Harmless if set.
+- `DIRECT_URL` is required for the Production build's migrations, not the serverless runtime. Preview does not need migration credentials; keep this credential scoped to Production.
 - Generate `RESEND_WEBHOOK_SECRET` from the Resend dashboard when you create the webhook, then paste it into Vercel.
 - WhatsApp env vars are **optional until WhatsApp rolls out in production**. Leave them unset: the webhook/worker use dev-stub values only when `NODE_ENV !== "production"`; production fails closed when they are missing once the feature ships. `WHATSAPP_API_VERSION` defaults to `v23.0` and `WHATSAPP_GRAPH_BASE` to `https://graph.facebook.com`; set them only to override. Meta app/use-case setup belongs to the Phase 6 human rollout, not this deploy doc.
 
@@ -107,19 +109,31 @@ Test keys (always pass) are acceptable while the URL is private. For any shared 
 
 ## 5. Deploy
 
-From the repo (linked project), first apply any pending hosted migrations using section 1. Then run the read-only check against hosted `DATABASE_URL` (or `DIRECT_URL` when only that is set in `.env.production.local`):
+From the repo (linked project), run local checks, then request a production deployment:
 
 ```bash
 bun run check
 bun run test
-bun run db:check:prod
 bun run build
 bun run vercel:deploy:prod
 ```
 
 First production deploy will use `vercel.ts` (`bunVersion: 1.4.x`, `framework: nextjs`, cron).
 
-Vercel runs `bun run build:vercel`, which runs `bun run db:check` before the Next.js build **only when `VERCEL_ENV=production`**; Preview and Development builds skip the gate. It refuses production deployment if any checked-in migration is absent or its recorded hash differs. The check reads the migration journal, not live columns; it never migrates automatically. Connections time out after 10 seconds and journal statements after 5 seconds. A failed check leaves the previous deployment serving: apply pending migrations explicitly before retrying. A hash mismatch or a missing migration at/below the latest applied timestamp needs manual repair; `bun run db:migrate:prod` will not fix this. Local `bun run build` remains database-independent. `bun run db:check` uses the supplied environment; `bun run db:check:prod` explicitly loads `.env.production.local`, matching `bun run db:migrate:prod`. `bun run vercel:deploy:prod --prebuilt` and deployment rollbacks skip this build-time gate, so run `bun run db:check:prod` before using them.
+**Production build order**:
+Vercel runs `bun run build:vercel`: `bun run db:migrate:deploy`, then `bun run db:check`, then `bun run build`. This happens only when `VERCEL_ENV=production`. The migrator reads Vercel's configured `DIRECT_URL`; it needs no local env file or interactive step. Preview, Development, and local `bun run build` never run deploy migrations.
+
+**Failure and retry**:
+A migration failure stops the check and build. A check failure stops the build. The previous deployment keeps serving. Fix the connection or migration problem and retry; already-applied migrations are not reapplied. The read-only check remains a backstop for missing migrations and changed hashes. A changed hash or missing migration older than the latest applied timestamp needs manual repair, not a retry. The check reads the journal, not live columns; connections time out after 10 seconds and journal statements after 5 seconds. Migration SQL may take longer.
+
+**Backward compatibility**:
+Every migration must remain backward-compatible with the currently live code. A build that fails after migrating leaves the schema ahead of the live app. We accept this for additive changes, such as new tables or optional columns. Do not drop or rename columns, remove values, or add constraints that break live reads or writes in the same release. Roll out those changes in separate compatible steps.
+
+**Operator checks and rollback**:
+`bun run db:check` uses the supplied environment and checks runtime `DATABASE_URL` first, falling back to `DIRECT_URL`. `bun run db:check:prod` loads `.env.production.local`, like the recovery command `bun run db:migrate:prod`. Prebuilt deployments and deployment rollbacks skip automatic migration and checking; an operator must run `bun run db:check:prod` before using them.
+
+**Safe rehearsal**:
+`bun run test:integration scripts/migrate-deploy.integration.test.ts` uses a temporary database on local Supabase. It applies pending migrations, retries a current schema, stops on SQL and check failures, and proves Preview skips migrations. Only the application build is replaced with a marker; no hosted data is touched.
 
 ### Booking incident: 2026-10-11
 
@@ -143,11 +157,7 @@ Preview deploy (`bun run vercel:deploy`) needs its own Supabase or you accept th
 4. Preview, publish, open `/s/<slug>` signed out.
 5. Confirm a qualified session row, chat reply, and one booking.
 6. Confirm `email_deliveries` rows; if From is `onboarding@resend.dev`, check the owner inbox only.
-7. Hit cron once:
-
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/maintenance
-```
+7. Confirm the maintenance cron run in Vercel's logs. Never paste `CRON_SECRET` into shared logs.
 
 8. Signed-out `/dashboard` should redirect to sign-in. Unknown slug 404.
 

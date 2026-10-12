@@ -1,29 +1,39 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 import { scripts } from "../package.json";
 import { config } from "../vercel";
 
-function runBuild(environment: string, gateStatus = 0) {
+function runBuild(environment: string, failure = "") {
   expect(config.buildCommand).toBe("bun run build:vercel");
-  // Stub only the process boundary: exercise the configured shell command
-  // without querying a hosted database or running a Next.js build.
-  return spawnSync(
-    "sh",
-    [
-      "-c",
-      'bun() { printf "%s\\n" "$*"; if [ "$2" = "db:check" ]; then return "$GATE_STATUS"; fi; }; eval "$BUILD_COMMAND"',
-    ],
-    {
+  const directory = mkdtempSync(join(tmpdir(), "build-vercel-"));
+  try {
+    writeFileSync(
+      join(directory, "package.json"),
+      JSON.stringify({
+        scripts: {
+          "build:vercel": scripts["build:vercel"],
+          "db:migrate:deploy": `echo migrate; exit ${failure === "migrate" ? 1 : 0}`,
+          "db:check": `echo check; exit ${failure === "check" ? 1 : 0}`,
+          build: "echo build",
+        },
+      }),
+    );
+    return spawnSync("bun", ["run", "build:vercel"], {
+      cwd: directory,
       env: {
         ...process.env,
         VERCEL_ENV: environment,
-        GATE_STATUS: String(gateStatus),
-        BUILD_COMMAND: scripts["build:vercel"],
+        DIRECT_URL: "",
+        DATABASE_URL: "",
       },
       encoding: "utf8",
-    },
-  );
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 it("provides environment-only and explicit production migration-check scripts", () => {
@@ -43,23 +53,30 @@ it("documents only Bun script entries for deployment and recovery", () => {
   }
 });
 
-it("checks migrations before production builds and stops on gate failure", () => {
+it("migrates production before the read-only check and application build", () => {
   const success = runBuild("production");
   expect(success.status).toBe(0);
   expect(success.stdout.trim().split("\n")).toEqual([
-    "run db:check",
-    "run build",
+    "migrate",
+    "check",
+    "build",
   ]);
-  const failure = runBuild("production", 1);
-  expect(failure.status).toBe(1);
-  expect(failure.stdout.trim()).toBe("run db:check");
+});
+
+it.each([
+  ["migrate", ["migrate"]],
+  ["check", ["migrate", "check"]],
+])("stops the build when %s fails", (failure, output) => {
+  const result = runBuild("production", failure);
+  expect(result.status).toBe(1);
+  expect(result.stdout.trim().split("\n")).toEqual(output);
 });
 
 it.each(["preview", "development", ""])(
   "does not gate %s builds on production migrations",
   (environment) => {
-    const result = runBuild(environment, 1);
+    const result = runBuild(environment, "migrate");
     expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toBe("run build");
+    expect(result.stdout.trim()).toBe("build");
   },
 );
