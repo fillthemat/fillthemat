@@ -47,7 +47,7 @@ export type AssistantInput = AssistantContext & {
   messages: UIMessage[];
   /** Defaults to `defaultLanguageModel()`, chosen when the reply is made. */
   model?: LanguageModel;
-  poppy?: PoppyAudience;
+  poppy?: PoppyAudience & { operationsSupported?: boolean };
   /** A channel may bound completed generation to its request lifetime. */
   abortSignal?: AbortSignal;
 };
@@ -59,7 +59,12 @@ async function createAssistant({
   poppy,
   model = defaultLanguageModel(),
 }: Omit<AssistantInput, "messages">) {
-  const tools = assistantTools({ school, catalog, now });
+  const tools = assistantTools({
+    school,
+    catalog,
+    now,
+    poppyOperations: poppy ? (poppy.operationsSupported ?? false) : undefined,
+  });
   const assistant = new ToolLoopAgent({
     model,
     // The builder reads only its own fields, so the rest of a School row
@@ -96,6 +101,7 @@ export type CompletedReply = {
   text: string;
   bookingIntent: BookingIntent | null;
   leadRequest: LeadRequest | null;
+  operationError?: "extension_required";
   provenance: ReplyProvenance;
 };
 
@@ -126,6 +132,11 @@ export async function completedReply({
     text: result.text.trim(),
     bookingIntent: bookingIntentFromResult(lastPrepareBooking?.output),
     leadRequest: leadRequestFromResult(lastContactRequest?.output),
+    ...(lastPrepareBooking?.output &&
+    !lastPrepareBooking.output.ok &&
+    lastPrepareBooking.output.reason === "extension_required"
+      ? { operationError: "extension_required" as const }
+      : {}),
     provenance,
   };
 }

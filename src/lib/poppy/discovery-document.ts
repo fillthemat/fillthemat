@@ -9,6 +9,12 @@ export function discoveryDocument(
     protocol_version: "0.1",
     organization: { name: school.name, domain },
     auth: { issuer: schoolIssuer(school.id) },
+    extensions: {
+      operations: {
+        version: "1",
+        endpoint: `${poppyAppOrigin()}/poppy/schools/${school.id}/operations`,
+      },
+    },
     agent: {
       protocols: [
         {

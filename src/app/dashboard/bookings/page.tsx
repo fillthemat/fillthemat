@@ -154,6 +154,9 @@ export default async function BookingsPage({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Channel: {formatChannel(booking.channel)}
+                  {booking.channel === "poppy" && booking.poppyClientDisplayName
+                    ? ` · ${booking.poppyClientDisplayName}`
+                    : ""}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   <ContactLine
@@ -212,6 +215,10 @@ export default async function BookingsPage({
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatChannel(booking.channel)}
+                      {booking.channel === "poppy" &&
+                      booking.poppyClientDisplayName
+                        ? ` · ${booking.poppyClientDisplayName}`
+                        : ""}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       <ContactLine
