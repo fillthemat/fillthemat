@@ -604,11 +604,16 @@ it("rolling back the booking/final-Operation transaction also rolls back budget 
     await sql`drop trigger test_budget_rollback on app.poppy_operations`;
     await sql`drop function app.test_budget_rollback()`;
   }
-  expect((await confirmBooking(user, operation)).state).toBe("in_progress");
-  for (let index = 0; index < 3; index++)
+  const recovered = await confirmBooking(user, operation);
+  expect(recovered.state).toBe("succeeded");
+  expect(await confirmBooking(user, operation)).toEqual(recovered);
+  for (let index = 0; index < 2; index++)
     expect((await confirmBooking(user, await propose(user))).state).toBe(
       "succeeded",
     );
+  expect(
+    (await confirmBooking(user, await propose(user))).result.data.code,
+  ).toBe("poppy_user_booking_limit");
 });
 
 it("maintenance removes expired budget records without refunding active spend", async () => {
