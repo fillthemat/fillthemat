@@ -2,6 +2,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { bookings, cronRuns, emailDeliveries } from "@/db/schema";
 import { endInactiveConversations } from "@/lib/conversations/conversation-store";
+import { recheckSchoolDomains } from "@/lib/poppy/domain-maintenance";
 import { purgePoppyReplays } from "@/lib/poppy/replay";
 import { shouldCreateReminder } from "@/lib/schedule/reminders";
 import { runEmailSendOnce } from "./deliveries";
@@ -63,6 +64,7 @@ export async function runMaintenance(
   if (!run) throw new Error("failed to create cron run");
 
   try {
+    await recheckSchoolDomains();
     const reminderCount = await createDueReminderDeliveries(dependencies.now());
     const sends = await runEmailSendOnce(run.id, dependencies);
     const sentCount = sends.sent;

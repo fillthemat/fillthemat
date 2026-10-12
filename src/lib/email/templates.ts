@@ -1,5 +1,6 @@
 import { formatInTimeZone } from "date-fns-tz";
 import type { Booking, Lead, School } from "@/db/schema";
+import { poppyAppOrigin } from "@/lib/poppy/urls";
 
 function formatWhen(booking: Booking): string {
   return `${formatInTimeZone(
@@ -142,5 +143,20 @@ Fillthemat`;
   return {
     subject: `New trial lead at ${school.name}`,
     text: text.trim(),
+  };
+}
+
+export function ownerPoppyDomainDroppedEmail(school: School, domain: string) {
+  return {
+    subject: `Poppy domain disconnected: ${domain}`,
+    text: `${domain} was disconnected from ${school.name} after failing 3 consecutive checks of https://${domain}/.well-known/poppy.json.
+
+Personal Agents can no longer find this School through that domain on Fillthemat. Any other connected domains are unchanged.
+
+To reconnect, open Poppy settings, add ${domain} again, and restore the HTTPS redirect or upload the exact JSON copy shown there. Then choose Check now; the domain will be advertised again once the check passes.
+
+${poppyAppOrigin()}/dashboard/settings?section=poppy
+
+Fillthemat`,
   };
 }
