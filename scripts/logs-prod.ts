@@ -21,13 +21,19 @@ export function buildArgs(filters: string[]): string[] {
 export function redact(output: string): string {
   for (const pattern of [
     /(?:\\?["'])?(?:set-cookie|cookie)(?:\\?["'])?\s*[:=]\s*(?:\\?["'][^\r\n]*?\\?["']|[^\r\n]+)/gi,
-    /(?:\\?["'])?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|authorization)(?:\\?["'])?\s*[:=]\s*(?:\\?["'][^\r\n]*?\\?["']|Bearer\s+[^\s,;]+|[^\s,;]+)/gi,
-    /\bBearer\s+[^\s"'\\,;]+|\beyJ[\w-]+\.[\w-]+\.[\w-]+|\b(?:sk[-_]|re_|gh[pousr]_|vercel_)[\w-]+/gi,
-    /[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi,
-    /(?<![\w.-])(?:\+\d[\d ()-]{7,}\d|\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}|\d{10,11})(?![\w.-])/g,
+    /(?:\\?["'])?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|authorization)(?:\\?["'])?\s*[:=]\s*(?:\\?["'][^\r\n]*?\\?["']|(?:Bearer|Basic)\s+[^\s,;]+|[^\s,;]+)/gi,
+    /\b(?:Bearer|Basic)\s+[^\s"'\\,;]+|\beyJ[\w-]+\.[\w-]+\.[\w-]+|\b(?:sk[-_]|rk_|sb_secret_|whsec_|re_|gh[pousr]_|vercel_)[\w-]+/gi,
+    /[\w.%+-]+(?:@|%40)[\w.-]+\.[a-z]{2,}/gi,
+    /(?<![\w.-])(?:\+\d[\d ()-]{7,}\d|0(?:[ ()-]*\d){9,10}|\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}|\d{10,11})(?![\w.-])/g,
   ])
     output = output.replace(pattern, "[redacted]");
   return output;
+}
+
+export function needsLogin(output: string): boolean {
+  return /no existing credentials|not logged in|unauthori[sz]ed|authentication (?:failed|required)|(?:invalid|expired) token|token.*(?:invalid|not valid|expired)|\b401\b/i.test(
+    output,
+  );
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
@@ -41,7 +47,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     if (result.error) throw new Error("CLI failed; narrow the window.");
     process.stdout.write(redact(result.stdout));
     process.stderr.write(redact(result.stderr));
-    if (result.status)
+    if (result.status && needsLogin(result.stderr + result.stdout))
       console.error("Auth? Ask a human: bun run vercel login.");
     process.exitCode = result.status ?? 1;
   } catch (error) {

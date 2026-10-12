@@ -8,7 +8,6 @@
     "dev:stop": "bun scripts/stop-dev-local.ts",
     "setup": "bun scripts/setup-local.ts",
     "doctor": "bun scripts/doctor-local.ts",
-    "deps:install": "bun install",
     "vercel": "bunx vercel@63.1.2",
     "logs:prod": "bun --no-env-file scripts/logs-prod.ts",
     "db:seed": "bun scripts/seed-local.ts",

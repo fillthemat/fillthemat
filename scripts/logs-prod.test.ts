@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { buildArgs, redact } from "./logs-prod";
+import { buildArgs, needsLogin, redact } from "./logs-prod";
 
 it("passes native filters through with a fixed read-only production target", () => {
   const filters = [
@@ -31,15 +31,39 @@ it("passes native filters through with a fixed read-only production target", () 
 });
 
 it.each([
+  ["No existing credentials found. Please run vercel login", true],
+  ["Not logged in", true],
+  ["401 Unauthorized", true],
+  ["Your token is not valid", true],
+  ["Authentication failed", true],
+  ["Project not found", false],
+  ["Invalid time window", false],
+  ["403 Forbidden: missing project permission", false],
+  ["", false],
+])("offers login recovery only for auth failures: %s", (output, expected) => {
+  expect(needsLogin(output)).toBe(expected);
+});
+
+it.each([
   "jane@example.test",
+  "jane%40example.com",
   "+44 7700 900123",
+  "07700 900123",
+  "020 7946 0958",
   "(415) 555-0123",
   "4155550123",
   "Bearer secret-token",
+  "Authorization: Basic dXNlcjpwYXNz",
+  "Basic dXNlcjpwYXNz",
   "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature",
   "api_key=secret-value",
   '"apiKey":"secret-value"',
   "sk-proj-secret-value",
+  "password=hunter2",
+  "sb_secret_private-value",
+  "whsec_private-value",
+  "rk_live_private-value",
+  "sk_live_private-value",
   "Cookie: session=secret; other=value",
   "Set-Cookie: session=secret; HttpOnly",
   '\\"cookie\\":\\"session=secret; other=value\\"',
