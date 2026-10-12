@@ -13,6 +13,7 @@ import { PricingSection } from "./sections/pricing-section";
 import { ProfileSection } from "./sections/profile-section";
 import { ScheduleSection } from "./sections/schedule-section";
 import { SettingsShell } from "./settings-shell";
+import { WhatsAppPrototype } from "./whatsapp-prototype";
 
 export default async function SettingsPage({
   searchParams,
@@ -63,6 +64,21 @@ async function SectionContent({
   school: Awaited<ReturnType<typeof requireOwnedSchool>>["school"];
   location: string | null;
 }) {
+  if (section === "whatsapp") {
+    return (
+      <WhatsAppPrototype
+        school={{
+          name: school.name,
+          slug: school.slug,
+          approved: school.approvedAt != null,
+          published: school.publishedAt != null,
+          phone: school.phone ?? "",
+          notificationEmail: school.notificationEmail,
+        }}
+      />
+    );
+  }
+
   if (section === "profile") {
     const published = school.publishedAt != null;
     return (
