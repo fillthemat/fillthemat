@@ -100,6 +100,56 @@ async function verifyBaseline() {
 }
 
 describe("School Owner domain connection", () => {
+  it("checks www separately and shows its failure without overriding the apex verification", async () => {
+    const target = `https://app.fillthemat.example/poppy/discovery/${schoolId}/${domain}`;
+    const requested: string[] = [];
+    const request = vi
+      .spyOn(safeFetchNetwork, "request")
+      .mockImplementation(async (url) => {
+        requested.push(url.href);
+        return {
+          status:
+            url.hostname === domain
+              ? 302
+              : url.hostname === `www.${domain}`
+                ? 404
+                : 200,
+          headers: new Headers(
+            url.hostname === domain ? { location: target } : {},
+          ),
+          body: Buffer.from("{}"),
+        };
+      });
+    expect(
+      (await checkPoppyDomainAction(IDLE_STATE, form({ domain }))).status,
+    ).toBe("success");
+    expect(requested).toContain(`https://www.${domain}/.well-known/poppy.json`);
+    expect((await listSchoolDomains(schoolId))[0]).toMatchObject({
+      state: "verified",
+      wwwLastCheckResult: "http_error",
+    });
+    request.mockImplementation(async (url) => ({
+      status:
+        url.hostname === `www.${domain}`
+          ? 302
+          : url.hostname === domain
+            ? 404
+            : 200,
+      headers: new Headers(
+        url.hostname === `www.${domain}` ? { location: target } : {},
+      ),
+      body: Buffer.from("{}"),
+    }));
+    expect(
+      (await checkPoppyDomainAction(IDLE_STATE, form({ domain }))).status,
+    ).toBe("error");
+    expect((await listSchoolDomains(schoolId))[0]).toMatchObject({
+      state: "failing",
+      lastCheckResult: "http_error",
+      wwwLastCheckResult: "passed",
+    });
+  });
+
   it("adds a normalized pending domain with exact instructions and copy, but does not expose discovery", async () => {
     const result = await connectPoppyDomainAction(
       IDLE_STATE,
@@ -189,6 +239,46 @@ describe("School Owner domain connection", () => {
     expect(await internal.json()).toMatchObject({
       auth: { issuer: `https://auth.fillthemat.example/schools/${schoolId}` },
     });
+  });
+
+  it("keeps a hosted JSON copy valid after a School rename, but requires every other field and JSON content type", async () => {
+    const [connection] = await listSchoolDomains(schoolId);
+    const copy = JSON.parse(connection?.document ?? "");
+    await sql`update app.schools set name = 'Renamed School' where id = ${schoolId}`;
+    try {
+      const request = vi.spyOn(safeFetchNetwork, "request");
+      request.mockResolvedValue({
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        body: Buffer.from(JSON.stringify(copy)),
+      });
+      expect(
+        (await checkPoppyDomainAction(IDLE_STATE, form({ domain }))).status,
+      ).toBe("success");
+      for (const [body, contentType] of [
+        [
+          JSON.stringify({ ...copy, protocol_version: "different" }),
+          "application/json",
+        ],
+        ["not JSON", "application/json"],
+        [JSON.stringify(copy), "text/plain"],
+        [
+          JSON.stringify({ ...copy, organization: { domain } }),
+          "application/json",
+        ],
+      ]) {
+        request.mockResolvedValue({
+          status: 200,
+          headers: new Headers({ "content-type": contentType }),
+          body: Buffer.from(body ?? ""),
+        });
+        expect(
+          (await checkPoppyDomainAction(IDLE_STATE, form({ domain }))).status,
+        ).toBe("error");
+      }
+    } finally {
+      await sql`update app.schools set name = 'Poppy School' where id = ${schoolId}`;
+    }
   });
 
   it("accepts an exact JSON copy, lists only live domains in issuer metadata, and removes bindings immediately", async () => {
@@ -383,7 +473,7 @@ describe("School Owner domain connection", () => {
     ).toBe("error");
     expect(
       (await listSchoolDomains(schoolId)).find((row) => row.domain === domain),
-    ).toMatchObject({ state: "failing", consecutiveFailures: 1 });
+    ).toMatchObject({ state: "failing", consecutiveFailures: 0 });
     const target = `https://app.fillthemat.example/poppy/discovery/${schoolId}/${domain}`;
     expect(
       (

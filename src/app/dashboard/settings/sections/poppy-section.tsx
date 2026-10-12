@@ -20,6 +20,7 @@ type DomainView = {
   discoveryUrl: string;
   downloadUrl: string;
   lastCheckMessage: string | null;
+  wwwWarning: string | null;
   lastCheckedAt: string | null;
 };
 
@@ -95,7 +96,7 @@ export function PoppySection({ domains }: { domains: DomainView[] }) {
           maxLength={260}
           required
           spellCheck={false}
-          helper="Enter only the domain, without https:// or a path. The www. form is covered too."
+          helper="Enter only the domain, without https:// or a path. Configure and check the www. form too."
           error={errorFor("domain")}
         />
         <SaveBar
@@ -130,8 +131,9 @@ export function PoppySection({ domains }: { domains: DomainView[] }) {
           </dl>
           <p className="text-sm text-muted-foreground">
             If your website builder cannot redirect, host the downloaded file at
-            the From URL with Content-Type: application/json. Do not edit or
-            reformat it. Configure the same redirect or copy for www.
+            the From URL with Content-Type: application/json. Keep every field
+            unchanged; a School rename does not require a new copy. Configure
+            the same redirect or copy for www.
             {domain.domain}.
           </p>
           <div className="flex flex-wrap items-start gap-3">
@@ -160,6 +162,12 @@ export function PoppySection({ domains }: { domains: DomainView[] }) {
                 </time>
               ) : null}
             </p>
+          ) : null}
+          {domain.wwwWarning ? (
+            <Callout>
+              Warning: www.{domain.domain}: {domain.wwwWarning} The apex check
+              alone controls Poppy verification.
+            </Callout>
           ) : null}
         </section>
       ))}

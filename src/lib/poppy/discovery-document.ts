@@ -1,6 +1,6 @@
 import { poppyAppOrigin, schoolIssuer } from "./urls";
 
-/** This is also the downloadable copy: no whitespace/newline reserialization. */
+/** The downloadable copy; verification ignores only organization.name. */
 export function discoveryDocument(
   school: { id: string; name: string },
   domain: string,

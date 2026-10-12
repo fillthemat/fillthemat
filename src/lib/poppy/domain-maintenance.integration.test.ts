@@ -241,6 +241,26 @@ it("a passing daily check resets consecutive failures before another failure", a
   expect(emails).toEqual([]);
 });
 
+it("manual failures do not count toward dropping a domain and a manual pass resets the cron streak", async () => {
+  await verifiedDomain();
+  failingFetch();
+  await maintenance();
+  for (let i = 0; i < 3; i++) await checkSchoolDomain(schoolId, domain);
+  expect((await listSchoolDomains(schoolId))[0]).toMatchObject({
+    state: "failing",
+    consecutiveFailures: 1,
+    lastCheckResult: "no_redirect",
+  });
+  await maintenance();
+  expect((await listSchoolDomains(schoolId))[0]?.consecutiveFailures).toBe(2);
+  passingFetch();
+  await checkSchoolDomain(schoolId, domain);
+  expect((await listSchoolDomains(schoolId))[0]?.consecutiveFailures).toBe(0);
+  failingFetch();
+  await maintenance();
+  expect((await listSchoolDomains(schoolId))[0]?.consecutiveFailures).toBe(1);
+});
+
 it("retains the domain notification for retry after removal when email delivery fails", async () => {
   await verifiedDomain();
   failingFetch();
