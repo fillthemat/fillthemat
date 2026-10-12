@@ -1,5 +1,6 @@
 import { type InferToolOutput, tool } from "ai";
 import { z } from "zod";
+import { bookingDetails } from "@/lib/schedule/booking-details";
 import { isAgeEligible, type OpenSlot } from "@/lib/schedule/occurrences";
 import { parseSlotId } from "@/lib/schedule/slot-id";
 import { contactSchema } from "@/lib/validation";
@@ -138,16 +139,7 @@ export function buildBookingTerms(
     participant,
     contact,
     pricing: school.pricing,
-    guidance:
-      [
-        school.accessNotes,
-        school.parkingNotes,
-        offering.attire ?? school.trialGuidance,
-        offering.expectations,
-      ]
-        .filter(Boolean)
-        .join("\n") || null,
-    location: [school.address, school.city].filter(Boolean).join(", "),
+    ...bookingDetails(school, offering),
   };
 }
 

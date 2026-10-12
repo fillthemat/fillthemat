@@ -10,7 +10,7 @@ import { POST as send } from "@/app/poppy/schools/[schoolId]/conversations/[conv
 import { POST as start } from "@/app/poppy/schools/[schoolId]/conversations/route";
 import { POST as token } from "@/app/schools/[schoolId]/token/route";
 import * as languageModel from "@/lib/ai/language-model";
-import { runMaintenance } from "@/lib/email/maintenance";
+import { runMaintenance } from "@/lib/maintenance";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { createTestPoppyAgent } from "@/test/poppy-agent";
 import { exportedSpans, exportedTraces, leaks } from "@/test/tracing";

@@ -17,6 +17,7 @@ import { POST as token } from "@/app/schools/[schoolId]/token/route";
 import * as languageModel from "@/lib/ai/language-model";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
 import type { EmailMessage } from "@/lib/email/dependencies";
+import { runMaintenance } from "@/lib/maintenance";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { createTestPoppyAgent } from "@/test/poppy-agent";
@@ -456,7 +457,7 @@ it("request-contact reports extension_required rather than creating a lead for a
       type: "message",
       message: expect.objectContaining({
         role: "company",
-        text: expect.stringContaining("extension_required"),
+        text: expect.not.stringContaining("extension_required"),
         data: { error: "extension_required", extension: "operations" },
       }),
     }),
@@ -642,6 +643,30 @@ it("changed lead recipient terms fail instead of silently sending a different re
   }
 });
 
+it("a School rename does not invalidate user approval of a lead request", async () => {
+  const contact = requestContact();
+  const user = await caller();
+  const { operation } = await propose(user);
+  await sql`update app.schools set name = 'Renamed Operation School' where id = ${schoolId}`;
+  try {
+    const response = await confirm(
+      await user.request(`operations/${operation.operation_id}/confirm`, {
+        revision: 1,
+        approved_by: "user",
+      }),
+      operationParams(operation.operation_id),
+    );
+    expect(await response.json()).toMatchObject({ state: "succeeded" });
+    expect(
+      (await loadLeads(schoolId)).filter(
+        (row) => row.contact.email === contact.email,
+      ),
+    ).toHaveLength(1);
+  } finally {
+    await sql`update app.schools set name = 'Operation School' where id = ${schoolId}`;
+  }
+});
+
 it("minimal phone-only leads keep the same Poppy analytics session across Sessions and Contact changes", async () => {
   const user = await caller();
   const sessionIds: string[] = [];
@@ -688,7 +713,7 @@ it("minimal phone-only leads keep the same Poppy analytics session across Sessio
   expect(sessionIds[1]).toBe(sessionIds[0]);
 });
 
-it("a lead effect commit failure rolls back its lead and notification and cannot execute again", async () => {
+it("a lead effect commit failure rolls back its lead and notification and a later confirm retries safely", async () => {
   const contact = requestContact();
   const user = await caller();
   const { operation } = await propose(user);
@@ -720,20 +745,19 @@ it("a lead effect commit failure rolls back its lead and notification and cannot
     }),
     operationParams(operation.operation_id),
   );
-  expect(replay.headers.get("Retry-After")).toBe("1");
   expect(await replay.json()).toMatchObject({
-    state: "in_progress",
+    state: "succeeded",
     confirmation: { approved_by: "user" },
-    result: null,
+    result: { data: { lead_id: expect.any(String) } },
   });
   expect(
     (await loadLeads(schoolId)).filter(
       (row) => row.contact.email === contact.email,
     ),
-  ).toHaveLength(0);
+  ).toHaveLength(1);
   expect(
     await sql`select id from app.email_deliveries where school_id = ${schoolId}`,
-  ).toEqual(before);
+  ).toHaveLength(before.length + 1);
 });
 
 it("Poppy request-contact refuses missing Contact details and invented Trial Offerings", async () => {
@@ -752,10 +776,11 @@ it("Poppy request-contact refuses missing Contact details and invented Trial Off
     ).toHaveLength(0);
   }
 });
-it("repeated and concurrent confirms book at most once and the owner sees Poppy attribution", async () => {
+it("guidance drift does not invalidate repeated and concurrent booking confirms; the owner sees Poppy attribution", async () => {
   const contact = prepare();
   const user = await caller();
   const { operation, body } = await propose(user);
+  await sql`update app.schools set parking_notes = 'New parking instructions', access_notes = 'Use the side door' where id = ${schoolId}`;
   // Closing the Conversation does not withdraw a separately issued Operation
   // or lose the retained conversation link on its resulting booking.
   await close(
@@ -787,6 +812,7 @@ it("repeated and concurrent confirms book at most once and the owner sees Poppy 
     operationParams(operation.operation_id),
   );
   const final = await retry.json();
+  await sql`update app.schools set parking_notes = null, access_notes = null where id = ${schoolId}`;
   expect(final).toMatchObject({
     operation_id: operation.operation_id,
     state: "succeeded",
@@ -969,7 +995,7 @@ it("discovery advertises Operations v1 and unsupported clients receive extension
       type: "message",
       message: expect.objectContaining({
         role: "company",
-        text: expect.stringContaining("extension_required"),
+        text: expect.not.stringContaining("extension_required"),
         data: { error: "extension_required", extension: "operations" },
       }),
     }),
@@ -1103,7 +1129,104 @@ it("the existing Contact email delivery cap still applies to Poppy confirmation"
   ).toHaveLength(0);
 });
 
-it("a failure committing the effect remains in_progress, never silently retries or claims failure", async () => {
+it("a stuck approved Operation is failed by maintenance after the bounded recovery window and identical terms get a new proposal", async () => {
+  const contact = requestContact();
+  const user = await caller();
+  const { operation } = await propose(user);
+  const confirmation = JSON.stringify({
+    revision: 1,
+    approved_by: "user",
+    confirmed_at: new Date().toISOString(),
+  });
+  await sql`update app.poppy_operations set state = 'in_progress', confirmation = ${confirmation}::jsonb, expires_at = now() - interval '4 minutes' where id = ${operation.operation_id}`;
+  await runMaintenance({
+    transport: {
+      send: async () => ({
+        ok: true,
+        kind: "accepted",
+        providerId: randomUUID(),
+      }),
+    },
+  });
+  expect(
+    await (
+      await read(
+        await user.request(`operations/${operation.operation_id}`),
+        operationParams(operation.operation_id),
+      )
+    ).json(),
+  ).toMatchObject({ state: "in_progress" });
+  await sql`update app.poppy_operations set expires_at = now() - interval '6 minutes' where id = ${operation.operation_id}`;
+  await runMaintenance({
+    transport: {
+      send: async () => ({
+        ok: true,
+        kind: "accepted",
+        providerId: randomUUID(),
+      }),
+    },
+  });
+  const failed = await read(
+    await user.request(`operations/${operation.operation_id}`),
+    operationParams(operation.operation_id),
+  );
+  expect(await failed.json()).toMatchObject({
+    state: "failed",
+    result: {
+      summary: expect.stringContaining("could not be completed"),
+      data: { code: "confirmation_timed_out" },
+    },
+  });
+  requestContact({}, contact);
+  const repeated = (await propose(user)).operation;
+  expect(repeated.state).toBe("proposed");
+  expect(repeated.operation_id).not.toBe(operation.operation_id);
+  expect(
+    (await loadLeads(schoolId)).filter(
+      (row) => row.contact.email === contact.email,
+    ),
+  ).toHaveLength(0);
+});
+
+it("identical-terms reuse retires an abandoned Operation even before the maintenance sweep", async () => {
+  const contact = requestContact();
+  const user = await caller();
+  const { operation } = await propose(user);
+  await sql`update app.poppy_operations set state = 'in_progress', confirmation = ${JSON.stringify({ revision: 1, approved_by: "user", confirmed_at: new Date().toISOString() })}::jsonb, expires_at = now() - interval '6 minutes' where id = ${operation.operation_id}`;
+  requestContact({}, contact);
+  const repeated = (await propose(user)).operation;
+  expect(repeated.state).toBe("proposed");
+  expect(repeated.operation_id).not.toBe(operation.operation_id);
+});
+
+it("the maintenance recovery sweep skips an Operation locked by a live effect", async () => {
+  requestContact();
+  const user = await caller();
+  const { operation } = await propose(user);
+  await sql`update app.poppy_operations set state = 'in_progress', confirmation = ${JSON.stringify({ revision: 1, approved_by: "user", confirmed_at: new Date().toISOString() })}::jsonb, expires_at = now() - interval '6 minutes' where id = ${operation.operation_id}`;
+  await sql.begin(async (tx) => {
+    await tx`select id from app.poppy_operations where id = ${operation.operation_id} for update`;
+    await runMaintenance({
+      transport: {
+        send: async () => ({
+          ok: true,
+          kind: "accepted",
+          providerId: randomUUID(),
+        }),
+      },
+    });
+  });
+  expect(
+    await (
+      await read(
+        await user.request(`operations/${operation.operation_id}`),
+        operationParams(operation.operation_id),
+      )
+    ).json(),
+  ).toMatchObject({ state: "in_progress" });
+});
+
+it("a failure committing the effect rolls back and concurrent confirms retry it at most once", async () => {
   const contact = prepare();
   const user = await caller();
   const { operation } = await propose(user);
@@ -1141,25 +1264,24 @@ it("a failure committing the effect remains in_progress, never silently retries 
     await sql`drop trigger test_final_write_failure on app.poppy_operations`;
     await sql`drop function app.test_final_write_failure()`;
   }
-  const replay = await confirm(
-    await user.request(`operations/${operation.operation_id}/confirm`, {
-      revision: 1,
-      approved_by: "user",
-    }),
-    operationParams(operation.operation_id),
+  const replays = await Promise.all(
+    [0, 1, 2].map(async () =>
+      confirm(
+        await user.request(`operations/${operation.operation_id}/confirm`, {
+          revision: 1,
+          approved_by: "user",
+        }),
+        operationParams(operation.operation_id),
+      ),
+    ),
   );
-  expect(await replay.json()).toMatchObject({ state: "in_progress" });
-  prepare("Sam", contact);
-  const repeated = (await propose(user)).operation;
-  expect(repeated).toMatchObject({
-    operation_id: operation.operation_id,
-    state: "in_progress",
-  });
+  for (const replay of replays)
+    expect(await replay.json()).toMatchObject({ state: "succeeded" });
   expect(
     (await loadBookings({ schoolId, filter: "all" })).filter(
       (booking) => booking.contactEmailSnapshot === contact.email,
     ),
-  ).toHaveLength(0);
+  ).toHaveLength(1);
 });
 
 it("a delayed proposal belongs to the receipt's Session, not the new Session polling the Conversation", async () => {

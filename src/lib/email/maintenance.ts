@@ -1,16 +1,7 @@
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
-import { bookings, cronRuns, emailDeliveries } from "@/db/schema";
-import { endInactiveConversations } from "@/lib/conversations/conversation-store";
-import { purgePoppyBudgetUsages } from "@/lib/poppy/budgets";
-import { recheckSchoolDomains } from "@/lib/poppy/domain-maintenance";
-import { purgePoppyReplays } from "@/lib/poppy/replay";
+import { bookings, emailDeliveries } from "@/db/schema";
 import { shouldCreateReminder } from "@/lib/schedule/reminders";
-import { runEmailSendOnce } from "./deliveries";
-import {
-  type EmailSendDependencies,
-  emailSendDependencies,
-} from "./dependencies";
 
 export async function createDueReminderDeliveries(now = new Date()) {
   const db = getDb();
@@ -51,54 +42,4 @@ export async function createDueReminderDeliveries(now = new Date()) {
     if (inserted[0]) created += 1;
   }
   return created;
-}
-
-export async function runMaintenance(
-  overrides: Partial<EmailSendDependencies> = {},
-) {
-  const dependencies = emailSendDependencies(overrides);
-  const db = getDb();
-  const [run] = await db
-    .insert(cronRuns)
-    .values({ startedAt: dependencies.now() })
-    .returning();
-  if (!run) throw new Error("failed to create cron run");
-
-  try {
-    await recheckSchoolDomains();
-    const reminderCount = await createDueReminderDeliveries(dependencies.now());
-    const sends = await runEmailSendOnce(run.id, dependencies);
-    const sentCount = sends.sent;
-    const failedCount = sends.retrying + sends.dead;
-    const endedConversationCount = await endInactiveConversations(
-      dependencies.now(),
-    );
-    await purgePoppyReplays(dependencies.now());
-    await purgePoppyBudgetUsages(dependencies.now());
-    const [updated] = await db
-      .update(cronRuns)
-      .set({
-        finishedAt: dependencies.now(),
-        reminderCount,
-        sentCount,
-        failedCount,
-        endedConversationCount,
-        result: "success",
-      })
-      .where(eq(cronRuns.id, run.id))
-      .returning();
-    return updated ?? run;
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "maintenance_failed";
-    await db
-      .update(cronRuns)
-      .set({
-        finishedAt: dependencies.now(),
-        result: "error",
-        errorSummary: message.slice(0, 500),
-      })
-      .where(eq(cronRuns.id, run.id));
-    throw error;
-  }
 }

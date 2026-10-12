@@ -9,8 +9,19 @@ export async function recheckSchoolDomains() {
     .select({ schoolId: schoolDomains.schoolId, domain: schoolDomains.domain })
     .from(schoolDomains)
     .where(inArray(schoolDomains.state, ["verified", "failing"]));
-  for (const connection of connections)
-    await checkSchoolDomain(connection.schoolId, connection.domain, {
-      dropFailing: true,
-    });
+  for (const connection of connections) {
+    try {
+      await checkSchoolDomain(connection.schoolId, connection.domain, {
+        dropFailing: true,
+      });
+    } catch {
+      console.error(
+        JSON.stringify({
+          event: "poppy_domain_recheck_failed",
+          schoolId: connection.schoolId,
+          domain: connection.domain,
+        }),
+      );
+    }
+  }
 }

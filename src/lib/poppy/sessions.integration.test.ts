@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { POST as revoke } from "@/app/schools/[schoolId]/revoke/route";
 import { POST as token } from "@/app/schools/[schoolId]/token/route";
-import { runMaintenance } from "@/lib/email/maintenance";
+import { runMaintenance } from "@/lib/maintenance";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { createTestPoppyAgent } from "@/test/poppy-agent";
 import { checkPoppyRequest } from "./protected-request";

@@ -12,7 +12,7 @@ import { POST as token } from "@/app/schools/[schoolId]/token/route";
 import * as database from "@/db";
 import * as schema from "@/db/schema";
 import * as languageModel from "@/lib/ai/language-model";
-import { runMaintenance } from "@/lib/email/maintenance";
+import { runMaintenance } from "@/lib/maintenance";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { createTestPoppyAgent } from "@/test/poppy-agent";
