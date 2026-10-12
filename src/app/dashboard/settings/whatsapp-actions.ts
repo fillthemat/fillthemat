@@ -2,8 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
+import { z } from "zod";
 import { requireOwnedSchool } from "@/lib/auth/current-school";
-import { createWhatsAppConnection } from "@/lib/whatsapp/connection";
+import {
+  createWhatsAppConnection,
+  type SignupCompletion,
+  signupCompletionSchema,
+} from "@/lib/whatsapp/connection";
 import { errorState, type SettingsFormState, successState } from "./form-state";
 
 export async function enableWhatsAppAction(
@@ -41,5 +46,58 @@ export async function enableWhatsAppAction(
     return errorState(
       "We could not confirm number setup. Contact Fillthemat before trying again so we do not buy a second number.",
     );
+  }
+}
+
+export async function readWhatsAppSignupAction() {
+  const { school } = await requireOwnedSchool();
+  return createWhatsAppConnection().read(school.id);
+}
+
+export async function startWhatsAppSignupAction() {
+  const { school } = await requireOwnedSchool();
+  const result = await createWhatsAppConnection().startSignup(school.id);
+  revalidatePath("/dashboard/settings");
+  return result;
+}
+
+export async function endWhatsAppSignupAction(
+  attemptId: string,
+  outcome: "cancelled" | "failed",
+) {
+  const { school } = await requireOwnedSchool();
+  if (
+    !z.uuid().safeParse(attemptId).success ||
+    !z.enum(["cancelled", "failed"]).safeParse(outcome).success
+  )
+    throw new Error("invalid_signup_input");
+  const connection = createWhatsAppConnection();
+  const result =
+    outcome === "cancelled"
+      ? await connection.cancelSignup(school.id, attemptId)
+      : await connection.failSignup(school.id, attemptId);
+  revalidatePath("/dashboard/settings");
+  return result;
+}
+
+export async function completeWhatsAppSignupAction(input: SignupCompletion) {
+  const { school } = await requireOwnedSchool();
+  const validated = signupCompletionSchema.safeParse(input);
+  if (!validated.success) throw new Error("invalid_signup_input");
+  try {
+    const result = await createWhatsAppConnection().completeSignup(
+      school.id,
+      validated.data,
+    );
+    revalidatePath("/dashboard/settings");
+    return result;
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error(
+      JSON.stringify({ event: "whatsapp_signup_failed", schoolId: school.id }),
+    );
+    revalidatePath("/dashboard/settings");
+    // Do not serialize provider/crypto errors, exchange codes or customer tokens.
+    throw new Error("whatsapp_signup_failed");
   }
 }

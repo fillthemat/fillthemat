@@ -33,6 +33,24 @@ export function createTwilioNumberProvider({
     });
   }
   return {
+    async verificationMessageReceivedAt(messageId) {
+      if (!/^SM[0-9a-fA-F]{32}$/.test(messageId)) return null;
+      const response = await request(`${base}/Messages/${messageId}.json`);
+      if (!response.ok) throw new Error("Carrier verification lookup failed");
+      const message = z
+        .object({
+          sid: z.string(),
+          account_sid: z.string(),
+          date_created: z.string(),
+        })
+        .parse(await response.json());
+      const receivedAt = new Date(message.date_created);
+      return message.sid === messageId &&
+        message.account_sid === accountSid &&
+        Number.isFinite(receivedAt.getTime())
+        ? receivedAt
+        : null;
+    },
     async buyUsNumber({ allocationId }) {
       const name = `fillthemat:${allocationId}`;
       // Reconcile a prior purchase before retrying the allocation. Do not
@@ -81,7 +99,11 @@ export function createTwilioNumberProvider({
         new URLSearchParams({
           PhoneNumber: number,
           FriendlyName: name,
-          SmsUrl: smsWebhookUrl,
+          SmsUrl: (() => {
+            const url = new URL(smsWebhookUrl);
+            url.searchParams.set("allocationId", allocationId);
+            return url.href;
+          })(),
           SmsMethod: "POST",
         }),
       );
