@@ -10,12 +10,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Coding standards
 
-Implementation and code review MUST read and apply [CODING_STANDARDS.md](CODING_STANDARDS.md).
+Code review MUST read and apply [CODING_STANDARDS.md](CODING_STANDARDS.md).
 
-## Linting
+## Verification
 
-After making changes, run `bun run lint` and fix all errors.
-Before opening a PR, run `bun run typecheck` and fix all errors.
+Before opening a PR, run `bun run verify`
 
 ## Local development
 
@@ -33,6 +32,7 @@ Each worktree shares the machine's one Supabase/Docker stack but owns the Next.j
 - Stop this worktree's Next process with `bun run dev:stop`. Do not `pkill` Next/dev-local by name.
 - Do not stop or recreate Supabase from a child worktree; other agents may be using it.
 - All agent work ends in a GitHub pull request: push the branch and open a PR with a body written using the `pr` skill before cleaning up the worktree.
+- When Main requires the merge queue, queue passing PRs; GitHub rechecks the combined changes before merging.
 - When the worktree is finished: in that tree run `bun run dev:stop`, then from the repo root `git worktree remove .worktrees/<name>`. Do not delete `.git/fillthemat-ports/*` by hand — the next `bun run setup` reuses the port once the directory is gone. Delete the branch separately if you no longer need it (`git branch -d <branch>`).
 
 ## Agent skills
