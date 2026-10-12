@@ -27,6 +27,9 @@ _Example_: `src/components/ui/input.tsx`
 
 ## Everyday style
 
+**Keep changes proportionate**:
+Prefer the smallest change that solves the issue. State a reason in the PR body for each new dependency, new file over approximately 150 lines, or large lockfile change. These triggers need an explanation; they are not bans or reasons to split an implementation artificially.
+
 **Run everything through `bun run`**:
 Every command an agent or human runs has a `package.json` script; docs never show raw `bun scripts/...` or `bunx` commands.
 
