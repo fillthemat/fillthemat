@@ -120,6 +120,8 @@ bun run vercel:deploy:prod
 
 First production deploy will use `vercel.ts` (`bunVersion: 1.4.x`, `framework: nextjs`, cron).
 
+`bun run vercel:ignore-build` skips docs/agent-only Preview builds against `VERCEL_GIT_PREVIOUS_SHA`; Production, missing shallow-clone history, and errors build (ignored builds still count toward Vercel's daily deployment quota).
+
 **Production build order**:
 Vercel runs `bun run build:vercel`: migration → read-only check → build, only for Production; other builds skip migration. Both `bun run db:migrate:deploy` (Vercel env, no env file) and `bun run db:migrate:prod` (manual, `.env.production.local`) use `scripts/migrate-prod.ts`; it refuses loopback targets and non-Production Vercel runs.
 Set Production `DIRECT_URL` **before merging**: a DDL-capable direct or session-pooler URI (5432), never the transaction pooler (6543), targeting the same database as `DATABASE_URL`. Both migration paths hold one session-level advisory lock, so concurrent runs serialise and pending migrations run once.

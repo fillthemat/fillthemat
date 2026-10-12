@@ -14,9 +14,8 @@ export const config: VercelConfig = {
       "gh-pages": false,
     },
   },
-  // Belt-and-suspenders if a gh-pages deployment is created anyway (exit 0 =
-  // skip). See docs/decisions/vercel-gh-pages-deployments.md.
-  ignoreCommand: '[ "$VERCEL_GIT_COMMIT_REF" = "gh-pages" ]',
+  // Exit 0 skips docs-only Preview builds; Production and uncertain diffs build.
+  ignoreCommand: "bun run vercel:ignore-build",
   crons: [
     { path: "/api/cron/maintenance", schedule: "0 14 * * *" },
     // Hobby-safe: Vercel's free tier only allows daily cron intervals. The
