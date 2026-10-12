@@ -37,10 +37,19 @@ jobs:
             printf '| drizzle-orm | %s | %s |\n' "$orm_latest" "${orm_rc:-not set}"
             printf '| drizzle-kit | %s | %s |\n\n' "$kit_latest" "${kit_rc:-not set}"
             for issue in 6166 6020 6455; do
-              state=$(gh api "repos/drizzle-team/drizzle-orm/issues/$issue" --jq .state)
+              if ! state=$(gh api "repos/drizzle-team/drizzle-orm/issues/$issue" --jq .state); then
+                state=unavailable
+                printf '::warning::Could not read drizzle-team/drizzle-orm#%s\n' "$issue" >&2
+              fi
               printf -- '- [drizzle-team/drizzle-orm#%s](https://github.com/drizzle-team/drizzle-orm/issues/%s): %s\n' "$issue" "$issue" "$state"
             done
           } >> "$GITHUB_STEP_SUMMARY"
+
+          target_state=$(gh api "repos/$GH_REPO/issues/219" --jq .state)
+          if [[ "$target_state" != open ]]; then
+            printf '\n#219 is not open; no notification.\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
           # A stable SemVer with a nonzero major is >= 1.0.0; reject prereleases.
           stable_v1='^[1-9][0-9]*\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
@@ -53,11 +62,10 @@ jobs:
           headline='Drizzle 1.0 is stable on npm latest.'
           comments=$(gh api --paginate --slurp "repos/$GH_REPO/issues/219/comments?per_page=100")
           notified=$(jq --arg marker "$marker" --arg headline "$headline" \
-            'any(.[][]; (.body | contains($marker) or contains($headline)))' <<< "$comments")
+            'any(.[][]; ((.body // "") | contains($marker) or contains($headline)))' <<< "$comments")
           if [[ "$notified" == false ]]; then
             body=$(printf '%s\n%s\n\nBoth packages are >= 1.0.0: `drizzle-orm@%s` and `drizzle-kit@%s`.\n\n[Drizzle release notes](https://github.com/drizzle-team/drizzle-orm/releases). Ready to revisit the upgrade gates in #219.\n' "$marker" "$headline" "$orm_latest" "$kit_latest")
+            gh api -X POST "repos/$GH_REPO/issues/219/labels" -f 'labels[]=needs-triage' --silent
             gh issue comment 219 --repo "$GH_REPO" --body "$body"
           fi
-          # Retry the label even if a previous run posted its comment then failed.
-          gh issue edit 219 --repo "$GH_REPO" --add-label needs-triage
-          printf '\nStable release detected; #219 notified (or already notified) and labelled needs-triage.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '\nStable release detected; #219 notified or already notified.\n' >> "$GITHUB_STEP_SUMMARY"
