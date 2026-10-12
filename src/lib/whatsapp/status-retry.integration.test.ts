@@ -126,6 +126,169 @@ function status(
 }
 
 describe("WhatsApp accepted-send failure callbacks", () => {
+  it("does not confuse an old attempt, another phone, or an uncorrelated wamid with the unknown send", async () => {
+    const id = await enqueue();
+    await db
+      .update(whatsappDeliveries)
+      .set({ state: "failed", attempts: 2, sendOutcome: "unknown" })
+      .where(eq(whatsappDeliveries.id, id));
+    const unknown = await delivery(id);
+    for (const fields of [
+      { callbackData: `${id}:1`, phoneNumberId: `callback-${suffix}` },
+      { callbackData: `${id}:2`, phoneNumberId: "wrong-phone" },
+      { callbackData: `${id}:2`, phoneNumberId: null },
+      { callbackData: "malformed", phoneNumberId: `callback-${suffix}` },
+      {},
+    ]) {
+      await applyWhatsAppStatuses(
+        [
+          status(`fake:unmatched/${suffix}`, {
+            status: "delivered",
+            ...fields,
+          }),
+        ],
+        { now: dependencies.now },
+      );
+      expect(await delivery(id)).toEqual(unknown);
+    }
+  });
+  it("lets a callback win while the send response is still in flight", async () => {
+    const id = await enqueue();
+    const result = await drainDueWhatsAppDeliveries(randomUUID(), 25, {
+      ...dependencies,
+      transport: {
+        ...dependencies.transport,
+        sendText: async (input) => {
+          await applyWhatsAppStatuses(
+            [
+              status(`fake:inflight/${suffix}`, {
+                status: "delivered",
+                callbackData: input.callbackData,
+                phoneNumberId: input.phoneNumberId,
+              }),
+            ],
+            { now: dependencies.now },
+          );
+          return {
+            ok: false,
+            kind: "unknown",
+            reason: "network_error",
+            message: "lost",
+          };
+        },
+      },
+    });
+    expect(result.deferred).toBe(1);
+    expect(await delivery(id)).toMatchObject({
+      state: "delivered",
+      sendOutcome: "accepted",
+      attempts: 1,
+      claimedAt: null,
+      claimedBy: null,
+    });
+  });
+  it.each(["sent", "delivered", "read", "failed"] as const)(
+    "reconciles unknown outcomes from %s callbacks",
+    async (callbackStatus) => {
+      const id = await enqueue();
+      await db
+        .update(whatsappDeliveries)
+        .set({ state: "failed", attempts: 1, sendOutcome: "unknown" })
+        .where(eq(whatsappDeliveries.id, id));
+      await applyWhatsAppStatuses(
+        [
+          status(`fake:reconcile/${suffix}`, {
+            status: callbackStatus,
+            callbackData: `${id}:1`,
+            phoneNumberId: `callback-${suffix}`,
+          }),
+        ],
+        { now: dependencies.now },
+      );
+      expect(await delivery(id)).toMatchObject({
+        state: callbackStatus,
+        sendOutcome: "accepted",
+        providerId: `fake:reconcile/${suffix}`,
+        attempts: 1,
+      });
+      if (callbackStatus === "failed")
+        expect((await delivery(id)).nextAttemptAt).toEqual(
+          new Date("2000-01-01T12:00:10Z"),
+        );
+    },
+  );
+  it("reconciles delivery evidence even after an unknown send exhausts its retry budget", async () => {
+    const id = await enqueue();
+    await db
+      .update(whatsappDeliveries)
+      .set({
+        state: "dead",
+        attempts: 5,
+        sendOutcome: "unknown",
+        terminalCause: "attempts_exhausted",
+      })
+      .where(eq(whatsappDeliveries.id, id));
+    await applyWhatsAppStatuses(
+      [
+        status(`fake:exhausted/${suffix}`, {
+          status: "delivered",
+          callbackData: `${id}:5`,
+          phoneNumberId: `callback-${suffix}`,
+        }),
+      ],
+      { now: dependencies.now },
+    );
+    expect(await delivery(id)).toMatchObject({
+      state: "delivered",
+      sendOutcome: "accepted",
+      terminalCause: null,
+      attempts: 5,
+    });
+    expect((await run()).deliveries.claimed).toBe(0);
+  });
+  it("reconciles a lost response via its attempt callback and learns the wamid", async () => {
+    const id = await enqueue();
+    let callbackData: string | undefined;
+    await drainDueWhatsAppDeliveries(randomUUID(), 25, {
+      ...dependencies,
+      transport: {
+        ...dependencies.transport,
+        sendText: async (input) => {
+          callbackData = input.callbackData;
+          return {
+            ok: false,
+            kind: "unknown",
+            reason: "network_error",
+            message: "lost",
+          };
+        },
+      },
+    });
+    expect(callbackData).toBe(`${id}:1`);
+    await applyWhatsAppStatuses(
+      [
+        status(`fake:lost/${suffix}`, {
+          status: "sent",
+          callbackData,
+          phoneNumberId: `callback-${suffix}`,
+        }),
+      ],
+      { now: dependencies.now },
+    );
+    expect(await delivery(id)).toMatchObject({
+      state: "sent",
+      sendOutcome: "accepted",
+      providerId: `fake:lost/${suffix}`,
+      attempts: 1,
+    });
+    now = new Date("2000-01-01T12:01:00Z");
+    expect((await run()).deliveries.claimed).toBe(0);
+    await applyWhatsAppStatuses(
+      [status(`fake:lost/${suffix}`, { status: "delivered" })],
+      { now: dependencies.now },
+    );
+    expect((await delivery(id)).state).toBe("delivered");
+  });
   it.each([
     { code: "131026", details: null, expected: "dead" },
     { code: "1", details: "Invalid parameter", expected: "dead" },

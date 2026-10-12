@@ -7,6 +7,8 @@ export type InboundWhatsAppStatus = {
   errorMessage: string | null;
   errorSubcode?: number | null;
   errorDetails?: string | null;
+  callbackData?: string | null;
+  phoneNumberId?: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -92,6 +94,15 @@ export function parseInboundWhatsAppStatuses(
           errorMessage,
           errorSubcode,
           errorDetails,
+          callbackData:
+            typeof status.biz_opaque_callback_data === "string"
+              ? status.biz_opaque_callback_data
+              : null,
+          phoneNumberId:
+            isRecord(value.metadata) &&
+            typeof value.metadata.phone_number_id === "string"
+              ? value.metadata.phone_number_id
+              : null,
         });
       }
     }

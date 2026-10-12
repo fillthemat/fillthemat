@@ -1,0 +1,2 @@
+CREATE TYPE "app"."whatsapp_send_outcome" AS ENUM('accepted', 'unknown', 'rejected');--> statement-breakpoint
+ALTER TABLE "app"."whatsapp_deliveries" ADD COLUMN "send_outcome" "app"."whatsapp_send_outcome";
