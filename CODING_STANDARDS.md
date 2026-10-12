@@ -16,6 +16,14 @@ _Example_: `src/app/api/bookings/route.ts` → `src/lib/schedule/book-slot.ts`
 The assistant proposes a Booking Intent or Lead Request, never a booking or lead. Enforce rules in code, not just instructions; keep school facts in instructions and fetch trial offerings and occurrences through tools.
 _Example_: `src/lib/ai/tools/prepare-booking.ts`; `docs/adr/0003-school-facts-in-prompt-live-data-in-tools.md`
 
+## Database migrations
+
+**Generate metadata; preserve applied history**:
+Never hand-edit `drizzle/meta/*` or an applied migration's SQL. Add a new migration instead, and commit each migration's SQL, snapshot and journal entry together.
+
+**Regenerate after migration conflicts**:
+After rebasing, delete only your branch's unmerged, unapplied migration and regenerate it with `bun run db:generate` against the rebased history. Never hand-merge journal or snapshot JSON; retain the target branch's metadata as the generation baseline.
+
 ## Pages and UI
 
 **Let pages assemble the screen**:

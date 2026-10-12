@@ -20,7 +20,7 @@ env:
 
 jobs:
   checks:
-    name: Lint, format, and typecheck
+    name: Migrations, lint, format, and typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -28,5 +28,5 @@ jobs:
 
       - uses: ./.github/actions/setup-bun-ci
 
-      - name: Run lint, formatting, and type checks
+      - name: Run migration consistency, lint, formatting, and type checks
         run: bun run verify:checks
