@@ -12,6 +12,7 @@ import {
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { createWhatsAppConnection } from "./connection";
+import { MetaSignupError } from "./meta-signup";
 
 loadLocalEnv();
 const db = getDb();
@@ -23,7 +24,11 @@ afterAll(async () => {
 });
 
 async function liveConnection(
-  options: { releaseNumber?: (resourceId: string) => Promise<void> } = {},
+  options: {
+    releaseNumber?: (resourceId: string) => Promise<void>;
+    deregister?: () => Promise<void>;
+    expiresAt?: Date;
+  } = {},
 ) {
   const ownerId = randomUUID();
   owners.push(ownerId);
@@ -62,21 +67,24 @@ async function liveConnection(
     },
     meta: {
       async exchangeCode() {
-        return { token: "cooling-token", expiresAt: null };
+        return { token: "cooling-token", expiresAt: options.expiresAt ?? null };
       },
       async validateNumber() {
         return true;
       },
       async subscribe() {},
+      async updateProfile() {},
       async register() {},
       async readReadiness() {
         return {
           registered: true,
           paymentMethod,
+          messagingAvailable: true,
           profileName: "Cooling School",
         };
       },
       async deregister({ phoneNumberId }) {
+        await options.deregister?.();
         released.push(phoneNumberId);
       },
     },
@@ -104,6 +112,62 @@ async function liveConnection(
 }
 
 describe("WhatsApp cooling-off", () => {
+  it.each(["card", "access", "restricted", "number"] as const)(
+    "switches off broken-%s and still releases its carrier number",
+    async (part) => {
+      vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "97".repeat(32));
+      try {
+        const { connection, schoolId, setTime, released } =
+          await liveConnection();
+        const live = await connection.read(schoolId);
+        await connection.markBroken(schoolId, part);
+        expect(await connection.switchOff(schoolId)).toMatchObject({
+          ok: true,
+          connection: { state: "cooling" },
+        });
+        setTime("2026-11-11T10:00:00Z");
+        expect(await connection.release(schoolId)).toMatchObject({
+          ok: true,
+          connection: { state: "released" },
+        });
+        expect(released).toContain(live.providerResourceId);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+  it.each(["expired", "removed", "unconfigured"] as const)(
+    "releases the carrier rental even when Meta access is %s",
+    async (failure) => {
+      vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "97".repeat(32));
+      try {
+        const { connection, schoolId, released, setTime } =
+          await liveConnection({
+            expiresAt:
+              failure === "expired"
+                ? new Date("2026-10-13T10:00:00Z")
+                : undefined,
+            deregister: async () => {
+              throw new MetaSignupError(
+                failure === "unconfigured" ? "unconfigured" : "signup_failed",
+                "access",
+              );
+            },
+          });
+        const live = await connection.read(schoolId);
+        await connection.switchOff(schoolId);
+        setTime("2026-11-11T10:00:00Z");
+        expect(await connection.release(schoolId)).toMatchObject({
+          ok: true,
+          connection: { state: "released" },
+        });
+        expect(released).toEqual([live.providerResourceId]);
+        expect(await connection.release(schoolId)).toMatchObject({ ok: false });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
   it("resumes a failed carrier release without deregistering twice or reviving the number", async () => {
     vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "97".repeat(32));
     let attempts = 0;
@@ -188,6 +252,10 @@ describe("WhatsApp cooling-off", () => {
         ok: true,
         connection: { state: "needs-card" },
       });
+      expect(await connection.switchOff(schoolId)).toMatchObject({
+        ok: true,
+        connection: { state: "cooling" },
+      });
     } finally {
       vi.unstubAllEnvs();
     }
@@ -233,7 +301,11 @@ describe("WhatsApp cooling-off", () => {
       });
       expect(await connection.enable(schoolId)).toMatchObject({
         ok: true,
-        connection: { state: "popup", number: "+12125550102", releaseAt: null },
+        connection: {
+          state: "popup",
+          number: "+12125550102",
+          releaseAt: new Date("2026-11-18T10:00:00Z"),
+        },
       });
       expect((await connection.read(schoolId)).allocationId).not.toBe(
         live.allocationId,

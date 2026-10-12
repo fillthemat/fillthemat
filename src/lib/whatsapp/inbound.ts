@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools } from "@/db/schema";
 import { sendWhatsAppTypingIndicator } from "./client";
-import { resolveWhatsAppToken } from "./credentials";
+import { resolveSchoolSecret } from "./credentials";
 import type { InboundWhatsAppMessage } from "./parse";
 
 export type ResolveInboundResult =
@@ -37,10 +37,19 @@ export async function sendInboundWhatsAppTypingIndicator(
     .from(schools)
     .where(eq(schools.whatsappPhoneNumberId, input.phoneNumberId))
     .limit(1);
-  if (!school || school.state.startsWith("broken-")) return;
+  if (school?.state !== "live") return;
+  const credential = resolveSchoolSecret(
+    {
+      id: school.id,
+      encrypted: school.whatsappTokenEncrypted,
+      expiresAt: school.whatsappTokenExpiresAt,
+    },
+    "token",
+  );
+  if (!credential.ok) return;
   return sendWhatsAppTypingIndicator({
     phoneNumberId: input.phoneNumberId,
     messageId: input.wamid,
-    token: resolveWhatsAppToken(school),
+    token: credential.secret,
   });
 }

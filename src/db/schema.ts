@@ -163,6 +163,7 @@ export const schools = appSchema.table(
     whatsappDeregisteredAt: timestamp("whatsapp_deregistered_at", {
       withTimezone: true,
     }),
+    whatsappDeregistrationFailure: text("whatsapp_deregistration_failure"),
     whatsappHealthUpdatedAt: timestamp("whatsapp_health_updated_at", {
       withTimezone: true,
     }),
@@ -856,6 +857,7 @@ const {
   whatsappRegistrationPinEncrypted: _whatsappRegistrationPinEncrypted,
   whatsappSignupAttemptId: _whatsappSignupAttemptId,
   whatsappSignupStartedAt: _whatsappSignupStartedAt,
+  whatsappDeregistrationFailure: _whatsappDeregistrationFailure,
   ...schoolDetailsColumns
 } = getTableColumns(schools);
 
@@ -870,6 +872,7 @@ export type School = Omit<
   | "whatsappRegistrationPinEncrypted"
   | "whatsappSignupAttemptId"
   | "whatsappSignupStartedAt"
+  | "whatsappDeregistrationFailure"
 >;
 export type Faq = typeof faqs.$inferSelect;
 export type TrialOffering = typeof trialOfferings.$inferSelect;

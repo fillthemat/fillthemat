@@ -1,4 +1,11 @@
 export type MetaSignupClient = {
+  updateProfile(input: {
+    token: string;
+    phoneNumberId: string;
+    profileName: string;
+    email: string | null;
+    website: string | null;
+  }): Promise<void>;
   deregister?(input: { token: string; phoneNumberId: string }): Promise<void>;
   readReadiness(input: {
     token: string;
@@ -61,6 +68,7 @@ export function metaSignupFromEnv(): MetaSignupClient {
     validateNumber: unavailable,
     subscribe: unavailable,
     register: unavailable,
+    updateProfile: unavailable,
     readReadiness: unavailable,
     deregister: unavailable,
   };
@@ -256,11 +264,17 @@ export function createMetaSignupClient({
       }),
     deregister: ({ token, phoneNumberId }) =>
       success(`${phoneNumberId}/deregister`, token, {}),
+    updateProfile: ({ token, phoneNumberId, profileName, email, website }) =>
+      success(`${phoneNumberId}/whatsapp_business_profile`, token, {
+        messaging_product: "whatsapp",
+        about: profileName.slice(0, 139),
+        ...(email ? { email } : {}),
+        ...(website ? { websites: JSON.stringify([website]) } : {}),
+      }),
   };
 }
 
 import { z } from "zod";
 import { whatsappApiVersion, whatsappVerifyToken } from "./config";
-import type { BrokenPart } from "./connection";
-import { brokenPartFromMetaCode } from "./health";
+import { type BrokenPart, brokenPartFromMetaCode } from "./health";
 import { whatsAppTestVendorFetch } from "./test-vendor-fetch";

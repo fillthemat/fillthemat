@@ -21,6 +21,7 @@ import {
   numberProviderFromEnv,
 } from "./number-provider";
 import { handleTwilioVerification } from "./verification-webhook";
+import { handleTwilioVoiceVerification } from "./voice-verification-webhook";
 
 loadLocalEnv();
 const db = getDb();
@@ -63,6 +64,228 @@ afterAll(async () => {
 });
 
 describe("WhatsApp connection commands", () => {
+  it.each([
+    ["Your WhatsApp code is one two three four five six.", "123456"],
+    ["Your code is 123456. Repeating: 123456.", "123456"],
+    ["Your code is 1 2 3 4 5 6 7.", null],
+    ["Your code is 123456 or 654321.", null],
+  ])(
+    "receives only an unambiguous signed voice code (%s)",
+    async (text, expectedCode) => {
+      const id = await school(true);
+      let time = new Date("2026-10-12T10:00:00Z");
+      const connection = createWhatsAppConnection({
+        db,
+        now: () => time,
+        numberProvider: {
+          async buyUsNumber() {
+            return { ok: true, number: "+12125550191", resourceId: `PN-${id}` };
+          },
+        },
+      });
+      await connection.enable(id);
+      const start = await connection.startSignup(id);
+      const config = {
+        accountSid: `AC${"a".repeat(32)}`,
+        authToken: "voice-secret",
+        smsWebhookUrl: "https://fillthemat.test/api/webhooks/twilio",
+      };
+      const url = `${config.smsWebhookUrl}/voice?allocationId=${start.connection.allocationId}`;
+      const callId = `CA${"b".repeat(32)}`;
+      const recordingId = `RE${"c".repeat(32)}`;
+      const transcriptionId = `TR${"d".repeat(32)}`;
+      const deleted: string[] = [];
+      const provider = createTwilioNumberProvider({
+        ...config,
+        fetch: async (input, init) => {
+          if (init?.method === "DELETE") {
+            deleted.push(new URL(String(input)).pathname);
+            return new Response(null, { status: 204 });
+          }
+          expect(String(input)).toContain(`/Calls/${callId}.json`);
+          return Response.json({
+            sid: callId,
+            account_sid: config.accountSid,
+            to: "+12125550191",
+            date_created: "Mon, 12 Oct 2026 10:00:00 +0000",
+          });
+        },
+      });
+      const request = (
+        target: string,
+        params: Record<string, string>,
+        valid = true,
+      ) => {
+        const body = new URLSearchParams({
+          AccountSid: config.accountSid,
+          ...params,
+        });
+        const signature = createHmac("sha1", config.authToken)
+          .update(
+            target +
+              [...body.entries()]
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([key, value]) => key + value)
+                .join(""),
+          )
+          .digest("base64");
+        return new Request(target, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Twilio-Signature": valid ? signature : "fake",
+          },
+          body,
+        });
+      };
+      const dependencies = { config, connection, numberProvider: provider };
+      expect(
+        (
+          await handleTwilioVoiceVerification(
+            request(url, { To: "+12125550191", CallSid: callId }, false),
+            dependencies,
+          )
+        ).status,
+      ).toBe(403);
+      const voice = await handleTwilioVoiceVerification(
+        request(url, { To: "+12125550191", CallSid: callId }),
+        dependencies,
+      );
+      const twiml = await voice.text();
+      expect(twiml).toContain("<Record");
+      expect(twiml).toContain(
+        `transcribeCallback="${url}&amp;stage=transcription"`,
+      );
+      const callback = `${url}&stage=transcription`;
+      const transcript = {
+        CallSid: callId,
+        RecordingSid: recordingId,
+        TranscriptionSid: transcriptionId,
+        TranscriptionStatus: "completed",
+        TranscriptionText: text,
+      };
+      expect(
+        (
+          await handleTwilioVoiceVerification(
+            request(callback, transcript, false),
+            dependencies,
+          )
+        ).status,
+      ).toBe(403);
+      expect((await connection.read(id)).verificationCode).toBeNull();
+      expect(
+        (
+          await handleTwilioVoiceVerification(
+            request(callback, transcript),
+            dependencies,
+          )
+        ).status,
+      ).toBe(200);
+      expect((await connection.read(id)).verificationCode).toBe(expectedCode);
+      expect(deleted).toEqual([
+        `/2010-04-01/Accounts/${config.accountSid}/Transcriptions/${transcriptionId}.json`,
+        `/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingId}.json`,
+      ]);
+      time = new Date("2026-10-12T10:01:00Z");
+      await connection.cancelSignup(
+        id,
+        requireRow(start.connection.attemptId, "attempt"),
+      );
+      await connection.startSignup(id);
+      await handleTwilioVoiceVerification(
+        request(callback, transcript),
+        dependencies,
+      );
+      expect((await connection.read(id)).verificationCode).toBeNull();
+    },
+  );
+  it.each(["cancelled", "popup-failed"] as const)(
+    "releases a %s reservation after seven days, not before",
+    async (state) => {
+      const id = await school(true);
+      let time = new Date("2026-10-12T10:00:00Z");
+      const rentals: string[] = [];
+      const connection = createWhatsAppConnection({
+        db,
+        now: () => time,
+        numberProvider: {
+          async buyUsNumber() {
+            return { ok: true, number: "+12125550190", resourceId: `PN-${id}` };
+          },
+          async releaseNumber({ resourceId }) {
+            rentals.push(resourceId);
+          },
+        },
+      });
+      await connection.enable(id);
+      const start = await connection.startSignup(id);
+      const attempt = requireRow(start.connection.attemptId, "attempt");
+      if (state === "cancelled") await connection.cancelSignup(id, attempt);
+      else await connection.failSignup(id, attempt);
+      expect((await connection.read(id)).releaseAt).toEqual(
+        new Date("2026-10-19T10:00:00Z"),
+      );
+      expect(await connection.release(id)).toMatchObject({ ok: false });
+      time = new Date("2026-10-19T10:00:00Z");
+      expect(await connection.startSignup(id)).toMatchObject({ ok: false });
+      expect(await connection.releaseDue()).toEqual({
+        released: 1,
+        failed: 0,
+        deferred: 0,
+      });
+      expect((await connection.read(id)).state).toBe("released");
+      expect(rentals).toEqual([`PN-${id}`]);
+    },
+  );
+  it.each(["popup", "cancelled", "popup-failed", "failed"] as const)(
+    "switches off %s setup so its number can be released",
+    async (state) => {
+      const id = await school(true);
+      let time = new Date("2026-10-12T10:00:00Z");
+      const released: string[] = [];
+      const connection = createWhatsAppConnection({
+        db,
+        now: () => time,
+        numberProvider: {
+          async buyUsNumber() {
+            return state === "failed"
+              ? { ok: false, code: "purchase_failed" }
+              : { ok: true, number: "+12125550189", resourceId: `PN-${id}` };
+          },
+          async releaseNumber({ resourceId }) {
+            released.push(resourceId);
+          },
+        },
+      });
+      await connection.enable(id);
+      if (state === "cancelled" || state === "popup-failed") {
+        const start = await connection.startSignup(id);
+        const attempt = requireRow(start.connection.attemptId, "attempt");
+        if (state === "cancelled") await connection.cancelSignup(id, attempt);
+        else await connection.failSignup(id, attempt);
+      }
+      expect(await connection.switchOff(id)).toMatchObject({
+        ok: true,
+        connection: {
+          state: "cooling",
+          releaseAt: new Date("2026-11-11T10:00:00Z"),
+        },
+      });
+      if (state !== "failed") {
+        expect(await connection.switchOn(id)).toMatchObject({
+          ok: true,
+          connection: { state: "popup", number: "+12125550189" },
+        });
+        await connection.switchOff(id);
+      }
+      time = new Date("2026-11-11T10:00:00Z");
+      expect(await connection.release(id)).toMatchObject({
+        ok: true,
+        connection: { state: "released" },
+      });
+      expect(released).toEqual(state === "failed" ? [] : [`PN-${id}`]);
+    },
+  );
   it("reconnects expired access on the same number with a fresh customer token", async () => {
     const id = await school(true);
     vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "aa".repeat(32));
@@ -84,6 +307,7 @@ describe("WhatsApp connection commands", () => {
           return true;
         },
         async subscribe() {},
+        async updateProfile() {},
         async register() {},
         async readReadiness() {
           return {
@@ -155,6 +379,7 @@ describe("WhatsApp connection commands", () => {
           return true;
         },
         async subscribe() {},
+        async updateProfile() {},
         async register() {},
         async readReadiness() {
           return {
@@ -212,6 +437,7 @@ describe("WhatsApp connection commands", () => {
             return true;
           },
           async subscribe() {},
+          async updateProfile() {},
           async register() {},
           async readReadiness() {
             return {
@@ -275,6 +501,7 @@ describe("WhatsApp connection commands", () => {
           return true;
         },
         async subscribe() {},
+        async updateProfile() {},
         async register() {},
         async readReadiness() {
           return {
@@ -372,6 +599,7 @@ describe("WhatsApp connection commands", () => {
           return true;
         },
         async subscribe() {},
+        async updateProfile() {},
         async register() {},
         async readReadiness(input) {
           expect(input).toEqual({
@@ -423,7 +651,7 @@ describe("WhatsApp connection commands", () => {
       vi.unstubAllEnvs();
     }
   });
-  it("serializes registration and refuses duplicate completion or cancellation while Meta is working", async () => {
+  it("serializes registration and allows switching off while Meta is working", async () => {
     const id = await school(true);
     vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "ef".repeat(32));
     let unblock: (() => void) | undefined;
@@ -452,6 +680,7 @@ describe("WhatsApp connection commands", () => {
           return true;
         },
         async subscribe() {},
+        async updateProfile() {},
         async register() {
           registering?.();
           await registration;
@@ -482,12 +711,16 @@ describe("WhatsApp connection commands", () => {
           ok: false,
           code: "invalid_state",
         });
+        expect(await connection.switchOff(id)).toMatchObject({
+          ok: true,
+          connection: { state: "cooling" },
+        });
       } finally {
         unblock?.();
       }
       expect(await completion).toMatchObject({
         ok: true,
-        connection: { state: "needs-card" },
+        connection: { state: "cooling" },
       });
     } finally {
       vi.unstubAllEnvs();
@@ -515,6 +748,7 @@ describe("WhatsApp connection commands", () => {
         async subscribe() {
           throw new Error("Must not subscribe unrelated assets");
         },
+        async updateProfile() {},
         async register() {
           throw new Error("Must not register unrelated assets");
         },
@@ -749,6 +983,7 @@ describe("WhatsApp connection commands", () => {
           return true;
         },
         async subscribe() {},
+        async updateProfile() {},
         async register({ pin }) {
           pins.push(pin);
           if (pins.length === 1) throw new MetaSignupError("signup_failed");
@@ -798,6 +1033,7 @@ describe("WhatsApp connection commands", () => {
     const id = await school(true);
     const phoneNumberId = "106500000195001";
     vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "ab".repeat(32));
+    const profiles: unknown[] = [];
     const connection = createWhatsAppConnection({
       db,
       numberProvider: {
@@ -827,6 +1063,9 @@ describe("WhatsApp connection commands", () => {
         async subscribe() {},
         async register(input) {
           expect(input.pin).toMatch(/^\d{6}$/);
+        },
+        async updateProfile(input) {
+          profiles.push(input);
         },
       },
     });
@@ -860,13 +1099,22 @@ describe("WhatsApp connection commands", () => {
         resolved: true,
         schoolId: id,
       });
+      expect(profiles).toEqual([
+        {
+          token: "customer-school-token",
+          phoneNumberId,
+          profileName: "Connection School",
+          email: "hello@school.test",
+          website: null,
+        },
+      ]);
       const sends: string[] = [];
       vi.stubGlobal("fetch", async (_url: unknown, init: RequestInit) => {
         sends.push(new Headers(init.headers).get("Authorization") ?? "");
         return Response.json({ success: true });
       });
       await sendInboundWhatsAppTypingIndicator(message);
-      expect(sends).toEqual(["Bearer customer-school-token"]);
+      expect(sends).toEqual([]);
       expect(JSON.stringify(await connection.read(id))).not.toContain(
         "customer-school-token",
       );
@@ -900,6 +1148,7 @@ describe("WhatsApp connection commands", () => {
         },
         async subscribe() {},
         async register() {},
+        async updateProfile() {},
       },
     });
     try {

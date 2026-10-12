@@ -1,5 +1,16 @@
 import { z } from "zod";
-import type { BrokenPart } from "./connection";
+import type { WhatsAppConnectionState } from "@/db/schema";
+
+export type BrokenPart = "card" | "access" | "restricted" | "number";
+export const brokenStates = [
+  "broken-card",
+  "broken-access",
+  "broken-restricted",
+  "broken-number",
+] as const;
+export function isBroken(state: WhatsAppConnectionState) {
+  return brokenStates.some((candidate) => candidate === state);
+}
 
 /** Account health is separate from queue retry policy. Recipient, window,
  * throttling and generic transport failures must never break the whole school.

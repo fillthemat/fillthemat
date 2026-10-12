@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { cronSecretMatches } from "@/lib/request";
 import { createWhatsAppConnection } from "@/lib/whatsapp/connection";
+import {
+  RELEASE_BATCH_SIZE,
+  RELEASE_SWEEP_BUDGET_MS,
+} from "@/lib/whatsapp/lifecycle";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 
 export const maxDuration = 300;
@@ -11,8 +15,8 @@ export async function GET(request: Request) {
   }
   const [result, releases] = await Promise.all([
     runWhatsAppWorkerOnce(randomUUID()),
-    createWhatsAppConnection().releaseDue(25, {
-      deadline: new Date(Date.now() + 4 * 60_000),
+    createWhatsAppConnection().releaseDue(RELEASE_BATCH_SIZE, {
+      deadline: new Date(Date.now() + RELEASE_SWEEP_BUDGET_MS),
     }),
   ]);
   return Response.json({ ...result, releases });

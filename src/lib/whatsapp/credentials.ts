@@ -1,5 +1,9 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import type { schools } from "@/db/schema";
+
+export type SchoolSecretPurpose = "token" | "pin";
+export type SchoolSecretResult =
+  | { ok: true; secret: string }
+  | { ok: false; code: "missing_secret" | "expired_secret" };
 
 function encryptionKey(): Buffer {
   const key = process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY;
@@ -10,13 +14,17 @@ function encryptionKey(): Buffer {
 }
 
 /** Server-only storage format; school identity authenticates the ciphertext. */
-export function encryptWhatsAppToken(schoolId: string, token: string): string {
-  if (!token.trim()) throw new Error("whatsapp_token_empty");
+export function encryptSchoolSecret(
+  schoolId: string,
+  secret: string,
+  purpose: SchoolSecretPurpose,
+): string {
+  if (!secret.trim()) throw new Error("school_secret_empty");
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  cipher.setAAD(Buffer.from(schoolId));
+  cipher.setAAD(Buffer.from(`${schoolId}:${purpose}`));
   const encrypted = Buffer.concat([
-    cipher.update(token, "utf8"),
+    cipher.update(secret, "utf8"),
     cipher.final(),
   ]);
   return [
@@ -28,20 +36,17 @@ export function encryptWhatsAppToken(schoolId: string, token: string): string {
 }
 
 /** School-bound credentials only; missing credentials never use shared access. */
-export function resolveWhatsAppToken(
-  school: Pick<
-    typeof schools.$inferSelect,
-    "id" | "whatsappTokenEncrypted" | "whatsappTokenExpiresAt"
-  >,
+export function resolveSchoolSecret(
+  school: { id: string; encrypted: string | null; expiresAt: Date | null },
+  purpose: SchoolSecretPurpose,
   now = new Date(),
-): string | null {
-  if (school.whatsappTokenEncrypted === null) return null;
-  if (school.whatsappTokenExpiresAt && school.whatsappTokenExpiresAt <= now) {
-    throw new Error("whatsapp_token_expired");
+): SchoolSecretResult {
+  if (school.encrypted === null) return { ok: false, code: "missing_secret" };
+  if (school.expiresAt && school.expiresAt <= now) {
+    return { ok: false, code: "expired_secret" };
   }
   try {
-    const [version, iv, tag, ciphertext, extra] =
-      school.whatsappTokenEncrypted.split(":");
+    const [version, iv, tag, ciphertext, extra] = school.encrypted.split(":");
     if (
       version !== "v1" ||
       extra !== undefined ||
@@ -56,14 +61,17 @@ export function resolveWhatsAppToken(
       encryptionKey(),
       Buffer.from(iv, "hex"),
     );
-    decipher.setAAD(Buffer.from(school.id));
+    decipher.setAAD(Buffer.from(`${school.id}:${purpose}`));
     decipher.setAuthTag(Buffer.from(tag, "hex"));
-    return Buffer.concat([
-      decipher.update(Buffer.from(ciphertext, "hex")),
-      decipher.final(),
-    ]).toString("utf8");
+    return {
+      ok: true,
+      secret: Buffer.concat([
+        decipher.update(Buffer.from(ciphertext, "hex")),
+        decipher.final(),
+      ]).toString("utf8"),
+    };
   } catch {
     // Never propagate ciphertext, plaintext, or crypto/provider details to logs.
-    throw new Error("whatsapp_token_unreadable");
+    throw new Error("school_secret_unreadable");
   }
 }

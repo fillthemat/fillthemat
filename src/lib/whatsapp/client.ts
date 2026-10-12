@@ -42,12 +42,14 @@ function record(value: unknown): Record<string, unknown> {
 function graphPost(
   phoneNumberId: string,
   payload: Record<string, unknown>,
+  schoolToken: string | null | undefined,
   dependencies?: WhatsAppGraphDependencies,
   requireMessageId?: true,
 ): Promise<WhatsAppSendOutcome>;
 function graphPost(
   phoneNumberId: string,
   payload: Record<string, unknown>,
+  schoolToken: string | null | undefined,
   dependencies: WhatsAppGraphDependencies | undefined,
   requireMessageId: false,
 ): Promise<WhatsAppReceiptOutcome>;
@@ -55,10 +57,11 @@ function graphPost(
 function graphPost(
   phoneNumberId: string,
   payload: Record<string, unknown>,
+  schoolToken: string | null | undefined,
   dependencies: WhatsAppGraphDependencies = {},
   requireMessageId = true,
 ): Promise<WhatsAppSendOutcome | WhatsAppReceiptOutcome> {
-  const token = dependencies.token;
+  const token = schoolToken === undefined ? dependencies.token : schoolToken;
   if (!token) {
     if (dependencies.localNoop ?? isLocalWhatsAppNoop()) {
       console.info(
@@ -178,10 +181,8 @@ export function sendWhatsAppText(
       type: "text",
       text: { body: text },
     },
-    {
-      ...dependencies,
-      token: token === undefined ? dependencies?.token : token,
-    },
+    token,
+    dependencies,
   );
 }
 
@@ -211,10 +212,8 @@ export function sendWhatsAppTypingIndicator(
       message_id: messageId,
       typing_indicator: { type: "text" },
     },
-    {
-      ...dependencies,
-      token: token === undefined ? dependencies?.token : token,
-    },
+    token,
+    dependencies,
     false,
   );
 }
@@ -265,9 +264,7 @@ export function sendWhatsAppInteractive(
         },
       },
     },
-    {
-      ...dependencies,
-      token: token === undefined ? dependencies?.token : token,
-    },
+    token,
+    dependencies,
   );
 }

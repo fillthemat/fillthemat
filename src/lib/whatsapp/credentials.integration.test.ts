@@ -10,8 +10,9 @@ import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { post, textInboundPayload } from "@/test/whatsapp-webhook";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
-import { encryptWhatsAppToken } from "./credentials";
+import { encryptSchoolSecret } from "./credentials";
 import { enqueueWhatsAppDelivery } from "./deliveries";
+import { sendInboundWhatsAppTypingIndicator } from "./inbound";
 import { enqueueInboundJobs } from "./jobs";
 
 loadLocalEnv();
@@ -40,9 +41,10 @@ beforeAll(async () => {
     await db
       .update(schools)
       .set({
-        whatsappTokenEncrypted: encryptWhatsAppToken(
+        whatsappTokenEncrypted: encryptSchoolSecret(
           schoolId,
           `school-${index}-token`,
+          "token",
         ),
         whatsappTokenExpiresAt: new Date("2099-02-01T12:00:00Z"),
       })
@@ -59,6 +61,45 @@ afterAll(async () => {
 });
 
 describe("school-scoped WhatsApp sends", () => {
+  it.each([
+    "off",
+    "buying",
+    "popup",
+    "cancelled",
+    "popup-failed",
+    "failed",
+    "needs-card",
+    "registering",
+    "cooling",
+    "released",
+    "broken-card",
+    "broken-access",
+    "broken-restricted",
+    "broken-number",
+  ] as const)("does not mark read or type for a %s school", async (state) => {
+    await db
+      .update(schools)
+      .set({ whatsappConnectionState: state })
+      .where(eq(schools.id, schoolIds[0]));
+    const request = vi.fn(async () => Response.json({ success: true }));
+    vi.stubGlobal("fetch", request);
+    try {
+      await sendInboundWhatsAppTypingIndicator({
+        phoneNumberId: phoneNumberIds[0],
+        wamid: "wamid.not-live",
+        waId: "16505550002",
+        text: "Hello",
+        profileName: null,
+      });
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      await db
+        .update(schools)
+        .set({ whatsappConnectionState: "live" })
+        .where(eq(schools.id, schoolIds[0]));
+    }
+  });
   it("keeps credential ciphertext and expiry out of page-facing school readers", async () => {
     const owned = await getOwnedSchool(ownerIds[0]);
     const publicDetails = await getSchoolBySlug(`cred-0-${suffix}`);
@@ -218,7 +259,13 @@ describe("school-scoped WhatsApp sends", () => {
       );
     },
   );
-  it.each(["expired", "other-school", "corrupt", "missing-key"])(
+  it.each([
+    "expired",
+    "other-school",
+    "corrupt",
+    "missing-key",
+    "wrong-purpose",
+  ])(
     "never falls back to shared access when a school credential is %s",
     async (failure) => {
       await db
@@ -228,9 +275,10 @@ describe("school-scoped WhatsApp sends", () => {
           whatsappTokenEncrypted:
             failure === "corrupt"
               ? "not-a-ciphertext"
-              : encryptWhatsAppToken(
+              : encryptSchoolSecret(
                   failure === "other-school" ? schoolIds[0] : schoolIds[1],
                   "school-1-token",
+                  failure === "wrong-purpose" ? "pin" : "token",
                 ),
           whatsappTokenExpiresAt:
             failure === "expired" ? now : new Date("2099-01-01T00:00:00Z"),

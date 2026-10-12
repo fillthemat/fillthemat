@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { voiceWebhookUrl } from "./carrier-webhook";
 import type { NumberProvider } from "./connection";
 import { whatsAppTestVendorFetch } from "./test-vendor-fetch";
 
@@ -34,6 +35,41 @@ export function createTwilioNumberProvider({
     });
   }
   return {
+    async discardVerificationRecording({ recordingId, transcriptionId }) {
+      if (!/^RE[0-9a-fA-F]{32}$/.test(recordingId))
+        throw new Error("Invalid carrier recording");
+      const resources = [`Recordings/${recordingId}`];
+      if (transcriptionId && /^TR[0-9a-fA-F]{32}$/.test(transcriptionId))
+        resources.unshift(`Transcriptions/${transcriptionId}`);
+      for (const resource of resources) {
+        const response = await fetcher(`${base}/${resource}.json`, {
+          method: "DELETE",
+          headers,
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!response.ok && response.status !== 404)
+          throw new Error("Carrier recording cleanup failed");
+      }
+    },
+    async verificationCall(callId) {
+      if (!/^CA[0-9a-fA-F]{32}$/.test(callId)) return null;
+      const response = await request(`${base}/Calls/${callId}.json`);
+      if (!response.ok) throw new Error("Carrier call lookup failed");
+      const call = z
+        .object({
+          sid: z.string(),
+          account_sid: z.string(),
+          to: usNumber,
+          date_created: z.string(),
+        })
+        .parse(await response.json());
+      const receivedAt = new Date(call.date_created);
+      return call.sid === callId &&
+        call.account_sid === accountSid &&
+        Number.isFinite(receivedAt.getTime())
+        ? { receivedAt, number: call.to }
+        : null;
+    },
     async releaseNumber({ resourceId }) {
       if (!/^PN[0-9a-fA-F]{32}$/.test(resourceId))
         throw new Error("Invalid carrier resource");
@@ -123,6 +159,12 @@ export function createTwilioNumberProvider({
             return url.href;
           })(),
           SmsMethod: "POST",
+          VoiceUrl: (() => {
+            const url = voiceWebhookUrl(smsWebhookUrl);
+            url.searchParams.set("allocationId", allocationId);
+            return url.href;
+          })(),
+          VoiceMethod: "POST",
         }),
       );
       // Only a definite rejection is safe to retry automatically. An ambiguous

@@ -64,7 +64,8 @@ export async function POST(request: Request) {
   // Enqueue-then-ack (decision D12): the webhook never runs the agent. Inbound
   // messages become `whatsapp_jobs` rows (idempotent by wamid) for the worker;
   // status callbacks are applied directly by `provider_id` (wamid). Always ack
-  // 200 fast so Meta does not retry the whole webhook on a small/unknown event.
+  // 200 fast for message/status processing so Meta does not retry the whole
+  // webhook on a small/unknown event. Failed account-health writes request retry.
   const statuses = parseInboundWhatsAppStatuses(payload);
   const messages = parseInboundWhatsAppMessages(payload);
 
@@ -72,12 +73,18 @@ export async function POST(request: Request) {
   // call, best-effort so Meta's 200 is never hard-gated on it.
   try {
     await createWhatsAppConnection().handleAccountUpdates(payload);
-    if (statuses.length > 0) await applyWhatsAppStatuses(statuses);
-    if (messages.length > 0) await enqueueInboundJobs(messages);
   } catch {
     console.error(JSON.stringify({ event: "whatsapp_webhook_apply_failed" }));
     // Do not acknowledge a dropped health update as success. Meta will retry.
     return Response.json({ error: "apply_failed" }, { status: 503 });
+  }
+  try {
+    if (statuses.length > 0) await applyWhatsAppStatuses(statuses);
+    if (messages.length > 0) await enqueueInboundJobs(messages);
+  } catch {
+    console.error(
+      JSON.stringify({ event: "whatsapp_webhook_message_apply_failed" }),
+    );
   }
   await Promise.allSettled(messages.map(sendInboundWhatsAppTypingIndicator));
 

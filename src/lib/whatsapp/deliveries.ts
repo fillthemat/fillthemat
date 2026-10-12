@@ -34,7 +34,7 @@ import {
 } from "./confirmation-delivery";
 import { createWhatsAppConnection } from "./connection";
 import { coolingReply, coolingReplyPrefix } from "./cooling-reply";
-import { resolveWhatsAppToken } from "./credentials";
+import { resolveSchoolSecret } from "./credentials";
 import {
   type WhatsAppWorkerDependencies,
   whatsappWorkerDependencies,
@@ -384,7 +384,34 @@ export async function sendWhatsAppDelivery(
   delivery = executing;
 
   try {
-    const token = resolveWhatsAppToken(school, dependencies.now());
+    const credential = resolveSchoolSecret(
+      {
+        id: school.id,
+        encrypted: school.whatsappTokenEncrypted,
+        expiresAt: school.whatsappTokenExpiresAt,
+      },
+      "token",
+      dependencies.now(),
+    );
+    if (!credential.ok && credential.code === "expired_secret") {
+      const result = await failDelivery(
+        delivery,
+        { kind: "internal", reason: "send_failed" },
+        credential.code,
+        dependencies.now(),
+      );
+      if (result !== "deferred")
+        await createWhatsAppConnection({ now: dependencies.now }).markBroken(
+          school.id,
+          "access",
+          {
+            phoneNumberId: delivery.phoneNumberId,
+            tokenEncrypted: school.whatsappTokenEncrypted,
+          },
+        );
+      return result;
+    }
+    const token = credential.ok ? credential.secret : null;
     const outcome =
       plan.type === "interactive"
         ? await dependencies.transport.sendInteractive({
@@ -453,16 +480,6 @@ export async function sendWhatsAppDelivery(
       .returning({ id: whatsappDeliveries.id });
     return rows.length ? "sent" : "deferred";
   } catch (error) {
-    if (error instanceof Error && error.message === "whatsapp_token_expired") {
-      await createWhatsAppConnection({ now: dependencies.now }).markBroken(
-        school.id,
-        "access",
-        {
-          phoneNumberId: delivery.phoneNumberId,
-          tokenEncrypted: school.whatsappTokenEncrypted,
-        },
-      );
-    }
     const message = error instanceof Error ? error.message : "send_failed";
     return failDelivery(
       delivery,
