@@ -1,5 +1,15 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { type Database, getDb } from "@/db";
 import { schools, type WhatsAppConnectionState } from "@/db/schema";
@@ -26,6 +36,7 @@ export type EligibilityGap =
   | "public-contact-email";
 
 export type NumberProvider = {
+  releaseNumber?(input: { resourceId: string }): Promise<void>;
   /** Carrier-authenticated creation time; webhook signatures have no timestamp. */
   verificationMessageReceivedAt?(messageId: string): Promise<Date | null>;
   /** A repeated allocation must resolve to the same rental, never another purchase. */
@@ -49,6 +60,7 @@ export type WhatsAppConnectionView = {
   wabaId: string | null;
   phoneNumberId: string | null;
   verificationCode: string | null;
+  releaseAt: Date | null;
 };
 export type EnableResult =
   | {
@@ -104,6 +116,7 @@ export function createWhatsAppConnection({
         phoneNumberId: schools.whatsappPhoneNumberId,
         verificationCode: schools.whatsappVerificationCode,
         verificationExpiresAt: schools.whatsappVerificationExpiresAt,
+        releaseAt: schools.whatsappReleaseAt,
       })
       .from(schools)
       .where(eq(schools.id, schoolId));
@@ -123,6 +136,7 @@ export function createWhatsAppConnection({
       attemptId: school.attemptId,
       wabaId: school.wabaId,
       phoneNumberId: school.phoneNumberId,
+      releaseAt: school.releaseAt,
       verificationCode:
         school.state === "popup" &&
         school.verificationExpiresAt &&
@@ -145,7 +159,11 @@ export function createWhatsAppConnection({
       .where(
         and(
           eq(schools.id, schoolId),
-          inArray(schools.whatsappConnectionState, ["off", "failed"]),
+          inArray(schools.whatsappConnectionState, [
+            "off",
+            "failed",
+            "released",
+          ]),
           isNotNull(schools.approvedAt),
           isNotNull(schools.publishedAt),
           sql`length(trim(${schools.phone})) > 0`,
@@ -253,6 +271,96 @@ export function createWhatsAppConnection({
       throw error;
     }
   }
+  async function switchOff(schoolId: string): Promise<EnableResult> {
+    const at = now();
+    const [claim] = await db
+      .update(schools)
+      .set({
+        whatsappConnectionState: "cooling",
+        whatsappCoolingStartedAt: at,
+        whatsappReleaseAt: new Date(at.getTime() + 30 * 24 * 60 * 60_000),
+      })
+      .where(
+        and(
+          eq(schools.id, schoolId),
+          eq(schools.whatsappConnectionState, "live"),
+        ),
+      )
+      .returning({ id: schools.id });
+    return claim
+      ? { ok: true, connection: await read(schoolId) }
+      : { ok: false, code: "invalid_state", connection: await read(schoolId) };
+  }
+
+  async function switchOn(schoolId: string): Promise<EnableResult> {
+    const connection = await read(schoolId);
+    if (connection.gaps.length)
+      return { ok: false, code: "ineligible", connection };
+    if (
+      connection.state !== "cooling" ||
+      !connection.releaseAt ||
+      connection.releaseAt <= now() ||
+      !connection.wabaId ||
+      !connection.phoneNumberId
+    )
+      return { ok: false, code: "invalid_state", connection };
+    const [school] = await db
+      .select()
+      .from(schools)
+      .where(eq(schools.id, schoolId));
+    const token = school && resolveWhatsAppToken(school, now());
+    if (!token) return { ok: false, code: "signup_failed", connection };
+    let readiness: Awaited<ReturnType<MetaSignupClient["readReadiness"]>>;
+    try {
+      readiness = await meta.readReadiness({
+        token,
+        wabaId: connection.wabaId,
+        phoneNumberId: connection.phoneNumberId,
+      });
+    } catch (error) {
+      if (error instanceof MetaSignupError)
+        return {
+          ok: false,
+          code: error.code,
+          connection: await read(schoolId),
+        };
+      throw error;
+    }
+    // The deadline, not the daily sweep's execution time, closes restoration.
+    const [claim] = await db
+      .update(schools)
+      .set({
+        whatsappConnectionState:
+          readiness.registered && readiness.paymentMethod
+            ? "live"
+            : "needs-card",
+        whatsappProfileName: readiness.profileName,
+        whatsappCoolingStartedAt: null,
+        whatsappReleaseAt: null,
+      })
+      .where(
+        and(
+          eq(schools.id, schoolId),
+          eq(schools.whatsappConnectionState, "cooling"),
+          gt(schools.whatsappReleaseAt, now()),
+          isNull(schools.whatsappReleaseClaimedAt),
+          eq(schools.whatsappPhoneNumberId, connection.phoneNumberId),
+          eq(
+            schools.whatsappTokenEncrypted,
+            school.whatsappTokenEncrypted ?? "",
+          ),
+          isNotNull(schools.approvedAt),
+          isNotNull(schools.publishedAt),
+          sql`length(trim(${schools.phone})) > 0`,
+          sql`length(trim(${schools.publicContactEmail})) > 0`,
+        ),
+      )
+      .returning({ id: schools.id });
+    return claim
+      ? { ok: true, connection: await read(schoolId) }
+      : { ok: false, code: "invalid_state", connection: await read(schoolId) };
+  }
+
   async function startSignup(schoolId: string): Promise<EnableResult> {
     const [claim] = await db
       .update(schools)
@@ -282,6 +390,124 @@ export function createWhatsAppConnection({
     return claim
       ? { ok: true, connection: await read(schoolId) }
       : { ok: false, code: "invalid_state", connection: await read(schoolId) };
+  }
+
+  async function release(schoolId: string): Promise<EnableResult> {
+    const at = now();
+    // A durable, bounded lease excludes restoration and concurrent releases.
+    // Vendor calls are outside a transaction; a later sweep resumes progress.
+    const [claim] = await db
+      .update(schools)
+      .set({ whatsappReleaseClaimedAt: at })
+      .where(
+        and(
+          eq(schools.id, schoolId),
+          eq(schools.whatsappConnectionState, "cooling"),
+          lte(schools.whatsappReleaseAt, at),
+          or(
+            isNull(schools.whatsappReleaseClaimedAt),
+            lte(
+              schools.whatsappReleaseClaimedAt,
+              new Date(at.getTime() - 15 * 60_000),
+            ),
+          ),
+        ),
+      )
+      .returning();
+    if (!claim)
+      return {
+        ok: false,
+        code: "invalid_state",
+        connection: await read(schoolId),
+      };
+    const owned = and(
+      eq(schools.id, schoolId),
+      eq(schools.whatsappConnectionState, "cooling"),
+      eq(schools.whatsappReleaseClaimedAt, at),
+    );
+    try {
+      if (!claim.whatsappProviderResourceId || !numberProvider.releaseNumber)
+        throw new Error("WhatsApp carrier release unavailable");
+      if (!claim.whatsappDeregisteredAt) {
+        const token = resolveWhatsAppToken(claim, at);
+        if (!token || !claim.whatsappPhoneNumberId || !meta.deregister)
+          throw new Error("WhatsApp deregistration unavailable");
+        await meta.deregister({
+          token,
+          phoneNumberId: claim.whatsappPhoneNumberId,
+        });
+        await db
+          .update(schools)
+          .set({ whatsappDeregisteredAt: now() })
+          .where(owned);
+      }
+      await numberProvider.releaseNumber({
+        resourceId: claim.whatsappProviderResourceId,
+      });
+      await db
+        .update(schools)
+        .set({
+          whatsappConnectionState: "released",
+          whatsappPhoneNumberId: null,
+          whatsappWabaId: null,
+          whatsappNumber: null,
+          whatsappProfileName: null,
+          whatsappProviderResourceId: null,
+          whatsappAllocationId: null,
+          whatsappTokenEncrypted: null,
+          whatsappTokenExpiresAt: null,
+          whatsappSignupAttemptId: null,
+          whatsappSignupStartedAt: null,
+          whatsappVerificationCode: null,
+          whatsappVerificationExpiresAt: null,
+          whatsappVerificationMessageIds: [],
+          whatsappRegistrationPinEncrypted: null,
+          whatsappCoolingStartedAt: null,
+          whatsappReleaseAt: null,
+          whatsappReleaseClaimedAt: null,
+          whatsappDeregisteredAt: null,
+        })
+        .where(owned);
+      return { ok: true, connection: await read(schoolId) };
+    } catch (error) {
+      // Keep the deadline and completed deregistration, but permit retry.
+      await db
+        .update(schools)
+        .set({ whatsappReleaseClaimedAt: null })
+        .where(owned);
+      throw error;
+    }
+  }
+
+  async function releaseDue(limit = 25, options: { deadline?: Date } = {}) {
+    const due = await db
+      .select({ id: schools.id })
+      .from(schools)
+      .where(
+        and(
+          eq(schools.whatsappConnectionState, "cooling"),
+          lte(schools.whatsappReleaseAt, now()),
+        ),
+      )
+      .orderBy(schools.whatsappReleaseAt)
+      .limit(limit);
+    const counts = { released: 0, failed: 0, deferred: 0 };
+    for (const school of due) {
+      if (options.deadline && now() >= options.deadline) break;
+      try {
+        const result = await release(school.id);
+        counts[result.ok ? "released" : "deferred"] += 1;
+      } catch {
+        counts.failed += 1;
+        console.error(
+          JSON.stringify({
+            event: "whatsapp_release_failed",
+            schoolId: school.id,
+          }),
+        );
+      }
+    }
+    return counts;
   }
 
   async function endSignup(
@@ -461,6 +687,10 @@ export function createWhatsAppConnection({
     startSignup,
     completeSignup,
     checkReadiness,
+    switchOff,
+    switchOn,
+    release,
+    releaseDue,
     receiveVerificationCode,
     cancelSignup: (schoolId: string, attemptId: string) =>
       endSignup(schoolId, attemptId, "cancelled"),

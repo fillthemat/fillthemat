@@ -42,6 +42,7 @@ beforeAll(async () => {
     ownerId,
     name: "Confirmation School",
     whatsappConnectionState: "live",
+    whatsappPhoneNumberId: `confirmation-${ownerId}`,
     slug: `confirm-${ownerId.slice(0, 8)}`,
     offerings: [{ name: "Kids BJJ" }],
   });

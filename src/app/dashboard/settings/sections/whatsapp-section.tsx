@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useRef, useState, useTransition } from "react";
+import {
+  startTransition,
+  useActionState,
+  useState,
+  useTransition,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -20,6 +25,7 @@ import {
 } from "../whatsapp-actions";
 import { WhatsAppSharing } from "./whatsapp-sharing";
 import { type EmbeddedSignupConfig, WhatsAppSignup } from "./whatsapp-signup";
+import { releaseDateLabel, WhatsAppSwitchOff } from "./whatsapp-switch-off";
 
 const eligibility: {
   gap: EligibilityGap;
@@ -83,12 +89,15 @@ export function WhatsAppSection({
     enableWhatsAppAction,
     IDLE_STATE,
   );
-  const form = useRef<HTMLFormElement>(null);
   const [checking, checkTransition] = useTransition();
   const [readinessMessage, setReadinessMessage] = useState("");
+  const [confirmReleaseAt, setConfirmReleaseAt] = useState<Date | null>(null);
   const state = pending ? "buying" : connection.state;
   const eligible = connection.gaps.length === 0;
-  const canEnable = connection.state === "off" || connection.state === "failed";
+  const canEnable = ["off", "failed", "released", "cooling"].includes(
+    connection.state,
+  );
+  const canSwitchOff = connection.state === "live";
   const enabled =
     pending ||
     ![
@@ -103,7 +112,7 @@ export function WhatsAppSection({
   const shareLink = whatsappShareLink(connection);
 
   return (
-    <form ref={form} action={formAction} className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-4 border-b border-border pb-4">
         <div>
           <Label htmlFor="enable-whatsapp">Enable WhatsApp</Label>
@@ -114,12 +123,23 @@ export function WhatsAppSection({
         <Switch
           id="enable-whatsapp"
           checked={enabled}
-          disabled={!eligible || pending || !canEnable}
+          disabled={
+            pending ||
+            checking ||
+            (!canEnable && !canSwitchOff) ||
+            (!eligible && !canSwitchOff)
+          }
           onCheckedChange={(checked) => {
-            if (checked) form.current?.requestSubmit();
+            if (checked) startTransition(formAction);
+            else
+              setConfirmReleaseAt(new Date(Date.now() + 30 * 24 * 60 * 60_000));
           }}
         />
       </div>
+      <WhatsAppSwitchOff
+        releaseAt={confirmReleaseAt}
+        onClose={() => setConfirmReleaseAt(null)}
+      />
       <Callout
         title={eligible ? "Ready to set up" : "Before you can enable WhatsApp"}
         tone={eligible ? "neutral" : "warning"}
@@ -219,6 +239,21 @@ export function WhatsAppSection({
             school payment card handy.
           </p>
         ) : null}
+        {state === "cooling" && connection.releaseAt ? (
+          <Callout title="WhatsApp is switched off">
+            Your number will be released on{" "}
+            {releaseDateLabel(connection.releaseAt)} (UTC). Switch back on
+            before then to keep it. Prospects get only your school phone and
+            public contact email. Old links and QR codes stop working after
+            release.
+          </Callout>
+        ) : null}
+        {state === "released" ? (
+          <Callout title="Your old number has been released">
+            Old links and QR codes no longer work. Switch on to buy a new number
+            and repeat Meta signup. Past conversations stay with your school.
+          </Callout>
+        ) : null}
         {state === "buying" ? (
           <p className="text-sm">
             We are buying your number. WhatsApp is not Live yet. If this status
@@ -290,7 +325,11 @@ export function WhatsAppSection({
               We could not buy your number. WhatsApp is off; your Assistant
               still works on the web.
             </Callout>
-            <Button type="submit" disabled={!eligible || pending}>
+            <Button
+              type="button"
+              disabled={!eligible || pending}
+              onClick={() => startTransition(formAction)}
+            >
               Try setup again
             </Button>
           </>
@@ -304,6 +343,6 @@ export function WhatsAppSection({
           </p>
         ) : null}
       </div>
-    </form>
+    </div>
   );
 }

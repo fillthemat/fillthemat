@@ -57,6 +57,7 @@ beforeAll(async () => {
       ownerId,
       name: "Callback Retry School",
       whatsappConnectionState: "live",
+      whatsappPhoneNumberId: `callback-${suffix}`,
       slug: `sr-${suffix}`,
       offerings: [{ name: "BJJ" }],
     })

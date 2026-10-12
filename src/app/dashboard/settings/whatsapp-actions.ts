@@ -16,8 +16,16 @@ export async function enableWhatsAppAction(
 ): Promise<SettingsFormState> {
   const { school } = await requireOwnedSchool();
   try {
-    const result = await createWhatsAppConnection().enable(school.id);
+    const connection = createWhatsAppConnection();
+    const current = await connection.read(school.id);
+    const result =
+      current.state === "cooling"
+        ? await connection.switchOn(school.id)
+        : await connection.enable(school.id);
     revalidatePath("/dashboard/settings");
+    revalidatePath(`/s/${school.slug}`);
+    if (result.ok && current.state === "cooling")
+      return successState("WhatsApp is switched back on with the same number.");
     if (result.ok)
       return successState(
         "Your number is reserved. Continue with Meta signup next; WhatsApp is not Live yet.",
@@ -52,6 +60,20 @@ export async function enableWhatsAppAction(
 export async function readWhatsAppSignupAction() {
   const { school } = await requireOwnedSchool();
   return createWhatsAppConnection().read(school.id);
+}
+
+export async function switchOffWhatsAppAction(): Promise<SettingsFormState> {
+  const { school } = await requireOwnedSchool();
+  const result = await createWhatsAppConnection().switchOff(school.id);
+  revalidatePath("/dashboard/settings");
+  revalidatePath(`/s/${school.slug}`);
+  return result.ok
+    ? successState(
+        "WhatsApp is off. Switch back on within 30 days to keep your number.",
+      )
+    : errorState(
+        "We could not switch WhatsApp off. Reload settings and check its status.",
+      );
 }
 
 export async function checkWhatsAppReadinessAction(): Promise<SettingsFormState> {

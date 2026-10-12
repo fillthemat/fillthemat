@@ -32,6 +32,7 @@ import {
   bookingConfirmationIsStale,
   onWhatsAppDeliveryDead,
 } from "./confirmation-delivery";
+import { coolingReply, coolingReplyPrefix } from "./cooling-reply";
 import { resolveWhatsAppToken } from "./credentials";
 import {
   type WhatsAppWorkerDependencies,
@@ -330,7 +331,24 @@ export async function sendWhatsAppDelivery(
       dependencies.now(),
     );
   }
-  if (school.whatsappConnectionState !== "live") {
+  const coolingNotice =
+    school.whatsappConnectionState === "cooling" &&
+    school.whatsappCoolingStartedAt &&
+    school.whatsappReleaseAt &&
+    school.whatsappReleaseAt > dependencies.now() &&
+    !school.whatsappReleaseClaimedAt &&
+    delivery.providerIdempotencyKey.startsWith(
+      coolingReplyPrefix(school.whatsappCoolingStartedAt),
+    ) &&
+    !delivery.templateName &&
+    !delivery.interactiveButtons &&
+    delivery.body === coolingReply(school);
+  if (
+    school.whatsappPhoneNumberId !== delivery.phoneNumberId ||
+    (school.whatsappConnectionState !== "live" && !coolingNotice) ||
+    (school.whatsappConnectionState === "live" &&
+      delivery.providerIdempotencyKey.startsWith("wa-cooling/"))
+  ) {
     return failDelivery(
       delivery,
       { kind: "internal", reason: "school_not_live" },

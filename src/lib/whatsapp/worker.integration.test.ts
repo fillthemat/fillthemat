@@ -8,7 +8,10 @@ import {
   whatsappDeliveries,
   whatsappJobs,
 } from "@/db/schema";
-import { findOrCreateConversation } from "@/lib/conversations/conversation-store";
+import {
+  findConversation,
+  findOrCreateConversation,
+} from "@/lib/conversations/conversation-store";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
@@ -53,6 +56,83 @@ afterAll(async () => {
 });
 
 describe("WhatsApp worker dependencies", () => {
+  it("sends exactly the fixed public-contact reply while cooling, without an Assistant conversation or duplicate reply", async () => {
+    const wamid = `wamid.cooling.${suffix}`;
+    const at = new Date();
+    const sends: string[] = [];
+    await db
+      .update(schools)
+      .set({
+        whatsappConnectionState: "cooling",
+        phone: "+12125550100",
+        publicContactEmail: "hello@school.test",
+        whatsappCoolingStartedAt: at,
+        whatsappReleaseAt: new Date(at.getTime() + 30 * 24 * 60 * 60_000),
+      })
+      .where(eq(schools.id, schoolId));
+    try {
+      const message = {
+        wamid,
+        waId: "16505550195",
+        phoneNumberId,
+        text: "confirm_booking:old-intent",
+        profileName: null,
+      };
+      await enqueueInboundJobs([message]);
+      const overrides = {
+        now: () => new Date(at.getTime() + 1000),
+        transport: {
+          async sendText(input: { text: string }) {
+            sends.push(input.text);
+            return {
+              ok: true as const,
+              kind: "local_noop" as const,
+              providerId: null,
+            };
+          },
+          async sendTemplate() {
+            throw new Error("Must not send a template");
+          },
+          async sendInteractive() {
+            throw new Error("Must not offer booking");
+          },
+        },
+      };
+      expect(
+        (await runWhatsAppWorkerOnce(randomUUID(), overrides)).jobs.done,
+      ).toBe(1);
+      expect(sends).toEqual([
+        "WhatsApp is switched off for this school. Please contact the school on +12125550100 or hello@school.test.",
+      ]);
+      await enqueueInboundJobs([message]);
+      await runWhatsAppWorkerOnce(randomUUID(), overrides);
+      expect(sends).toHaveLength(1);
+      expect(
+        await findConversation({
+          schoolId,
+          identity: { channel: "whatsapp", waId: message.waId },
+          now: at,
+        }),
+      ).toBeUndefined();
+    } finally {
+      await db
+        .delete(whatsappDeliveries)
+        .where(
+          eq(
+            whatsappDeliveries.providerIdempotencyKey,
+            `wa-cooling/${at.toISOString()}/${wamid}`,
+          ),
+        );
+      await db
+        .update(schools)
+        .set({
+          whatsappConnectionState: "live",
+          whatsappCoolingStartedAt: null,
+          whatsappReleaseAt: null,
+        })
+        .where(eq(schools.id, schoolId));
+    }
+  });
   it("does not send an already queued reply after the school is no longer Live", async () => {
     const id = await enqueueWhatsAppDelivery(
       {

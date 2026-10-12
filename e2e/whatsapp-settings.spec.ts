@@ -152,6 +152,42 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
         exact: true,
       }),
     ).toHaveAttribute("href", "https://wa.me/12125550196");
+    await page.getByRole("switch", { name: "Enable WhatsApp" }).click();
+    const offDialog = page.getByRole("alertdialog", {
+      name: "Switch WhatsApp off?",
+    });
+    await expect(offDialog).toBeVisible();
+    await expect(offDialog).toContainText(
+      "Old links and QR codes stop working after release.",
+    );
+    await expect(offDialog).toContainText("Your number will be released on");
+    await offDialog.getByRole("button", { name: "Keep WhatsApp on" }).click();
+    await expect(
+      page.getByRole("switch", { name: "Enable WhatsApp" }),
+    ).toBeChecked();
+    await page.getByRole("switch", { name: "Enable WhatsApp" }).click();
+    await offDialog
+      .getByRole("button", { name: "Switch off", exact: true })
+      .click();
+    await expect(
+      page.getByText("Off · Cooling-off", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("switch", { name: "Enable WhatsApp" }),
+    ).not.toBeChecked();
+    await expect(page.getByText("Reserved number: +12125550196")).toBeVisible();
+    await expect(
+      page.getByText(/Your number will be released on/),
+    ).toBeVisible();
+    await publicPage.reload();
+    await expect(
+      publicPage.getByRole("link", { name: "Chat with us on WhatsApp" }),
+    ).toHaveCount(0);
+    await page.getByRole("switch", { name: "Enable WhatsApp" }).click();
+    await expect(
+      page.getByText("Live · Working", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("WhatsApp number: +12125550196")).toBeVisible();
     const qr = page.getByRole("img", { name: "WhatsApp QR code" });
     await expect(qr).toBeVisible();
     await expect(qr).toHaveAttribute("src", /^data:image\/png;base64,/);

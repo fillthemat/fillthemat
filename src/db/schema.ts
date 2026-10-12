@@ -153,6 +153,16 @@ export const schools = appSchema.table(
       .default("off"),
     whatsappNumber: text("whatsapp_number"),
     whatsappProfileName: text("whatsapp_profile_name"),
+    whatsappCoolingStartedAt: timestamp("whatsapp_cooling_started_at", {
+      withTimezone: true,
+    }),
+    whatsappReleaseAt: timestamp("whatsapp_release_at", { withTimezone: true }),
+    whatsappReleaseClaimedAt: timestamp("whatsapp_release_claimed_at", {
+      withTimezone: true,
+    }),
+    whatsappDeregisteredAt: timestamp("whatsapp_deregistered_at", {
+      withTimezone: true,
+    }),
     whatsappProviderResourceId: text("whatsapp_provider_resource_id"),
     whatsappAllocationId: uuid("whatsapp_allocation_id"),
     whatsappSignupAttemptId: uuid("whatsapp_signup_attempt_id"),

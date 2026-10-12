@@ -1,4 +1,5 @@
 export type MetaSignupClient = {
+  deregister?(input: { token: string; phoneNumberId: string }): Promise<void>;
   readReadiness(input: {
     token: string;
     wabaId: string;
@@ -52,6 +53,7 @@ export function metaSignupFromEnv(): MetaSignupClient {
     subscribe: unavailable,
     register: unavailable,
     readReadiness: unavailable,
+    deregister: unavailable,
   };
 }
 
@@ -213,6 +215,8 @@ export function createMetaSignupClient({
         messaging_product: "whatsapp",
         pin,
       }),
+    deregister: ({ token, phoneNumberId }) =>
+      success(`${phoneNumberId}/deregister`, token, {}),
   };
 }
 
