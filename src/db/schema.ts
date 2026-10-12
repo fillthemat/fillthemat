@@ -197,6 +197,79 @@ export const schoolDomains = appSchema
   )
   .enableRLS();
 
+export const poppyClients = appSchema
+  .table("poppy_clients", {
+    clientId: text("client_id").primaryKey(),
+    displayName: text("display_name").notNull(),
+    extensions: jsonb("extensions").$type<Record<string, unknown>>().notNull(),
+    jwks: jsonb("jwks").$type<{ keys: import("jose").JWK[] }>().notNull(),
+    cachedUntil: timestamp("cached_until", { withTimezone: true }).notNull(),
+    refreshAfter: timestamp("refresh_after", { withTimezone: true }).notNull(),
+    refreshingUntil: timestamp("refreshing_until", { withTimezone: true }),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  })
+  .enableRLS();
+
+export const poppySessions = appSchema
+  .table(
+    "poppy_sessions",
+    {
+      id: uuid("id").primaryKey().defaultRandom(),
+      schoolId: uuid("school_id")
+        .notNull()
+        .references(() => schools.id, { onDelete: "cascade" }),
+      clientId: text("client_id")
+        .notNull()
+        .references(() => poppyClients.clientId),
+      userId: text("user_id").notNull(),
+      dpopThumbprint: text("dpop_thumbprint").notNull(),
+      createdAt: timestamp("created_at", { withTimezone: true })
+        .notNull()
+        .defaultNow(),
+      endedAt: timestamp("ended_at", { withTimezone: true }),
+    },
+    (t) => [
+      unique("poppy_sessions_school_id_id").on(t.schoolId, t.id),
+      index("poppy_sessions_client_created_idx").on(t.clientId, t.createdAt),
+    ],
+  )
+  .enableRLS();
+
+export const poppySessionTokens = appSchema
+  .table(
+    "poppy_session_tokens",
+    {
+      tokenHash: text("token_hash").primaryKey(),
+      schoolId: uuid("school_id").notNull(),
+      sessionId: uuid("session_id").notNull(),
+      dpopThumbprint: text("dpop_thumbprint").notNull(),
+      expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    },
+    (t) => [
+      foreignKey({
+        columns: [t.schoolId, t.sessionId],
+        foreignColumns: [poppySessions.schoolId, poppySessions.id],
+        name: "poppy_session_tokens_session_fk",
+      }).onDelete("cascade"),
+      index("poppy_session_tokens_session_idx").on(t.schoolId, t.sessionId),
+      index("poppy_session_tokens_expiry_idx").on(t.expiresAt),
+    ],
+  )
+  .enableRLS();
+
+export const poppyReplays = appSchema
+  .table(
+    "poppy_replays",
+    {
+      keyHash: text("key_hash").primaryKey(),
+      expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    },
+    (t) => [index("poppy_replays_expiry_idx").on(t.expiresAt)],
+  )
+  .enableRLS();
+
 export const faqs = appSchema.table(
   "faqs",
   {
@@ -822,6 +895,9 @@ export const cronRuns = appSchema.table("cron_runs", {
 export type User = typeof users.$inferSelect;
 export type School = typeof schools.$inferSelect;
 export type SchoolDomain = typeof schoolDomains.$inferSelect;
+export type PoppyClient = typeof poppyClients.$inferSelect;
+export type PoppySession = typeof poppySessions.$inferSelect;
+export type PoppySessionToken = typeof poppySessionTokens.$inferSelect;
 export type Faq = typeof faqs.$inferSelect;
 export type TrialOffering = typeof trialOfferings.$inferSelect;
 export type TrialWindow = typeof trialWindows.$inferSelect;

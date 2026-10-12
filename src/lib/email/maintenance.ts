@@ -2,6 +2,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { bookings, cronRuns, emailDeliveries } from "@/db/schema";
 import { endInactiveConversations } from "@/lib/conversations/conversation-store";
+import { purgePoppyReplays } from "@/lib/poppy/replay";
 import { shouldCreateReminder } from "@/lib/schedule/reminders";
 import { runEmailSendOnce } from "./deliveries";
 import {
@@ -69,6 +70,7 @@ export async function runMaintenance(
     const endedConversationCount = await endInactiveConversations(
       dependencies.now(),
     );
+    await purgePoppyReplays(dependencies.now());
     const [updated] = await db
       .update(cronRuns)
       .set({
