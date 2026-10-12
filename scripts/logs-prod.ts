@@ -56,8 +56,9 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const PLATFORM_ID = /^(?:[a-z0-9]{3,12}-\d{13}-\d{12}|req_[A-Za-z0-9]{8,80})$/;
 const HELP = `Usage: bun run logs:prod --since UTC_ISO --until UTC_ISO [options]
 Read-only production runtime logs for ${SCOPE}/fillthemat (${PROJECT}).
-Requires Bun, network access, and authorized Vercel CLI credentials (bunx vercel@63.1.2 login).
-Uses bunx vercel@63.1.2; first use downloads the pinned CLI.
+Requires Bun, installed dependencies (bun run deps:install), network access,
+and authorized Vercel CLI credentials (bun run vercel login).
+Uses the exact Vercel CLI devDependency pinned in package.json.
 
 --since / --until    Required bounded UTC timestamps: YYYY-MM-DDTHH:mm:ss[.sss]Z
 --request-id ID      Exact request ID filter (optional, combined with the window)
@@ -286,15 +287,15 @@ export function runProductionLogs(args: string[], cli: Cli): Result {
       );
     const hint = auth
       ? `Vercel authentication failed. Manual-auth handoff: ask an authorized human to run:
-bunx vercel@63.1.2 login
-bunx vercel@63.1.2 whoami
-bunx vercel@63.1.2 teams ls
-bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat
+bun run vercel login
+bun run vercel whoami
+bun run vercel teams ls
+bun run vercel project inspect fillthemat --scope fillthemat
 Verify the expected account/team/project, then retry this bounded command. Never print tokens.`
       : `Vercel logs query failed. Verify project/team access, time window, deployment and retention:
-bunx vercel@63.1.2 whoami
-bunx vercel@63.1.2 teams ls
-bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat
+bun run vercel whoami
+bun run vercel teams ls
+bun run vercel project inspect fillthemat --scope fillthemat
 If credentials are stale, use the manual-auth handoff in the guide and retry.`;
     return {
       status: result.status === 2 ? 1 : result.status,
@@ -368,7 +369,11 @@ function invokeVercel(args: string[]): CliResult {
   // An empty, private cwd prevents stale links, local config and implicit worktree branch filters.
   const cwd = mkdtempSync(join(tmpdir(), "fillthemat-logs-"));
   try {
-    return spawnSync("bunx", ["vercel@63.1.2", ...args], {
+    // Resolve this checkout's pinned CLI absolutely while preserving the private cwd.
+    const vercel = fileURLToPath(
+      new URL("../node_modules/.bin/vercel", import.meta.url),
+    );
+    return spawnSync(vercel, args, {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],

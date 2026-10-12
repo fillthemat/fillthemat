@@ -4,13 +4,13 @@ Use `bun run logs:prod --help` for the command contract. This workflow is read-o
 
 ## 1. Verify identity and target
 
-Requires Bun, network access, and an authorized Vercel account. The wrapper downloads/runs pinned Vercel CLI **63.1.2** with `bunx`; a global installation is unnecessary. Verify access using that same version:
+Requires Bun, installed dependencies (`bun run deps:install`), network access, and an authorized Vercel account. Vercel CLI is an exact-version devDependency in `package.json`; both the wrapper and `bun run vercel` use that local installation. Verify access:
 
 ```bash
-bunx vercel@63.1.2 whoami
-bunx vercel@63.1.2 teams ls
-bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat
-bunx vercel@63.1.2 logs --help
+bun run vercel whoami
+bun run vercel teams ls
+bun run vercel project inspect fillthemat --scope fillthemat
+bun run vercel logs --help
 ```
 
 Complete when identity is the intended authorized account, team `fillthemat` is accessible, and project inspection reports ID `prj_LMCslFWBFnxPN3ISKqidTBp3kIA7`. That project belongs to team ID `team_cMaH5LMAT9HrsFfyYEwZgYfh`. Unexpected identity/project: stop and resolve access, not the local link.
@@ -34,7 +34,7 @@ bun run logs:prod --since 2026-10-11T17:59:00Z --until 2026-10-11T18:02:00Z --re
 bun run logs:prod --since 2026-10-11T17:59:00Z --until 2026-10-11T18:02:00Z --request-id 550e8400-e29b-41d4-a716-446655440000 --request-id-kind app
 ```
 
-**Platform ID:** Vercel's runtime Request Id, exposed as `id` in this CLI's JSON record. The default uses native `vercel logs --request-id`, then checks ID/window locally. This is distinct from an application's support reference and from an `x-vercel-id` routing header; use the runtime Logs tab's Request Id, not an assumed header equivalent.
+**Platform ID:** Vercel's runtime Request Id, exposed as `id` in this CLI's JSON record. The wrapper uses the native platform-ID filter, then checks ID/window locally. This is distinct from an application's support reference and from an `x-vercel-id` routing header; use the runtime Logs tab's Request Id, not an assumed header equivalent.
 
 **Application ID:** a server-generated UUID support reference. Lookup depends on the app logging one JSON string per line with `console.error(JSON.stringify(record))`, where `record.requestId` holds the reference. `--request-id-kind app` fetches the bounded window and exactly matches that field in parsed messages, never Vercel's native platform filter or free-text substrings. Missing/unstructured historical IDs: use the incident window and correlate safe route/status metadata and the platform ID. A missing ID is not proof the request never happened.
 
@@ -56,10 +56,10 @@ The 2026-10-11 incident required re-authenticating the CLI before logs worked. S
 
 Interactive browser/device approval is a **manual-auth handoff**: an unattended agent stops the live lookup and reports the blocker while completing offline work. Ask an authorized human to:
 
-1. Run `bunx vercel@63.1.2 login`.
-2. Run `bunx vercel@63.1.2 whoami` and verify the expected account.
-3. Run `bunx vercel@63.1.2 teams ls` and verify team access.
-4. Run `bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat` and verify the project ID above.
+1. Run `bun run vercel login`.
+2. Run `bun run vercel whoami` and verify the expected account.
+3. Run `bun run vercel teams ls` and verify team access.
+4. Run `bun run vercel project inspect fillthemat --scope fillthemat` and verify the project ID above.
 5. Retry the exact bounded `bun run logs:prod` command. Record success/empty/failure and the UTC window, not credentials.
 
 Never print/read auth tokens, credential files, or environment-secret values to troubleshoot. Do not automatically log out, delete/replace credentials, pull production environment files, relink the project, or change production configuration. If an existing environment token overrides interactive identity, ask the human to correct their credential context privately and re-verify access.
@@ -72,4 +72,4 @@ Review even sanitized excerpts before sharing: never include names, ages, emails
 
 Human-only raw exports: use an approved private directory outside the repo (`0700`, files `0600`; `umask 077`). Keep them out of transcripts/issues/PRs and source control; delete the exact exports and directory after analysis and verify cleanup.
 
-CLI interface verified against `bunx vercel@63.1.2 logs --help` and [Vercel CLI logs documentation](https://vercel.com/docs/cli/logs) on 2026-10-11. Branch filtering is avoided through the non-Git cwd, not a CLI flag. Before changing the pin, re-check help, JSON schema, branch/target behavior, and tests. Live incident evidence belongs in the PR as sanitized output, not a raw fixture.
+CLI interface verified against `bun run vercel logs --help` and [Vercel CLI logs documentation](https://vercel.com/docs/cli/logs) on 2026-10-11. Branch filtering is avoided through the non-Git cwd, not a CLI flag. Before changing the dependency pin, re-check help, JSON schema, branch/target behavior, and tests. Live incident evidence belongs in the PR as sanitized output, not a raw fixture.

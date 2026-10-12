@@ -1,7 +1,9 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -9,7 +11,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import projectPackage from "../package.json";
 import jsonStringLog from "./fixtures/vercel-json-string-log.json";
 import { runProductionLogs } from "./logs-prod";
 
@@ -47,12 +51,31 @@ const jsonCli = (records: unknown[]) => (_args?: string[]) => ({
 });
 
 describe("production logs command", () => {
+  it("exposes the pinned CLI and documents only package-script commands", () => {
+    expect(projectPackage.devDependencies.vercel).toBe("63.1.2");
+    expect(projectPackage.scripts.vercel).toBe("vercel");
+    const guide = readFileSync(
+      fileURLToPath(
+        new URL("../docs/agents/production-logs.md", import.meta.url),
+      ),
+      "utf8",
+    );
+    const help = runProductionLogs(["--help"], emptyCli).stdout;
+    expect(guide).not.toMatch(/\bbunx\b|\bbun\s+(?:--\S+\s+)*scripts\//);
+    expect(help).not.toMatch(/\bbunx\b|\bbun\s+(?:--\S+\s+)*scripts\//);
+    for (const text of [guide, help]) {
+      for (const match of text.matchAll(/\bbun run ([\w:-]+)/g)) {
+        expect(projectPackage.scripts).toHaveProperty(match[1]);
+      }
+    }
+  });
+
   it("documents prerequisites and target without invoking Vercel", () => {
     const cli = vi.fn(emptyCli);
     const result = runProductionLogs(["--help"], cli);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("--request-id-kind");
-    expect(result.stdout).toContain("bunx vercel@63.1.2 login");
+    expect(result.stdout).toContain("bun run vercel login");
     expect(result.stdout).toContain("prj_LMCslFWBFnxPN3ISKqidTBp3kIA7");
     expect(cli).not.toHaveBeenCalled();
   });
@@ -279,7 +302,7 @@ describe("production logs command", () => {
   });
 
   it.each([
-    "No existing credentials found. Please run vercel login",
+    "No existing credentials found. Please run bun run vercel login",
     "Your token is not valid",
     "401 Unauthorized",
     "Authentication failed",
@@ -293,15 +316,15 @@ describe("production logs command", () => {
       }));
       expect(result.status).toBe(1);
       expect(result.stdout).toBe("");
-      expect(result.stderr).toContain("bunx vercel@63.1.2 login");
+      expect(result.stderr).toContain("bun run vercel login");
       expect(result.stderr).toContain("whoami");
       expect(result.stderr).toContain("teams ls");
       expect(result.stderr).toContain("Manual-auth handoff");
       for (const command of [
-        "bunx vercel@63.1.2 login",
-        "bunx vercel@63.1.2 whoami",
-        "bunx vercel@63.1.2 teams ls",
-        "bunx vercel@63.1.2 project inspect fillthemat --scope fillthemat",
+        "bun run vercel login",
+        "bun run vercel whoami",
+        "bun run vercel teams ls",
+        "bun run vercel project inspect fillthemat --scope fillthemat",
       ]) {
         expect(result.stderr.split("\n")).toContain(command);
       }
@@ -375,8 +398,23 @@ describe("production logs command", () => {
       const marker = join(folder, "cwd");
       let cliCwd: string | undefined;
       try {
+        mkdirSync(join(folder, "node_modules/.bin"), { recursive: true });
+        mkdirSync(join(folder, "scripts"));
+        copyFileSync(
+          fileURLToPath(new URL("./logs-prod.ts", import.meta.url)),
+          join(folder, "scripts/logs-prod.ts"),
+        );
         writeFileSync(
-          join(folder, "bunx"),
+          join(folder, "package.json"),
+          JSON.stringify({
+            scripts: { "logs:prod": projectPackage.scripts["logs:prod"] },
+          }),
+        );
+        writeFileSync(join(folder, "vercel"), "#!/bin/sh\nexit 9\n", {
+          mode: 0o700,
+        });
+        writeFileSync(
+          join(folder, "node_modules/.bin/vercel"),
           `#!/bin/sh
 mkdir cli-cache
 printf 'raw-secret' > cli-cache/log
@@ -386,21 +424,18 @@ exit "$CLI_STATUS"
 `,
           { mode: 0o700 },
         );
-        const result = spawnSync(
-          "bun",
-          ["--no-env-file", "scripts/logs-prod.ts", ...window],
-          {
-            encoding: "utf8",
-            timeout: 10_000,
-            env: {
-              ...process.env,
-              PATH: `${folder}:${process.env.PATH}`,
-              CWD_RECORD: marker,
-              BLOCK_CLEANUP: blocked ? "1" : "0",
-              CLI_STATUS: String(status),
-            },
+        const result = spawnSync("bun", ["run", "logs:prod", ...window], {
+          cwd: folder,
+          encoding: "utf8",
+          timeout: 10_000,
+          env: {
+            ...process.env,
+            PATH: `${folder}:${process.env.PATH}`,
+            CWD_RECORD: marker,
+            BLOCK_CLEANUP: blocked ? "1" : "0",
+            CLI_STATUS: String(status),
           },
-        );
+        });
         cliCwd = readFileSync(marker, "utf8");
         expect(result.status).toBe(status);
         expect(result.stdout).toBe("");
