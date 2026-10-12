@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { schoolDomains } from "@/db/schema";
+import { emailDeliveries, schoolDomains, schools } from "@/db/schema";
 import { listSchoolDomains } from "./domains";
 import {
   SafeFetchError,
@@ -38,6 +38,7 @@ function claimedDomain(error: unknown): boolean {
 export async function checkSchoolDomain(
   schoolId: string,
   domain: string,
+  { dropFailing = false }: { dropFailing?: boolean } = {},
 ): Promise<DomainCheckResult> {
   const db = getDb();
   const connection = (await listSchoolDomains(schoolId)).find(
@@ -57,6 +58,9 @@ export async function checkSchoolDomain(
       and(
         eq(schoolDomains.id, connection.id),
         eq(schoolDomains.schoolId, schoolId),
+        dropFailing
+          ? inArray(schoolDomains.state, ["verified", "failing"])
+          : undefined,
         or(
           isNull(schoolDomains.checkingUntil),
           lt(schoolDomains.checkingUntil, new Date()),
@@ -121,16 +125,36 @@ export async function checkSchoolDomain(
         result = { ok: false, reason: "claimed_by_another_school" };
       }
     }
-    if (!result.ok)
-      await db
-        .update(schoolDomains)
-        .set({
-          lastCheckedAt: now,
-          lastCheckResult: result.reason,
-          consecutiveFailures: sql`${schoolDomains.consecutiveFailures} + 1`,
-          state: connection.state === "pending" ? "pending" : "failing",
-        })
-        .where(predicate);
+    if (!result.ok) {
+      const reason = result.reason;
+      await db.transaction(async (tx) => {
+        const [failed] = await tx
+          .update(schoolDomains)
+          .set({
+            lastCheckedAt: now,
+            lastCheckResult: reason,
+            consecutiveFailures: sql`${schoolDomains.consecutiveFailures} + 1`,
+            state: connection.state === "pending" ? "pending" : "failing",
+          })
+          .where(and(predicate, gt(schoolDomains.checkingUntil, now)))
+          .returning();
+        if (!failed || !dropFailing || failed.consecutiveFailures < 3) return;
+        const [school] = await tx
+          .select()
+          .from(schools)
+          .where(eq(schools.id, schoolId));
+        if (!school) throw new Error("school_missing");
+        await tx.insert(emailDeliveries).values({
+          schoolId,
+          kind: "owner_poppy_domain_dropped",
+          domainSnapshot: failed.domain,
+          recipient: school.notificationEmail,
+          providerIdempotencyKey: `poppy-domain-dropped/${failed.id}`,
+          nextAttemptAt: now,
+        });
+        await tx.delete(schoolDomains).where(predicate);
+      });
+    }
     return result;
   } finally {
     await db
