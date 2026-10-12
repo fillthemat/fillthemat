@@ -167,6 +167,7 @@ export async function createLead(
       .insert(leads)
       .values({
         schoolId: input.school.id,
+        channel: input.source.channel,
         landingSessionId,
         contactId: contact.id,
         participantName: input.participantName ?? null,

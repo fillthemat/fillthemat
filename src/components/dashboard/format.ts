@@ -1,4 +1,14 @@
 import { formatInTimeZone } from "date-fns-tz";
+import type { Channel } from "@/lib/channel";
+
+const CHANNEL_LABELS: Record<Channel, string> = {
+  web: "Web",
+  whatsapp: "WhatsApp",
+};
+
+export function formatChannel(channel: Channel): string {
+  return CHANNEL_LABELS[channel];
+}
 
 const BOOKING_STATUS_LABELS: Record<string, string> = {
   booked: "Booked",

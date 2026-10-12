@@ -18,6 +18,8 @@ import {
 export const appSchema = pgSchema("app");
 export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 
+export const channelEnum = appSchema.enum("channel", ["web", "whatsapp"]);
+
 export const bookingStatusEnum = appSchema.enum("booking_status", [
   "booked",
   "showed",
@@ -440,6 +442,7 @@ export const leads = appSchema.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     schoolId: uuid("school_id").notNull(),
+    channel: channelEnum("channel").notNull().default("web"),
     landingSessionId: uuid("landing_session_id").notNull(),
     contactId: uuid("contact_id").notNull(),
     participantName: text("participant_name"),
@@ -479,6 +482,7 @@ export const bookings = appSchema.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     schoolId: uuid("school_id").notNull(),
+    channel: channelEnum("channel").notNull().default("web"),
     contactId: uuid("contact_id").notNull(),
     participantId: uuid("participant_id").notNull(),
     trialOfferingId: uuid("trial_offering_id").notNull(),

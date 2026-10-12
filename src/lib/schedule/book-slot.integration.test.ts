@@ -74,6 +74,7 @@ async function createBooking() {
     "future trial",
   );
   const result = await bookSlot({
+    channel: "web",
     school,
     offeringId,
     slotId: slot.slotId,
@@ -91,6 +92,10 @@ async function createBooking() {
 }
 
 describe("inline booking emails with the app clock behind the database", () => {
+  it("records the web channel for direct bookings", async () => {
+    expect(await createBooking()).toMatchObject({ channel: "web" });
+  });
+
   it("sends both cancellation emails inline", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(Date.now() - 86_400_000));

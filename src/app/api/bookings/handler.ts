@@ -175,6 +175,7 @@ export function createBookingHandler(dependencies: Dependencies) {
           return refuse("rate_limited", 429);
         operation = "booking.create";
         result = await dependencies.bookSlot({
+          channel: "web",
           school,
           offeringId: body.offeringId,
           slotId: body.slotId,
