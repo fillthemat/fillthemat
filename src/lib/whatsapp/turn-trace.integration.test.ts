@@ -137,6 +137,7 @@ async function startConversation(waId: string) {
     .insert(conversations)
     .values({
       schoolId,
+      channel: "whatsapp",
       resumeTokenHash: hashToken(randomToken()),
       waIdHash: hashWaId(waId),
       expiresAt: addDays(new Date(), 30),

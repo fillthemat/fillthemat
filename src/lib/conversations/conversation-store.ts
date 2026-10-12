@@ -124,6 +124,7 @@ export async function findOrCreateConversation({
         .insert(conversations)
         .values({
           schoolId,
+          channel: identity.channel,
           resumeTokenHash: hashToken(
             identity.channel === "web" ? identity.resumeToken : randomToken(),
           ),

@@ -1,6 +1,6 @@
 {
   "id": "d5262e45-ef5b-421f-b57e-b779810df9b0",
-  "prevId": "49f82e8c-b10f-40f9-ae30-a72d63776cd8",
+  "prevId": "2c0a0d1c-5fc3-4aea-847e-de1d4917787e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -469,6 +469,13 @@
         "school_id": {
           "name": "school_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "conversation_channel",
+          "typeSchema": "app",
           "primaryKey": false,
           "notNull": true
         },
@@ -2951,6 +2958,14 @@
         "showed",
         "no_show",
         "cancelled"
+      ]
+    },
+    "app.conversation_channel": {
+      "name": "conversation_channel",
+      "schema": "app",
+      "values": [
+        "web",
+        "whatsapp"
       ]
     },
     "app.conversation_end_reason": {
