@@ -132,9 +132,12 @@ export async function completedReply({
     text: result.text.trim(),
     bookingIntent: bookingIntentFromResult(lastPrepareBooking?.output),
     leadRequest: leadRequestFromResult(lastContactRequest?.output),
-    ...(lastPrepareBooking?.output &&
-    !lastPrepareBooking.output.ok &&
-    lastPrepareBooking.output.reason === "extension_required"
+    ...((lastPrepareBooking?.output &&
+      !lastPrepareBooking.output.ok &&
+      lastPrepareBooking.output.reason === "extension_required") ||
+    (lastContactRequest?.output &&
+      !lastContactRequest.output.ok &&
+      lastContactRequest.output.reason === "extension_required")
       ? { operationError: "extension_required" as const }
       : {}),
     provenance,
