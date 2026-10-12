@@ -122,9 +122,12 @@ First production deploy will use `vercel.ts` (`bunVersion: 1.4.x`, `framework: n
 
 **Production build order**:
 Vercel runs `bun run build:vercel`: `bun run db:migrate:deploy`, then `bun run db:check`, then `bun run build`. This happens only when `VERCEL_ENV=production`. The migrator reads Vercel's configured `DIRECT_URL`; it needs no local env file or interactive step. Preview, Development, and local `bun run build` never run deploy migrations.
+Concurrent Production builds wait on one Postgres advisory lock before reading the migration journal, so each pending migration runs once.
+Promoting Preview to Production or redeploying Production re-runs the build; this is harmless when no migrations are pending.
 
 **Failure and retry**:
 A migration failure stops the check and build. A check failure stops the build. The previous deployment keeps serving. Fix the connection or migration problem and retry; already-applied migrations are not reapplied. The read-only check remains a backstop for missing migrations and changed hashes. A changed hash or missing migration older than the latest applied timestamp needs manual repair, not a retry. The check reads the journal, not live columns; connections time out after 10 seconds and journal statements after 5 seconds. Migration SQL may take longer.
+Migrations give up after five seconds waiting on a live-table lock (SQLSTATE `55P03`); retry the deploy if it fails on lock timeout.
 
 **Backward compatibility**:
 Every migration must remain backward-compatible with the currently live code. A build that fails after migrating leaves the schema ahead of the live app. We accept this for additive changes, such as new tables or optional columns. Do not drop or rename columns, remove values, or add constraints that break live reads or writes in the same release. Roll out those changes in separate compatible steps.
@@ -157,7 +160,11 @@ Preview deploy (`bun run vercel:deploy`) needs its own Supabase or you accept th
 4. Preview, publish, open `/s/<slug>` signed out.
 5. Confirm a qualified session row, chat reply, and one booking.
 6. Confirm `email_deliveries` rows; if From is `onboarding@resend.dev`, check the owner inbox only.
-7. Confirm the maintenance cron run in Vercel's logs. Never paste `CRON_SECRET` into shared logs.
+7. Hit cron once:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/maintenance
+```
 
 8. Signed-out `/dashboard` should redirect to sign-in. Unknown slug 404.
 

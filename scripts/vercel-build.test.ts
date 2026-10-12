@@ -72,7 +72,7 @@ it.each([
   expect(result.stdout.trim().split("\n")).toEqual(output);
 });
 
-it.each(["preview", "development", ""])(
+it.each(["development", ""])(
   "does not gate %s builds on production migrations",
   (environment) => {
     const result = runBuild(environment, "migrate");

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   cpSync,
@@ -26,6 +26,12 @@ const fixture = postgres(url.toString(), { max: 1 });
 const migrations = readMigrationFiles({ migrationsFolder: "drizzle" });
 const directory = mkdtempSync(join(tmpdir(), "deploy-rehearsal-"));
 const { scripts } = JSON.parse(readFileSync("package.json", "utf8"));
+const buildEnv = {
+  ...process.env,
+  VERCEL_ENV: "production",
+  DIRECT_URL: url.toString(),
+  DATABASE_URL: url.toString(),
+};
 
 beforeAll(async () => {
   await admin.unsafe(`create database "${databaseName}"`);
@@ -33,6 +39,8 @@ beforeAll(async () => {
   await fixture`create table auth.users (id uuid primary key)`;
   await fixture`create schema drizzle`;
   await fixture`create table drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint)`;
+  await fixture`create table public.deploy_counter (value int not null)`;
+  await fixture`insert into public.deploy_counter values (0)`;
   // Reproduce the incident watermark: 0000–0009 already applied.
   for (const migration of migrations.slice(0, 10)) {
     await fixture.begin(async (tx) => {
@@ -68,10 +76,9 @@ function build(environment = "production", directUrl = url.toString()) {
   return spawnSync("bun", ["run", "build:vercel"], {
     cwd: directory,
     env: {
-      ...process.env,
+      ...buildEnv,
       VERCEL_ENV: environment,
       DIRECT_URL: directUrl,
-      DATABASE_URL: url.toString(),
     },
     encoding: "utf8",
     timeout: 20_000,
@@ -100,8 +107,8 @@ it("applies pending additive migrations before checking and building, then retri
   ).toEqual(applied);
 });
 
-it("stops before the check and build when migration SQL fails", async () => {
-  // A malformed additive migration exists only in this temporary fixture.
+async function withMigration(sql: string, run: () => Promise<void>) {
+  // Extra migrations exist only in this temporary fixture.
   const journalPath = join(directory, "drizzle/meta/_journal.json");
   const original = readFileSync(journalPath, "utf8");
   const journal = JSON.parse(original);
@@ -109,26 +116,110 @@ it("stops before the check and build when migration SQL fails", async () => {
     idx: migrations.length,
     version: "7",
     when: migrations[migrations.length - 1].folderMillis + 1,
-    tag: "rehearsal_failure",
+    tag: "rehearsal_extra",
     breakpoints: true,
   });
   writeFileSync(journalPath, JSON.stringify(journal));
-  writeFileSync(
-    join(directory, "drizzle/rehearsal_failure.sql"),
-    "select * from rehearsal_missing_table;",
-  );
+  writeFileSync(join(directory, "drizzle/rehearsal_extra.sql"), sql);
   try {
+    await run();
+  } finally {
+    writeFileSync(journalPath, original);
+    await fixture`delete from drizzle.__drizzle_migrations where created_at = ${migrations[migrations.length - 1].folderMillis + 1}`;
+  }
+}
+
+it("stops before the check and build when migration SQL fails", async () => {
+  await withMigration("select * from rehearsal_missing_table;", async () => {
     const result = build();
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Deployment migration failed");
+    expect(result.stderr).toContain('"code":"42P01"');
     expect(result.stdout).not.toContain("read-only check");
     expect(result.stdout).not.toContain("application-build-reached");
     expect(
       await fixture`select count(*)::int as count from drizzle.__drizzle_migrations`,
     ).toEqual([{ count: migrations.length }]);
-  } finally {
-    writeFileSync(journalPath, original);
+  });
+});
+
+function startBuild() {
+  return new Promise<{ status: number | null; stdout: string; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn("bun", ["run", "build:vercel"], {
+        cwd: directory,
+        env: buildEnv,
+        timeout: 20_000,
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (data) => {
+        stdout += data;
+      });
+      child.stderr.on("data", (data) => {
+        stderr += data;
+      });
+      child.on("error", reject);
+      child.on("close", (status) => resolve({ status, stdout, stderr }));
+    },
+  );
+}
+
+async function waitForBlockedBuilds(count: number) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const [row] =
+      await admin`select count(*)::int as count from pg_stat_activity where datname = ${databaseName} and wait_event_type = 'Lock'`;
+    if (row.count === count) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
   }
+  throw new Error("Builds did not reach the expected lock wait");
+}
+
+it("serialises concurrent builds so a data-only migration runs once", async () => {
+  await withMigration(
+    "update public.deploy_counter set value = value + 1;",
+    async () => {
+      const pending: ReturnType<typeof startBuild>[] = [];
+      try {
+        await fixture.begin(async (tx) => {
+          await tx`update public.deploy_counter set value = value`;
+          pending.push(startBuild());
+          await waitForBlockedBuilds(1);
+          pending.push(startBuild());
+          await waitForBlockedBuilds(2);
+        });
+        for (const result of await Promise.all(pending)) {
+          expect(result.status, result.stderr).toBe(0);
+          expect(result.stdout).toContain("application-build-reached");
+        }
+        expect(await fixture`select value from public.deploy_counter`).toEqual([
+          { value: 1 },
+        ]);
+      } finally {
+        await Promise.all(pending);
+      }
+    },
+  );
+});
+
+it("fails on a live-table lock timeout and allows a deploy retry", async () => {
+  await withMigration(
+    "alter table public.deploy_counter add column note text;",
+    async () => {
+      await fixture.begin(async (tx) => {
+        await tx`lock table public.deploy_counter in access share mode`;
+        const result = build();
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('"code":"55P03"');
+        expect(result.stdout).not.toContain("application-build-reached");
+      });
+      const retry = build();
+      expect(retry.status, retry.stderr).toBe(0);
+      expect(retry.stdout).toContain("application-build-reached");
+    },
+  );
 });
 
 it("retains the read-only check as a backstop after migration", async () => {
