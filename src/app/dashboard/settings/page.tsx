@@ -3,6 +3,7 @@ import { requireOwnedSchool } from "@/lib/auth/current-school";
 import { listTimezones } from "@/lib/timezones";
 import { whatsappApiVersion } from "@/lib/whatsapp/config";
 import { createWhatsAppConnection } from "@/lib/whatsapp/connection";
+import { whatsappShareLink } from "@/lib/whatsapp/sharing";
 import { serializeTimestamp } from "./form-utils";
 import { formatTimezone } from "./format";
 import { loadFaqs, loadOfferings, loadWindows } from "./queries";
@@ -67,9 +68,19 @@ async function SectionContent({
   location: string | null;
 }) {
   if (section === "whatsapp") {
+    const connection = await createWhatsAppConnection().read(schoolId);
+    const shareLink = whatsappShareLink(connection);
+    // Generate locally on the server, not with a third-party QR tracking service.
+    const qrDataUrl = shareLink
+      ? await (await import("qrcode")).toDataURL(shareLink, {
+          width: 240,
+          margin: 4,
+        })
+      : null;
     return (
       <WhatsAppSection
-        connection={await createWhatsAppConnection().read(schoolId)}
+        connection={connection}
+        qrDataUrl={qrDataUrl}
         signupConfig={
           process.env.WHATSAPP_APP_ID &&
           process.env.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID &&

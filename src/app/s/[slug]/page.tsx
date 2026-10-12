@@ -4,6 +4,7 @@ import { LandingSession } from "@/components/landing-session";
 import { getOwnedSchool } from "@/lib/auth/current-school";
 import { getVerifiedClaims } from "@/lib/auth/current-user";
 import { getSchoolBySlug, loadSchoolCatalog } from "@/lib/schools/public";
+import { whatsappShareLink } from "@/lib/whatsapp/sharing";
 
 export default async function PublicSchoolPage({
   params,
@@ -29,6 +30,10 @@ export default async function PublicSchoolPage({
   const catalog = await loadSchoolCatalog(school.id);
   const location =
     [school.address, school.city].filter(Boolean).join(", ") || null;
+  const whatsappLink = whatsappShareLink({
+    state: school.whatsappConnectionState,
+    number: school.whatsappNumber,
+  });
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-6 px-4 py-8">
@@ -45,6 +50,16 @@ export default async function PublicSchoolPage({
         <h1 className="text-3xl font-semibold tracking-tight">{school.name}</h1>
         {location ? <p className="text-page-600">{location}</p> : null}
       </div>
+      {whatsappLink ? (
+        <a
+          href={whatsappLink}
+          target="_blank"
+          rel="noreferrer"
+          className="underline"
+        >
+          Chat with us on WhatsApp
+        </a>
+      ) : null}
       <BookingChat
         slug={school.slug}
         schoolName={school.name}

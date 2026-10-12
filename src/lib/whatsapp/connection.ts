@@ -42,6 +42,7 @@ export type WhatsAppConnectionView = {
   state: WhatsAppConnectionState;
   gaps: EligibilityGap[];
   number: string | null;
+  profileName: string | null;
   providerResourceId: string | null;
   allocationId: string | null;
   attemptId: string | null;
@@ -95,6 +96,7 @@ export function createWhatsAppConnection({
         publicContactEmail: schools.publicContactEmail,
         state: schools.whatsappConnectionState,
         number: schools.whatsappNumber,
+        profileName: schools.whatsappProfileName,
         providerResourceId: schools.whatsappProviderResourceId,
         allocationId: schools.whatsappAllocationId,
         attemptId: schools.whatsappSignupAttemptId,
@@ -115,6 +117,7 @@ export function createWhatsAppConnection({
       state: school.state,
       gaps,
       number: school.number,
+      profileName: school.profileName,
       providerResourceId: school.providerResourceId,
       allocationId: school.allocationId,
       attemptId: school.attemptId,
@@ -194,6 +197,61 @@ export function createWhatsAppConnection({
         ),
       );
     return { ok: true, connection: await read(schoolId) };
+  }
+  async function checkReadiness(schoolId: string): Promise<EnableResult> {
+    const connection = await read(schoolId);
+    if (
+      connection.state !== "needs-card" ||
+      !connection.wabaId ||
+      !connection.phoneNumberId
+    )
+      return { ok: false, code: "invalid_state", connection };
+    const [school] = await db
+      .select({
+        id: schools.id,
+        whatsappTokenEncrypted: schools.whatsappTokenEncrypted,
+        whatsappTokenExpiresAt: schools.whatsappTokenExpiresAt,
+      })
+      .from(schools)
+      .where(eq(schools.id, schoolId));
+    if (!school?.whatsappTokenEncrypted)
+      return { ok: false, code: "signup_failed", connection };
+    const token = resolveWhatsAppToken(school, now());
+    if (!token) return { ok: false, code: "signup_failed", connection };
+    try {
+      const readiness = await meta.readReadiness({
+        token,
+        wabaId: connection.wabaId,
+        phoneNumberId: connection.phoneNumberId,
+      });
+      await db
+        .update(schools)
+        .set({
+          whatsappConnectionState:
+            readiness.registered && readiness.paymentMethod
+              ? "live"
+              : "needs-card",
+          whatsappProfileName: readiness.profileName,
+        })
+        .where(
+          and(
+            eq(schools.id, schoolId),
+            eq(schools.whatsappConnectionState, "needs-card"),
+            eq(schools.whatsappWabaId, connection.wabaId),
+            eq(schools.whatsappPhoneNumberId, connection.phoneNumberId),
+            eq(schools.whatsappTokenEncrypted, school.whatsappTokenEncrypted),
+          ),
+        );
+      return { ok: true, connection: await read(schoolId) };
+    } catch (error) {
+      if (error instanceof MetaSignupError)
+        return {
+          ok: false,
+          code: error.code,
+          connection: await read(schoolId),
+        };
+      throw error;
+    }
   }
   async function startSignup(schoolId: string): Promise<EnableResult> {
     const [claim] = await db
@@ -402,6 +460,7 @@ export function createWhatsAppConnection({
     enable,
     startSignup,
     completeSignup,
+    checkReadiness,
     receiveVerificationCode,
     cancelSignup: (schoolId: string, attemptId: string) =>
       endSignup(schoolId, attemptId, "cancelled"),

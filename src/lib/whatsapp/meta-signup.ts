@@ -1,4 +1,13 @@
 export type MetaSignupClient = {
+  readReadiness(input: {
+    token: string;
+    wabaId: string;
+    phoneNumberId: string;
+  }): Promise<{
+    registered: boolean;
+    paymentMethod: boolean;
+    profileName: string | null;
+  }>;
   exchangeCode(
     code: string,
   ): Promise<{ token: string; expiresAt: Date | null }>;
@@ -28,7 +37,12 @@ export class MetaSignupError extends Error {
 export function metaSignupFromEnv(): MetaSignupClient {
   const appId = process.env.WHATSAPP_APP_ID;
   const appSecret = process.env.WHATSAPP_APP_SECRET;
-  if (appId && appSecret) return createMetaSignupClient({ appId, appSecret });
+  if (appId && appSecret)
+    return createMetaSignupClient({
+      appId,
+      appSecret,
+      fetch: whatsAppTestVendorFetch(),
+    });
   const unavailable = async (): Promise<never> => {
     throw new MetaSignupError("unconfigured");
   };
@@ -37,6 +51,7 @@ export function metaSignupFromEnv(): MetaSignupClient {
     validateNumber: unavailable,
     subscribe: unavailable,
     register: unavailable,
+    readReadiness: unavailable,
   };
 }
 
@@ -115,6 +130,31 @@ export function createMetaSignupClient({
       throw new MetaSignupError("signup_failed");
   }
   return {
+    async readReadiness({ token, wabaId, phoneNumberId }) {
+      // Embedded Signup's waba_id is the Messaging Account ID during Meta's
+      // H2 2026 rollout. Funding belongs to that account, not the phone number.
+      // https://developers.facebook.com/documentation/business-messaging/whatsapp/account-model-evolution/onboarding/
+      const [phoneResponse, fundingResponse] = await Promise.all([
+        request(`${phoneNumberId}?fields=status,verified_name`, token),
+        request(`${wabaId}?fields=primary_funding_id`, token),
+      ]);
+      const phone = z
+        .object({
+          status: z.string(),
+          verified_name: z.string().trim().min(1).optional(),
+        })
+        .safeParse(phoneResponse);
+      const funding = z
+        .object({ primary_funding_id: z.string().min(1).nullish() })
+        .safeParse(fundingResponse);
+      if (!phone.success || !funding.success)
+        throw new MetaSignupError("signup_failed");
+      return {
+        registered: phone.data.status === "CONNECTED",
+        paymentMethod: !!funding.data.primary_funding_id,
+        profileName: phone.data.verified_name ?? null,
+      };
+    },
     async exchangeCode(code) {
       const result = z.object({ access_token: z.string().min(1) }).safeParse(
         await request("oauth/access_token", `${appId}|${appSecret}`, {
@@ -178,3 +218,4 @@ export function createMetaSignupClient({
 
 import { z } from "zod";
 import { whatsappApiVersion } from "./config";
+import { whatsAppTestVendorFetch } from "./test-vendor-fetch";

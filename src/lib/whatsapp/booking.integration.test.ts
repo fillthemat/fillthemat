@@ -175,6 +175,7 @@ beforeAll(async () => {
       timezone: "America/New_York",
       notificationEmail: `wa-bk-${suffix}@local.test`,
       whatsappPhoneNumberId: phoneNumberId,
+      whatsappConnectionState: "live",
       approvedAt: new Date(),
       publishedAt: new Date(),
     })

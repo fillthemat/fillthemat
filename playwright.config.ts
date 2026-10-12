@@ -42,5 +42,15 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !isCI,
     timeout: 120_000,
+    env: {
+      WHATSAPP_TEST_VENDOR_URL: `http://127.0.0.1:${Number(port) + 1}`,
+      WHATSAPP_APP_ID: "196",
+      WHATSAPP_APP_SECRET: "e2e-app-secret",
+      WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: "196",
+      WHATSAPP_TOKEN_ENCRYPTION_KEY: "96".repeat(32),
+      TWILIO_ACCOUNT_SID: `AC${"a".repeat(32)}`,
+      TWILIO_AUTH_TOKEN: "e2e-carrier-secret",
+      TWILIO_SMS_WEBHOOK_URL: `${baseURL}/api/webhooks/twilio`,
+    },
   },
 });
