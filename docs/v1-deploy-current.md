@@ -122,6 +122,7 @@ First production deploy will use `vercel.ts` (`bunVersion: 1.4.x`, `framework: n
 
 `bun run vercel:ignore-build` skips docs/agent-only Preview builds against `VERCEL_GIT_PREVIOUS_SHA`; Production, missing shallow-clone history, and errors build (ignored builds still count toward Vercel's daily deployment quota).
 The first deployment on a branch builds even for docs-only changes because there is no previous deployment SHA.
+The comparison base is the branch's last successful deployment, not necessarily the immediately preceding commit.
 
 **Production build order**:
 Vercel runs `bun run build:vercel`: migration → read-only check → build, only for Production; other builds skip migration. Both `bun run db:migrate:deploy` (Vercel env, no env file) and `bun run db:migrate:prod` (manual, `.env.production.local`) use `scripts/migrate-prod.ts`; it refuses loopback targets and non-Production Vercel runs.
