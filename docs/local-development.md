@@ -60,13 +60,14 @@ All optional. The app degrades cleanly without them.
 ## Checks
 
 ```bash
+bun run verify           # lint, Biome, typecheck, and unit tests; no database needed
 bun run check            # Biome
 bun run typecheck        # build-equivalent types, including tests and scripts
 bun run test             # unit tests
 bun run test:integration # requires the running local stack (bun run setup)
 ```
 
-CI runs unit tests, integration tests, and Playwright on pull requests (`.github/workflows/test.yml` and `playwright.yml`). Do not run `bun run db:migrate:prod` unless you intend to migrate hosted data (`docs/v1-deploy-current.md`).
+Before opening a PR, run `bun run verify`. It stops at the first failure. CI uses the same scripts for its separate "Lint, format, and typecheck" and "Unit tests" checks. Integration tests and Playwright remain separate (`.github/workflows/test.yml` and `playwright.yml`). Do not run `bun run db:migrate:prod` unless you intend to migrate hosted data (`docs/v1-deploy-current.md`).
 
 `bun run typecheck` generates Next.js route types without building, then checks the same `tsconfig.json` used by `next build`. Keep its full-project includes: integration tests, scripts, and generated route validators must be checked locally too. Type checking is incremental and needs neither Supabase nor a running app. CI runs the same command alongside lint and Biome on pull requests and `main` (`.github/workflows/checks.yml`).
 
