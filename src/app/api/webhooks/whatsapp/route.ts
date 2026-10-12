@@ -62,27 +62,51 @@ export async function POST(request: Request) {
 
   // Enqueue-then-ack (decision D12): the webhook never runs the agent. Inbound
   // messages become `whatsapp_jobs` rows (idempotent by wamid) for the worker;
-  // status callbacks are applied directly by `provider_id` (wamid). Always ack
-  // 200 fast so Meta does not retry the whole webhook on a small/unknown event.
+  // status callbacks are applied directly by `provider_id` (wamid). Ack 200 fast
+  // for small/unknown events and best-effort statuses, but return 500 if inbound
+  // enqueue fails so Meta redelivers safely using the wamid dedupe key.
   const statuses = parseInboundWhatsAppStatuses(payload);
   const messages = parseInboundWhatsAppMessages(payload);
 
-  // Perceived-immediacy lever: mark read + typing indicator in one cheap Graph
-  // call, best-effort so Meta's 200 is never hard-gated on it.
-  await Promise.allSettled(
-    messages.map((message) =>
-      sendWhatsAppTypingIndicator({
-        phoneNumberId: message.phoneNumberId,
-        messageId: message.wamid,
-      }),
-    ),
-  );
-
   try {
     if (statuses.length > 0) await applyWhatsAppStatuses(statuses);
-    if (messages.length > 0) await enqueueInboundJobs(messages);
   } catch (error) {
-    console.error("whatsapp: webhook enqueue/status failed", error);
+    console.error(
+      JSON.stringify({
+        event: "whatsapp_webhook_status_failed",
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+
+  let enqueued = 0;
+  try {
+    if (messages.length > 0) enqueued = await enqueueInboundJobs(messages);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "whatsapp_webhook_enqueue_failed",
+        // Database error messages may contain query parameters (contact PII).
+        error: error instanceof Error ? error.name : "unknown",
+        messageCount: messages.length,
+        wamids: messages.map((message) => message.wamid),
+      }),
+    );
+    return Response.json({ error: "enqueue_failed" }, { status: 500 });
+  }
+
+  // Only mark read + show typing after new inbound messages are durable.
+  // A fully deduplicated Meta retry must not repeat these signals.
+  // Best-effort so Meta's 200 is never hard-gated on the Graph call.
+  if (enqueued > 0) {
+    await Promise.allSettled(
+      messages.map((message) =>
+        sendWhatsAppTypingIndicator({
+          phoneNumberId: message.phoneNumberId,
+          messageId: message.wamid,
+        }),
+      ),
+    );
   }
 
   // Wake the worker after the 200 flushes so inbound messages are answered

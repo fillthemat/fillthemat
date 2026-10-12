@@ -476,7 +476,10 @@ Supersedes/augments the noted subsections above. Everything not mentioned here s
 ## D12 — Async inbound execution model (RESOLVED — closes the Phase 4 open risk)
 
 **Decision: enqueue-then-ack.** The webhook never runs the agent. It verifies, normalizes, enqueues one
-`whatsapp_jobs` row per inbound message (idempotent by `wamid`), and returns 200 immediately. A dedicated
+`whatsapp_jobs` row per inbound message (idempotent by `wamid`), and returns 200 after durable enqueue.
+If inbound messages cannot be durably enqueued, it returns non-2xx (`500 enqueue_failed`) so Meta
+redelivers (#221); status callback failures remain best-effort and return 200. Read receipts and typing
+are best-effort after successful enqueue and skipped for fully deduplicated retries. A dedicated
 worker claims jobs with `FOR UPDATE SKIP LOCKED` and runs the agent + outbound send. The subsequently
 implemented wake decision uses inbound-webhook `after()` plus daily cron at 05:00 UTC
 (`docs/decisions/whatsapp-cron-after.md`), with the bounded in-run retries in §1.6.
