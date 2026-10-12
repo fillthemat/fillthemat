@@ -1,10 +1,5 @@
 import { isLocalWhatsAppNoop } from "@/lib/dev-flags";
-import {
-  whatsappApiVersion,
-  whatsappGraphBase,
-  whatsappSystemUserToken,
-} from "./config";
-import { whatsappTemplateComponents } from "./templates";
+import { whatsappApiVersion, whatsappGraphBase } from "./config";
 
 export type WhatsAppSendFailure =
   | { ok: false; kind: "missing_credentials"; message: string }
@@ -63,10 +58,7 @@ function graphPost(
   dependencies: WhatsAppGraphDependencies = {},
   requireMessageId = true,
 ): Promise<WhatsAppSendOutcome | WhatsAppReceiptOutcome> {
-  const token =
-    dependencies.token === undefined
-      ? whatsappSystemUserToken()
-      : dependencies.token;
+  const token = dependencies.token;
   if (!token) {
     if (dependencies.localNoop ?? isLocalWhatsAppNoop()) {
       console.info(
@@ -81,7 +73,7 @@ function graphPost(
     return Promise.resolve({
       ok: false,
       kind: "missing_credentials",
-      message: "WHATSAPP_SYSTEM_USER_TOKEN is not set",
+      message: "School WhatsApp credential is missing",
     });
   }
 
@@ -188,7 +180,7 @@ export function sendWhatsAppText(
     },
     {
       ...dependencies,
-      token: token ?? dependencies?.token,
+      token: token === undefined ? dependencies?.token : token,
     },
   );
 }
@@ -221,48 +213,9 @@ export function sendWhatsAppTypingIndicator(
     },
     {
       ...dependencies,
-      token: token ?? dependencies?.token,
+      token: token === undefined ? dependencies?.token : token,
     },
     false,
-  );
-}
-
-export function sendWhatsAppTemplate(
-  {
-    phoneNumberId,
-    token,
-    to,
-    templateName,
-    languageCode,
-    params,
-  }: {
-    phoneNumberId: string;
-    token?: string | null;
-    to: string;
-    templateName: string;
-    languageCode: string;
-    params: unknown[];
-  },
-  dependencies?: WhatsAppGraphDependencies,
-): Promise<WhatsAppSendOutcome> {
-  const components = whatsappTemplateComponents(params);
-  return graphPost(
-    phoneNumberId,
-    {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to,
-      type: "template",
-      template: {
-        name: templateName,
-        language: { code: languageCode },
-        components,
-      },
-    },
-    {
-      ...dependencies,
-      token: token ?? dependencies?.token,
-    },
   );
 }
 
@@ -314,7 +267,7 @@ export function sendWhatsAppInteractive(
     },
     {
       ...dependencies,
-      token: token ?? dependencies?.token,
+      token: token === undefined ? dependencies?.token : token,
     },
   );
 }

@@ -60,7 +60,7 @@ function acceptingTransport() {
   }));
   return {
     send,
-    transport: { sendText: send, sendTemplate: send, sendInteractive: send },
+    transport: { sendText: send, sendInteractive: send },
   };
 }
 

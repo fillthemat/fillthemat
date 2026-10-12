@@ -1,6 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import type { schools } from "@/db/schema";
-import { whatsappSystemUserToken } from "./config";
 
 function encryptionKey(): Buffer {
   const key = process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY;
@@ -28,7 +27,7 @@ export function encryptWhatsAppToken(schoolId: string, token: string): string {
   ].join(":");
 }
 
-/** Only schools without a customer token may fall back to the shared token. */
+/** School-bound credentials only; missing credentials never use shared access. */
 export function resolveWhatsAppToken(
   school: Pick<
     typeof schools.$inferSelect,
@@ -36,7 +35,7 @@ export function resolveWhatsAppToken(
   >,
   now = new Date(),
 ): string | null {
-  if (school.whatsappTokenEncrypted === null) return whatsappSystemUserToken();
+  if (school.whatsappTokenEncrypted === null) return null;
   if (school.whatsappTokenExpiresAt && school.whatsappTokenExpiresAt <= now) {
     throw new Error("whatsapp_token_expired");
   }

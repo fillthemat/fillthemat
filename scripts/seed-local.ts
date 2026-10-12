@@ -14,7 +14,6 @@ import {
   users,
 } from "../src/db/schema";
 import { bookingIcsUid } from "../src/lib/email/ics";
-import { LOCAL_WHATSAPP_PHONE_NUMBER_ID } from "../src/lib/whatsapp/config";
 import { parseSupabaseStatusEnv, readEnvFile } from "./local-env";
 import { fail, tryCapture } from "./local-process";
 
@@ -112,9 +111,10 @@ export async function seedLocal() {
         address: "123 Demo Street",
         phone: "555-0100",
         notificationEmail: LOCAL_OWNER_EMAIL,
+        publicContactEmail: "hello@demo.local.test",
         country: "US",
         approvedAt: new Date(),
-        whatsappPhoneNumberId: LOCAL_WHATSAPP_PHONE_NUMBER_ID,
+        whatsappConnectionState: "off",
         welcomeMessage: "Welcome to the local demo school.",
       })
       .onConflictDoNothing()
@@ -136,10 +136,24 @@ export async function seedLocal() {
     .set({
       approvedAt: existingSchool?.approvedAt ?? new Date(),
       city: existingSchool?.city ?? "Brooklyn",
-      whatsappPhoneNumberId: LOCAL_WHATSAPP_PHONE_NUMBER_ID,
+      publicContactEmail:
+        existingSchool?.publicContactEmail ?? "hello@demo.local.test",
       updatedAt: new Date(),
     })
     .where(eq(schools.id, schoolId));
+
+  // Upgrade only the old seed's unconnected phone mapping. Never overwrite an
+  // owner's connection or erase retained history when setup runs again.
+  await db
+    .update(schools)
+    .set({ whatsappPhoneNumberId: null })
+    .where(
+      and(
+        eq(schools.id, schoolId),
+        eq(schools.whatsappConnectionState, "off"),
+        eq(schools.whatsappPhoneNumberId, "106500000000000"),
+      ),
+    );
 
   const [offering] = await db
     .select()

@@ -69,7 +69,7 @@ function fakeRun(send: () => Promise<WhatsAppSendOutcome>) {
       sleeps.push(milliseconds);
       clock += milliseconds;
     },
-    transport: { sendText: send, sendTemplate: send, sendInteractive: send },
+    transport: { sendText: send, sendInteractive: send },
   };
   return {
     dependencies,
@@ -347,12 +347,8 @@ describe("bounded in-run WhatsApp retries", () => {
       attempts: 3,
       nextAttemptAt: new Date("1890-01-01T12:04:40Z"),
     });
-    fake.advance(86_400_000);
-    // Templates, unlike free-form replies, remain eligible on the next day.
-    await db
-      .update(whatsappDeliveries)
-      .set({ templateName: "booking_confirmation", templateParams: [] })
-      .where(eq(whatsappDeliveries.id, id));
+    // Another run can continue the budget while the prospect's window is open.
+    fake.advance(60_000);
     const cron = fakeRun(async () => ({
       ok: false,
       kind: "network_error",

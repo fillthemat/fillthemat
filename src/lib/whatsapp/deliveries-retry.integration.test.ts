@@ -95,7 +95,7 @@ function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
     sleep: async () => {
       throw new Error("unexpected retry loop");
     },
-    transport: { sendText: send, sendTemplate: send, sendInteractive: send },
+    transport: { sendText: send, sendInteractive: send },
   };
 }
 

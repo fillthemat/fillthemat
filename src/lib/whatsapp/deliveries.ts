@@ -38,7 +38,6 @@ import {
   whatsappWorkerDependencies,
 } from "./dependencies";
 import type { InboundWhatsAppStatus } from "./status";
-import { WHATSAPP_TEMPLATE_LANGUAGE } from "./templates";
 
 function ownedClaim(delivery: WhatsAppDelivery) {
   return ownedQueueClaim(whatsappDeliveries, delivery);
@@ -104,12 +103,7 @@ async function failDelivery(
 
 export type WhatsappDeliveryPlan =
   | { type: "text" }
-  | {
-      type: "template";
-      templateName: string;
-      languageCode: string;
-      params: unknown[];
-    }
+  | { type: "template_retired" }
   | {
       type: "interactive";
       body: string;
@@ -118,12 +112,8 @@ export type WhatsappDeliveryPlan =
   | { type: "window_closed" };
 
 /**
- * Decide how a delivery should be sent: an explicit template always goes as a
- * template; then an interactive message (reply buttons); otherwise free-form
- * text is allowed only while the 24h customer-service window is open.
- * Closed-window free-form/interactive replies have no Meta-approved template
- * equivalent in v1, so they fail closed instead of sending an out-of-window
- * message.
+ * Replies only: legacy templates fail closed while retained for history.
+ * Text and interactive replies require an open customer-service window.
  */
 export function planWhatsAppDelivery(
   delivery: {
@@ -136,14 +126,7 @@ export function planWhatsAppDelivery(
   now = new Date(),
 ): WhatsappDeliveryPlan {
   if (delivery.templateName) {
-    return {
-      type: "template",
-      templateName: delivery.templateName,
-      languageCode: WHATSAPP_TEMPLATE_LANGUAGE,
-      params: Array.isArray(delivery.templateParams)
-        ? delivery.templateParams
-        : [],
-    };
+    return { type: "template_retired" };
   }
   if (delivery.interactiveButtons && delivery.interactiveButtons.length > 0) {
     if (!windowOpen(delivery.windowExpiresAt, now)) {
@@ -349,11 +332,11 @@ export async function sendWhatsAppDelivery(
     },
     dependencies.now(),
   );
-  if (plan.type === "window_closed") {
+  if (plan.type === "window_closed" || plan.type === "template_retired") {
     return failDelivery(
       delivery,
-      { kind: "internal", reason: "window_closed" },
-      "window_closed",
+      { kind: "internal", reason: plan.type },
+      plan.type,
       dependencies.now(),
     );
   }
@@ -383,29 +366,20 @@ export async function sendWhatsAppDelivery(
   try {
     const token = resolveWhatsAppToken(school, dependencies.now());
     const outcome =
-      plan.type === "template"
-        ? await dependencies.transport.sendTemplate({
+      plan.type === "interactive"
+        ? await dependencies.transport.sendInteractive({
             phoneNumberId: delivery.phoneNumberId,
             token,
             to: delivery.recipientWaId,
-            templateName: plan.templateName,
-            languageCode: plan.languageCode,
-            params: plan.params,
+            body: plan.body,
+            buttons: plan.buttons,
           })
-        : plan.type === "interactive"
-          ? await dependencies.transport.sendInteractive({
-              phoneNumberId: delivery.phoneNumberId,
-              token,
-              to: delivery.recipientWaId,
-              body: plan.body,
-              buttons: plan.buttons,
-            })
-          : await dependencies.transport.sendText({
-              phoneNumberId: delivery.phoneNumberId,
-              token,
-              to: delivery.recipientWaId,
-              text: delivery.body ?? "",
-            });
+        : await dependencies.transport.sendText({
+            phoneNumberId: delivery.phoneNumberId,
+            token,
+            to: delivery.recipientWaId,
+            text: delivery.body ?? "",
+          });
 
     if (!outcome.ok) {
       const lastError = `${

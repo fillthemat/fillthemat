@@ -43,6 +43,8 @@ owner@local.test / local-dev-password
 
 The seed creates an **approved but unpublished** school with slug `/s/demo` (plus a seeded offering, class-time window, and demo booking). After signing in, open `/dashboard`, then Preview → Publish to make `/s/demo` public. `ALLOW_SELF_APPROVAL` auto-approves other schools you create locally; leave it unset in production.
 
+The demo has a public contact email and starts WhatsApp **Off**, with no fabricated WABA/phone mapping. Setup preserves any owner connection progress; publishing alone does not make WhatsApp Live. Exercise onboarding through Settings with configured vendors, or use the connection integration tests' injected fake clients without paid accounts. The historical unconnected demo phone ID is cleared on re-seed.
+
 ## Optional integrations
 
 All optional. The app degrades cleanly without them.
@@ -52,7 +54,7 @@ All optional. The app degrades cleanly without them.
 | Real email | Set `RESEND_API_KEY` (+ `RESEND_FROM=onboarding@resend.dev` for owner-only test mail) in `.env.local` | Deliveries are recorded and logged instead of sent |
 | Real assistant model | `bunx vercel env pull` (provides `VERCEL_OIDC_TOKEN`) or `AI_GATEWAY_API_KEY`, and a free-tier-allowed `BOOKING_AGENT_MODEL` | Web chat and WhatsApp run the assistant with a scripted local model: it calls the "list trial offerings" tool, then replies naming the active trial offerings. It never proposes a booking, so book with Book Trial |
 | Continue with Google | Replace the placeholders in `supabase/.env` with a real Web client (callback `http://127.0.0.1:54321/auth/v1/callback`), then re-run `bun run setup` | Email sign-in still works; Google is disabled |
-| Real WhatsApp sends | Set `WHATSAPP_SYSTEM_USER_TOKEN` (and optionally `WHATSAPP_APP_SECRET` / `WHATSAPP_VERIFY_TOKEN`). School-specific tokens require `WHATSAPP_TOKEN_ENCRYPTION_KEY`: a stable, server-only 64-character hex key for AES-256-GCM. | Webhook + worker use dev-stub values; outbound send is a no-op log |
+| Real WhatsApp sends | Complete school-owned signup below; every send uses the school's encrypted customer token. Missing school credentials produce a no-op only outside production; there is no shared-token fallback. | Webhook uses dev-stub signing/verify values; a Live test connection without credentials logs outbound no-ops; the Off demo never invokes the Assistant |
 | Buy a WhatsApp number | Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_SMS_WEBHOOK_URL` pointing to a public HTTPS `/api/webhooks/twilio` | Settings reports setup unavailable with retry; no number is purchased or fabricated. Connection integration tests inject a fake provider. |
 | WhatsApp signup | Set `WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID` (a v4 configuration), and the stable 64-hex-character `WHATSAPP_TOKEN_ENCRYPTION_KEY` | Missing Meta configuration shows signup unavailable and keeps the reserved number. Connection integration tests inject fake Meta/carrier clients; no paid accounts are needed |
 | Langfuse traces of each turn | Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (plus `LANGFUSE_BASE_URL` outside the EU region) for a Langfuse project of your own | Nothing is traced or exported |
