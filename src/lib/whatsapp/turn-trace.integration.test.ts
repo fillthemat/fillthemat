@@ -788,9 +788,6 @@ describe("a failed attempt at a WhatsApp turn", () => {
               kind: "accepted",
               providerId: `trace-${suffix}`,
             }),
-            sendTemplate: async () => {
-              throw new Error("unexpected template");
-            },
             sendInteractive: async () => {
               throw new Error("unexpected interactive");
             },

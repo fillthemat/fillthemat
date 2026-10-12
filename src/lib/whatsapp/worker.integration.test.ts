@@ -15,11 +15,7 @@ import {
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
-import {
-  sendWhatsAppInteractive,
-  sendWhatsAppTemplate,
-  sendWhatsAppText,
-} from "./client";
+import { sendWhatsAppInteractive, sendWhatsAppText } from "./client";
 import {
   attemptWhatsAppDeliveriesNow,
   enqueueWhatsAppDelivery,
@@ -159,10 +155,6 @@ describe("WhatsApp worker dependencies", () => {
             sends.push("text");
             return { ok: true, kind: "local_noop", providerId: null };
           },
-          async sendTemplate() {
-            sends.push("template");
-            return { ok: true, kind: "local_noop", providerId: null };
-          },
           async sendInteractive() {
             sends.push("interactive");
             return { ok: true, kind: "local_noop", providerId: null };
@@ -199,10 +191,6 @@ describe("WhatsApp worker dependencies", () => {
         transport: {
           async sendText() {
             sends.push("text");
-            return { ok: true, kind: "local_noop", providerId: null };
-          },
-          async sendTemplate() {
-            sends.push("template");
             return { ok: true, kind: "local_noop", providerId: null };
           },
           async sendInteractive() {
@@ -371,9 +359,6 @@ describe("WhatsApp worker dependencies", () => {
         sendText: async () => {
           throw new Error("busy conversation must not send");
         },
-        sendTemplate: async () => {
-          throw new Error("busy conversation must not send");
-        },
         sendInteractive: async () => {
           throw new Error("busy conversation must not send");
         },
@@ -402,7 +387,7 @@ describe("WhatsApp worker dependencies", () => {
       nextAttemptAt: new Date("2020-01-01T12:00:05Z"),
     });
   });
-  it.each(["http", "text", "template", "interactive"])(
+  it.each(["http", "text", "interactive"])(
     "records %s response failures with the shared short backoff on the injected clock",
     async (type) => {
       const id = await enqueueWhatsAppDelivery(
@@ -411,7 +396,6 @@ describe("WhatsApp worker dependencies", () => {
           phoneNumberId,
           recipientWaId: "16505550003",
           body: "Hello",
-          templateName: type === "template" ? "booking_confirmation" : null,
           interactiveButtons:
             type === "interactive"
               ? [{ id: "confirm", title: "Confirm" }]
@@ -436,9 +420,10 @@ describe("WhatsApp worker dependencies", () => {
           throw new Error("unexpected retry pause");
         },
         transport: {
-          sendText: (input) => sendWhatsAppText(input, graph),
-          sendTemplate: (input) => sendWhatsAppTemplate(input, graph),
-          sendInteractive: (input) => sendWhatsAppInteractive(input, graph),
+          sendText: (input) =>
+            sendWhatsAppText({ ...input, token: "test-token" }, graph),
+          sendInteractive: (input) =>
+            sendWhatsAppInteractive({ ...input, token: "test-token" }, graph),
         },
       });
       const [row] = await db
@@ -511,9 +496,6 @@ describe("WhatsApp worker dependencies", () => {
     const result = await runWhatsAppWorkerOnce(randomUUID(), {
       transport: {
         sendText,
-        sendTemplate: async () => {
-          throw new Error("unexpected template");
-        },
         sendInteractive: async () => {
           throw new Error("unexpected interactive");
         },

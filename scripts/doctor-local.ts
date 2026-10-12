@@ -95,11 +95,13 @@ function main() {
       "…   RESEND_API_KEY missing (email deliveries log + mark sent)",
     );
 
-  if (env.WHATSAPP_SYSTEM_USER_TOKEN)
-    console.log("ok  WHATSAPP_SYSTEM_USER_TOKEN present (real WhatsApp send)");
+  if (env.WHATSAPP_TOKEN_ENCRYPTION_KEY)
+    console.log(
+      "ok  WHATSAPP_TOKEN_ENCRYPTION_KEY present (school credential storage)",
+    );
   else
     console.log(
-      "…   WHATSAPP_SYSTEM_USER_TOKEN missing (WhatsApp uses local stub)",
+      "…   WHATSAPP_TOKEN_ENCRYPTION_KEY missing (school signup requires it; missing school credentials use local send stub)",
     );
 
   if (env.WHATSAPP_APP_SECRET) console.log("ok  WHATSAPP_APP_SECRET present");

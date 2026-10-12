@@ -97,9 +97,6 @@ function recordingTransport(
       sent.push(input);
       return { ok: true, kind: "accepted", providerId: randomUUID() };
     },
-    sendTemplate: async () => {
-      throw new Error("unexpected template");
-    },
     sendInteractive: async () => {
       throw new Error("unexpected interactive");
     },

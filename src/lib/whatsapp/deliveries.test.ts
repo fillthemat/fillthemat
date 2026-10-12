@@ -5,7 +5,7 @@ import { planWhatsAppDelivery, type WhatsappDeliveryPlan } from "./deliveries";
 const now = new Date("2026-09-11T12:00:00Z");
 
 describe("planWhatsAppDelivery", () => {
-  it("prefers an explicit template even inside the window", () => {
+  it("retires an explicit legacy template even inside the window", () => {
     const plan = planWhatsAppDelivery(
       {
         templateName: "booking_confirmation",
@@ -14,11 +14,7 @@ describe("planWhatsAppDelivery", () => {
       },
       now,
     );
-    expect(plan.type).toBe("template");
-    if (plan.type === "template") {
-      expect(plan.templateName).toBe("booking_confirmation");
-      expect(plan.params).toEqual(["Demo Dojo", "Sam"]);
-    }
+    expect(plan.type).toBe("template_retired");
   });
 
   it("sends free-form text while the 24h window is open", () => {
@@ -45,7 +41,7 @@ describe("planWhatsAppDelivery", () => {
     expect(plan).toEqual({ type: "window_closed" });
   });
 
-  it("sends a template regardless of a closed window", () => {
+  it("never sends a legacy template outside the window", () => {
     const plan = planWhatsAppDelivery(
       {
         templateName: "booking_reminder",
@@ -54,7 +50,7 @@ describe("planWhatsAppDelivery", () => {
       },
       now,
     );
-    expect(plan.type).toBe("template");
+    expect(plan.type).toBe("template_retired");
   });
 
   it("plans an interactive message while the window is open", () => {
