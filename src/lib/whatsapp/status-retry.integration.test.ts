@@ -48,7 +48,7 @@ const dependencies = {
   sleep: async () => {
     throw new Error("unexpected sleep");
   },
-  transport: { sendText: send, sendTemplate: send, sendInteractive: send },
+  transport: { sendText: send, sendInteractive: send },
 };
 
 beforeAll(async () => {

@@ -136,9 +136,6 @@ describe("school-scoped WhatsApp sends", () => {
             providerId: `fake:${randomUUID()}`,
           };
         },
-        sendTemplate: async () => {
-          throw new Error("unexpected template");
-        },
         sendInteractive: async () => {
           throw new Error("unexpected interactive");
         },
@@ -158,8 +155,8 @@ describe("school-scoped WhatsApp sends", () => {
       }),
     ]);
   });
-  it.each(["text", "template", "interactive"])(
-    "passes the school's credential for queued %s sends, with the shared fallback for legacy schools",
+  it.each(["text", "interactive"])(
+    "sends queued %s only with the school's credential and fails closed for legacy schools",
     async (type) => {
       await db
         .update(schools)
@@ -173,7 +170,6 @@ describe("school-scoped WhatsApp sends", () => {
             recipientWaId: "16505550003",
             providerIdempotencyKey: `credential-${type}-${index}-${suffix}`,
             body: "Hello",
-            templateName: type === "template" ? "booking_confirmation" : null,
             interactiveButtons:
               type === "interactive" ? [{ id: "yes", title: "Yes" }] : null,
             windowExpiresAt: new Date("2020-01-02T12:00:00Z"),
@@ -187,6 +183,12 @@ describe("school-scoped WhatsApp sends", () => {
         token?: string | null;
       }) => {
         sends.push(input);
+        if (!input.token)
+          return {
+            ok: false as const,
+            kind: "missing_credentials" as const,
+            message: "School WhatsApp credential is missing",
+          };
         return {
           ok: true as const,
           kind: "accepted" as const,
@@ -197,11 +199,11 @@ describe("school-scoped WhatsApp sends", () => {
         now: () => now,
         transport: {
           sendText: send,
-          sendTemplate: send,
           sendInteractive: send,
         },
       });
-      expect(result.sent).toBe(2);
+      expect(result.sent).toBe(1);
+      expect(result.dead).toBe(1);
       expect(sends).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -210,7 +212,7 @@ describe("school-scoped WhatsApp sends", () => {
           }),
           expect.objectContaining({
             phoneNumberId: phoneNumberIds[1],
-            token: "shared-token",
+            token: null,
           }),
         ]),
       );
@@ -257,7 +259,6 @@ describe("school-scoped WhatsApp sends", () => {
           now: () => now,
           transport: {
             sendText: send,
-            sendTemplate: send,
             sendInteractive: send,
           },
         });

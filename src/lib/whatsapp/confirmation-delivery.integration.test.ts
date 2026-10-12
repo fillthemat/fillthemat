@@ -167,10 +167,37 @@ async function emails() {
 function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
   return {
     now: () => new Date(now),
-    transport: { sendText: send, sendInteractive: send, sendTemplate: send },
+    transport: { sendText: send, sendInteractive: send },
   };
 }
 describe("booking confirmation delivery through the worker", () => {
+  it("retires queued legacy templates without sending and emails the confirmation owner once", async () => {
+    now = new Date("2018-01-01T17:00:00Z");
+    const id = await enqueue({
+      templateName: "booking_confirmation",
+      templateParams: ["Old school"],
+    });
+    const send = vi.fn(
+      async (): Promise<WhatsAppSendOutcome> => ({
+        ok: true,
+        kind: "accepted",
+        providerId: randomUUID(),
+      }),
+    );
+    await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+    expect(send).not.toHaveBeenCalled();
+    expect(await stored(id)).toMatchObject({
+      state: "dead",
+      failureReason: "template_retired",
+      terminalCause: "permanent",
+      templateName: "booking_confirmation",
+    });
+    expect(await emails()).toMatchObject([
+      { kind: "owner_whatsapp_confirmation_failed", bookingId },
+    ]);
+    await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+    expect(await emails()).toHaveLength(1);
+  });
   it("sends the owner a follow-up email without attempting an already-closed confirmation", async () => {
     now = new Date("2018-01-01T17:00:00Z");
     await enqueue({ windowExpiresAt: now });

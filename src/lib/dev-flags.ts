@@ -14,8 +14,5 @@ export function isLocalEmailNoop(): boolean {
 }
 
 export function isLocalWhatsAppNoop(): boolean {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    !process.env.WHATSAPP_SYSTEM_USER_TOKEN
-  );
+  return process.env.NODE_ENV !== "production";
 }

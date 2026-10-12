@@ -159,9 +159,6 @@ describe("bounded WhatsApp job executions", () => {
               sendText: async () => {
                 throw new Error("must not send after storage failure");
               },
-              sendTemplate: async () => {
-                throw new Error("unexpected template");
-              },
               sendInteractive: async () => {
                 throw new Error("unexpected interactive");
               },

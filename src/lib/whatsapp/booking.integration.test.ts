@@ -315,11 +315,6 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       kind: "accepted" as const,
       providerId: `fake-text:${suffix}`,
     }));
-    const sendTemplate = vi.fn(async () => ({
-      ok: true as const,
-      kind: "accepted" as const,
-      providerId: `fake-booking:${suffix}`,
-    }));
     await runWhatsAppWorkerOnce(randomUUID(), {
       now: () => new Date(workerNow),
       sleep: async () => {
@@ -332,7 +327,6 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
           kind: "accepted",
           providerId: `fake-interactive:${suffix}`,
         }),
-        sendTemplate,
       },
     });
 
@@ -401,7 +395,6 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       to: waA,
       text: confirmationDelivery.body,
     });
-    expect(sendTemplate).not.toHaveBeenCalled();
 
     const ownerEmails = await db
       .select()
