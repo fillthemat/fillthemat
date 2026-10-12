@@ -1,5 +1,5 @@
 {
-  "id": "9852bb15-cdeb-4ab2-bd46-b045ad3d413b",
+  "id": "89970516-772b-4b65-8f3c-75c3e24bee82",
   "prevId": "d6dedac1-4d90-419e-b792-1c95cfcbc269",
   "version": "7",
   "dialect": "postgresql",
@@ -1450,6 +1450,12 @@
           "notNull": true,
           "default": "'web'"
         },
+        "poppy_client_id": {
+          "name": "poppy_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "landing_session_id": {
           "name": "landing_session_id",
           "type": "uuid",
@@ -1510,6 +1516,20 @@
       },
       "indexes": {},
       "foreignKeys": {
+        "leads_poppy_client_id_poppy_clients_client_id_fk": {
+          "name": "leads_poppy_client_id_poppy_clients_client_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "poppy_clients",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "poppy_client_id"
+          ],
+          "columnsTo": [
+            "client_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "leads_school_id_fk": {
           "name": "leads_school_id_fk",
           "tableFrom": "leads",
@@ -1803,75 +1823,6 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
-    "app.poppy_budget_usages": {
-      "name": "poppy_budget_usages",
-      "schema": "app",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "poppy_budget_usages_key_expiry": {
-          "name": "poppy_budget_usages_key_expiry",
-          "columns": [
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "poppy_budget_usages_expiry": {
-          "name": "poppy_budget_usages_expiry",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -2373,6 +2324,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2461,6 +2418,22 @@
           "columnsFrom": [
             "school_id",
             "booking_id"
+          ],
+          "columnsTo": [
+            "school_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "poppy_operations_lead_fk": {
+          "name": "poppy_operations_lead_fk",
+          "tableFrom": "poppy_operations",
+          "tableTo": "leads",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "school_id",
+            "lead_id"
           ],
           "columnsTo": [
             "school_id",

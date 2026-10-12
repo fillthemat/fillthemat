@@ -88,6 +88,10 @@ beforeAll(async () => {
     });
   vi.stubEnv("DATABASE_URL", localUrl.toString());
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://app.fillthemat.example");
+  vi.stubEnv(
+    "POPPY_CANCEL_LINK_SECRET",
+    "budget-test-secret-at-least-32-characters",
+  );
   vi.stubEnv("POPPY_AUTH_ORIGIN", "https://auth.fillthemat.example");
   const owner = randomUUID();
   await sql`insert into auth.users (id) values (${owner})`;
@@ -433,6 +437,52 @@ it("twenty issued proposal revisions exhaust the User budget and the next reques
   expect((await sendProposal(nextSession, second.conversation_id)).status).toBe(
     429,
   );
+  // Lead and booking proposals share the same principal-wide budget.
+  vi.spyOn(languageModel, "defaultLanguageModel").mockReturnValue(
+    new MockLanguageModelV4({
+      doGenerate: [
+        {
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: randomUUID(),
+              toolName: "request_contact",
+              input: JSON.stringify({ contact }),
+            },
+          ],
+          finishReason: { unified: "tool-calls", raw: undefined },
+          usage,
+          warnings: [],
+        },
+        {
+          content: [{ type: "text", text: "Please approve contact." }],
+          finishReason: { unified: "stop", raw: undefined },
+          usage,
+          warnings: [],
+        },
+      ],
+    }),
+  );
+  const leadRefused = await send(
+    await user.request(
+      `conversations/${second.conversation_id}/messages?wait=2`,
+      {
+        message: {
+          id: randomUUID(),
+          sender: "agent",
+          text: "Ask the School to contact me",
+        },
+      },
+    ),
+    {
+      params: Promise.resolve({
+        schoolId,
+        conversationId: second.conversation_id,
+      }),
+    },
+  );
+  expect(leadRefused.status).toBe(429);
+  expect(Number(leadRefused.headers.get("Retry-After"))).toBeGreaterThan(86000);
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(Date.now() + 24 * 60 * 60 * 1000));
   const reset = await caller(primary, user.agent);

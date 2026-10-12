@@ -14,7 +14,7 @@ export default async function LeadsPage() {
         <p className="text-sm text-muted-foreground">No leads yet.</p>
       ) : (
         <ul className="divide-y divide-border border-y border-border">
-          {rows.map(({ lead, contact }) => {
+          {rows.map(({ lead, contact, poppyClientDisplayName }) => {
             const participant = [
               lead.participantName,
               lead.participantAge != null
@@ -34,6 +34,9 @@ export default async function LeadsPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Channel: {formatChannel(lead.channel)}
+                  {lead.channel === "poppy" && poppyClientDisplayName
+                    ? ` · ${poppyClientDisplayName}`
+                    : null}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {contact.email ? (

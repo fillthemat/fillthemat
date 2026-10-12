@@ -25,7 +25,11 @@ function snapshotBlock(booking: Booking): string {
     .join("\n");
 }
 
-export function prospectConfirmationEmail(school: School, booking: Booking) {
+export function prospectConfirmationEmail(
+  school: School,
+  booking: Booking,
+  cancelUrl?: string,
+) {
   const text = `You're booked for a trial class at ${school.name}.
 
 ${snapshotBlock(booking)}
@@ -34,6 +38,7 @@ ${school.phone ? `School phone: ${school.phone}` : ""}
 ${school.notificationEmail ? `School email: ${school.notificationEmail}` : ""}
 
 To cancel or reschedule, contact the school directly using the phone or email above. Do not reply to this message if it is unattended.
+${cancelUrl ? `\nNot you? Cancel this booking:\n${cancelUrl}\nOpening this link does not cancel your booking. You will be asked to confirm.\n` : ""}
 
 Fillthemat`;
 

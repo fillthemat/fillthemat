@@ -9,8 +9,14 @@ import {
   poppyOperations,
   poppySessions,
   schools,
+  trialOfferings,
 } from "@/db/schema";
 import type { BookingTerms } from "@/lib/ai/tools/prepare-booking";
+import {
+  type LeadTerms,
+  leadTermsSchema,
+} from "@/lib/ai/tools/request-contact";
+import { createLead } from "@/lib/leads/create-lead";
 import { bookSlot } from "@/lib/schedule/book-slot";
 import {
   emailBookingQuotaExceeded,
@@ -63,6 +69,39 @@ export async function proposeBookingOperation(
   },
   options: { transaction?: Transaction } = {},
 ) {
+  return proposeOperation(
+    { ...input, kind: "booking", summary: bookingSummary(input.terms) },
+    options,
+  );
+}
+
+export async function proposeLeadOperation(
+  input: {
+    schoolId: string;
+    sessionId: string;
+    conversationId?: string;
+    terms: LeadTerms;
+    now?: Date;
+  },
+  options: { transaction?: Transaction } = {},
+) {
+  const { terms } = input;
+  const summary = `${terms.school.name} will contact ${terms.contact.name} about a trial. Contact: ${terms.contact.phone}${terms.contact.email ? `, ${terms.contact.email}` : " (no email supplied)"}. Participant: ${terms.participant ? `${terms.participant.name ?? "name not supplied"}, age ${terms.participant.age ?? "not supplied"}` : "not specified"}. Trial Offering: ${terms.offering?.name ?? "not specified"}. Stated need: ${terms.stated_need ?? "not specified"}. Approval is explicit consent to be contacted about this trial request, not marketing consent.`;
+  return proposeOperation({ ...input, kind: "lead", summary }, options);
+}
+
+async function proposeOperation(
+  input: {
+    schoolId: string;
+    sessionId: string;
+    conversationId?: string;
+    kind: "booking" | "lead";
+    summary: string;
+    terms: BookingTerms | LeadTerms;
+    now?: Date;
+  },
+  options: { transaction?: Transaction },
+) {
   return withTransaction(async (tx) => {
     const now = input.now ?? new Date();
     // Serializes conversation/API proposals within this Session without a
@@ -77,7 +116,7 @@ export async function proposeBookingOperation(
         and(
           eq(poppyOperations.schoolId, input.schoolId),
           eq(poppyOperations.sessionId, input.sessionId),
-          eq(poppyOperations.kind, "booking"),
+          eq(poppyOperations.kind, input.kind),
           inArray(poppyOperations.state, ["proposed", "in_progress"]),
         ),
       )
@@ -95,7 +134,7 @@ export async function proposeBookingOperation(
       : undefined;
     const values = {
       revision: (current?.revision ?? 0) + 1,
-      summary: bookingSummary(input.terms),
+      summary: input.summary,
       terms: input.terms,
       expiresAt: new Date(now.getTime() + POPPY_OPERATION_LIFETIME_MS),
       updatedAt: now,
@@ -115,7 +154,7 @@ export async function proposeBookingOperation(
             schoolId: input.schoolId,
             sessionId: input.sessionId,
             conversationId: input.conversationId,
-            kind: "booking",
+            kind: input.kind,
             state: "proposed",
           })
           .returning();
@@ -170,8 +209,7 @@ async function ownedOperation(
       .set({
         state: "expired",
         result: {
-          summary:
-            "The proposal expired before confirmation. No booking was made.",
+          summary: `The proposal expired before confirmation. No ${row.kind === "lead" ? "contact request" : "booking"} was made.`,
         },
         updatedAt: new Date(),
       })
@@ -196,8 +234,7 @@ export async function readOperation(
         .set({
           state: "cancelled",
           result: {
-            summary:
-              "The proposal was declined before confirmation. No booking was made.",
+            summary: `The proposal was declined before confirmation. No ${row.kind === "lead" ? "contact request" : "booking"} was made.`,
           },
           updatedAt: new Date(),
         })
@@ -259,8 +296,75 @@ export async function confirmOperation(
       .select()
       .from(schools)
       .where(eq(schools.id, row.schoolId));
-    if (!school || !session || row.kind !== "booking")
-      throw new Error("operation_effect_unavailable");
+    if (!school || !session) throw new Error("operation_effect_unavailable");
+    if (row.kind === "lead") {
+      const terms = leadTermsSchema.parse(row.terms);
+      const [offering] = terms.offering
+        ? await tx
+            .select()
+            .from(trialOfferings)
+            .where(
+              and(
+                eq(trialOfferings.schoolId, school.id),
+                eq(trialOfferings.id, terms.offering.id),
+              ),
+            )
+            .for("share")
+        : [];
+      if (
+        terms.school.id !== school.id ||
+        terms.school.name !== school.name ||
+        (terms.offering &&
+          (!offering?.active || offering.name !== terms.offering.name))
+      ) {
+        const [failed] = await tx
+          .update(poppyOperations)
+          .set({
+            state: "failed",
+            result: {
+              summary:
+                "No contact request was made: the approved terms have changed; request a new proposal before confirming.",
+              data: { code: "terms_changed" },
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(poppyOperations.id, id))
+          .returning();
+        if (!failed) throw new Error("operation_missing");
+        return publicOperation(failed);
+      }
+      const lead = await createLead(
+        {
+          school,
+          contact: terms.contact,
+          source: {
+            channel: "poppy",
+            clientId: session.clientId,
+            userId: session.userId,
+          },
+          participantName: terms.participant?.name,
+          participantAge: terms.participant?.age,
+          offeringId: terms.offering?.id,
+          statedNeed: terms.stated_need,
+        },
+        { transaction: tx },
+      );
+      const [finished] = await tx
+        .update(poppyOperations)
+        .set({
+          state: "succeeded",
+          leadId: lead.id,
+          result: {
+            summary: `${terms.school.name} will contact ${terms.contact.name} about a trial. This request is not marketing consent.`,
+            data: { lead_id: lead.id },
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(poppyOperations.id, id))
+        .returning();
+      if (!finished) throw new Error("operation_missing");
+      return publicOperation(finished);
+    }
     const terms = bookingTermsSchema.parse(row.terms);
     const now = new Date();
     const budget = await reserveBookingBudgets(

@@ -1,0 +1,4 @@
+ALTER TABLE "app"."leads" ADD COLUMN "poppy_client_id" text;--> statement-breakpoint
+ALTER TABLE "app"."poppy_operations" ADD COLUMN "lead_id" uuid;--> statement-breakpoint
+ALTER TABLE "app"."leads" ADD CONSTRAINT "leads_poppy_client_id_poppy_clients_client_id_fk" FOREIGN KEY ("poppy_client_id") REFERENCES "app"."poppy_clients"("client_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."poppy_operations" ADD CONSTRAINT "poppy_operations_lead_fk" FOREIGN KEY ("school_id","lead_id") REFERENCES "app"."leads"("school_id","id") ON DELETE restrict ON UPDATE no action;

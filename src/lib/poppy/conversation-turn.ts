@@ -23,7 +23,11 @@ import { lockPoppyConversationRow } from "./conversation-lifecycle";
 import { poppyMessage } from "./conversation-requests";
 import { closePoppyConversationRow } from "./conversations";
 import { PoppyError } from "./errors";
-import { proposeBookingOperation, supportsOperations } from "./operations";
+import {
+  proposeBookingOperation,
+  proposeLeadOperation,
+  supportsOperations,
+} from "./operations";
 
 async function nextMessage(conversationId: string) {
   const [receipt] = await getDb()
@@ -130,7 +134,7 @@ export async function completePoppyTurns(
             }
             let text =
               (reply?.operationError === "extension_required"
-                ? "extension_required: Your Personal Agent must support the Operations extension version 1 to propose and confirm a booking."
+                ? "extension_required: Your Personal Agent must support the Operations extension version 1 to propose and confirm a booking or contact request."
                 : reply?.text) ??
               "I couldn't complete that reply. Please try a new message.";
             const replyMessageId = await db.transaction(async (tx) => {
@@ -154,7 +158,17 @@ export async function completePoppyTurns(
                       },
                       { transaction: tx },
                     )
-                  : undefined;
+                  : reply?.leadRequest?.leadTerms
+                    ? await proposeLeadOperation(
+                        {
+                          schoolId: school.id,
+                          sessionId: receipt.sessionId,
+                          conversationId,
+                          terms: reply.leadRequest.leadTerms,
+                        },
+                        { transaction: tx },
+                      )
+                    : undefined;
               } catch (error) {
                 if (!(error instanceof PoppyError) || error.status !== 429)
                   throw error;

@@ -703,6 +703,7 @@ export const poppyOperations = appSchema
         data?: Record<string, unknown>;
       }>(),
       bookingId: uuid("booking_id"),
+      leadId: uuid("lead_id"),
       ...timestamps,
     },
     (t) => [
@@ -725,6 +726,11 @@ export const poppyOperations = appSchema
         name: "poppy_operations_booking_fk",
       }).onDelete("restrict"),
       check("poppy_operations_revision", sql`${t.revision} > 0`),
+      foreignKey({
+        columns: [t.schoolId, t.leadId],
+        foreignColumns: [leads.schoolId, leads.id],
+        name: "poppy_operations_lead_fk",
+      }).onDelete("restrict"),
       check(
         "poppy_operations_state",
         sql`${t.state} IN ('proposed', 'in_progress', 'succeeded', 'failed', 'cancelled', 'expired')`,
@@ -785,6 +791,9 @@ export const leads = appSchema.table(
     id: uuid("id").primaryKey().defaultRandom(),
     schoolId: uuid("school_id").notNull(),
     channel: channelEnum("channel").notNull().default("web"),
+    poppyClientId: text("poppy_client_id").references(
+      () => poppyClients.clientId,
+    ),
     landingSessionId: uuid("landing_session_id").notNull(),
     contactId: uuid("contact_id").notNull(),
     participantName: text("participant_name"),
@@ -911,6 +920,26 @@ export const bookings = appSchema.table(
     ),
   ],
 );
+
+/** Public cancellation credentials are never stored in recoverable form. */
+export const bookingCancelTokens = appSchema
+  .table(
+    "booking_cancel_tokens",
+    {
+      bookingId: uuid("booking_id").primaryKey(),
+      schoolId: uuid("school_id").notNull(),
+      tokenHash: text("token_hash").notNull(),
+      usedAt: timestamp("used_at", { withTimezone: true }),
+    },
+    (t) => [
+      foreignKey({
+        columns: [t.schoolId, t.bookingId],
+        foreignColumns: [bookings.schoolId, bookings.id],
+        name: "booking_cancel_tokens_booking_fk",
+      }).onDelete("cascade"),
+    ],
+  )
+  .enableRLS();
 
 export const emailDeliveries = appSchema.table(
   "email_deliveries",
