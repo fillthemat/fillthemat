@@ -222,6 +222,7 @@ describe("school-scoped WhatsApp sends", () => {
       await db
         .update(schools)
         .set({
+          whatsappConnectionState: "live",
           whatsappTokenEncrypted:
             failure === "corrupt"
               ? "not-a-ciphertext"

@@ -3,10 +3,12 @@ export type MetaSignupClient = {
     token: string;
     wabaId: string;
     phoneNumberId: string;
+    checkHealth?: boolean;
   }): Promise<{
     registered: boolean;
     paymentMethod: boolean;
     profileName: string | null;
+    messagingAvailable?: boolean;
   }>;
   exchangeCode(
     code: string,
@@ -29,6 +31,7 @@ export type MetaSignupClient = {
 export class MetaSignupError extends Error {
   constructor(
     public readonly code: "signup_failed" | "unconfigured" | "invalid_assets",
+    public readonly brokenPart: BrokenPart | null = null,
   ) {
     super(code);
   }
@@ -37,11 +40,17 @@ export class MetaSignupError extends Error {
 export function metaSignupFromEnv(): MetaSignupClient {
   const appId = process.env.WHATSAPP_APP_ID;
   const appSecret = process.env.WHATSAPP_APP_SECRET;
-  if (appId && appSecret)
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  const verifyToken = whatsappVerifyToken();
+  if (appId && appSecret && siteUrl && verifyToken)
     return createMetaSignupClient({
       appId,
       appSecret,
       fetch: whatsAppTestVendorFetch(),
+      webhook: {
+        callbackUrl: new URL("/api/webhooks/whatsapp", siteUrl).href,
+        verifyToken,
+      },
     });
   const unavailable = async (): Promise<never> => {
     throw new MetaSignupError("unconfigured");
@@ -77,10 +86,12 @@ export function createMetaSignupClient({
   appId,
   appSecret,
   fetch: fetcher = fetch,
+  webhook,
 }: {
   appId: string;
   appSecret: string;
   fetch?: typeof fetch;
+  webhook?: { callbackUrl: string; verifyToken: string };
 }): MetaSignupClient {
   const base = `https://graph.facebook.com/${whatsappApiVersion()}`;
   async function request(
@@ -95,9 +106,19 @@ export function createMetaSignupClient({
         body: body ? new URLSearchParams(body) : undefined,
         signal: AbortSignal.timeout(15_000),
       });
-      if (!response.ok) throw new MetaSignupError("signup_failed");
-      return await response.json();
-    } catch {
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        const error = z
+          .object({ error: z.object({ code: z.number().int() }) })
+          .safeParse(payload);
+        throw new MetaSignupError(
+          "signup_failed",
+          error.success ? brokenPartFromMetaCode(error.data.error.code) : null,
+        );
+      }
+      return payload;
+    } catch (error) {
+      if (error instanceof MetaSignupError) throw error;
       // Fetch/JSON errors can contain a URL carrying the exchange code or token.
       throw new MetaSignupError("signup_failed");
     }
@@ -130,18 +151,22 @@ export function createMetaSignupClient({
       throw new MetaSignupError("signup_failed");
   }
   return {
-    async readReadiness({ token, wabaId, phoneNumberId }) {
+    async readReadiness({ token, wabaId, phoneNumberId, checkHealth }) {
       // Embedded Signup's waba_id is the Messaging Account ID during Meta's
       // H2 2026 rollout. Funding belongs to that account, not the phone number.
       // https://developers.facebook.com/documentation/business-messaging/whatsapp/account-model-evolution/onboarding/
       const [phoneResponse, fundingResponse] = await Promise.all([
-        request(`${phoneNumberId}?fields=status,verified_name`, token),
+        request(
+          `${phoneNumberId}?fields=status,verified_name${checkHealth ? ",health_status" : ""}`,
+          token,
+        ),
         request(`${wabaId}?fields=primary_funding_id`, token),
       ]);
       const phone = z
         .object({
           status: z.string(),
           verified_name: z.string().trim().min(1).optional(),
+          health_status: z.object({ can_send_message: z.string() }).optional(),
         })
         .safeParse(phoneResponse);
       const funding = z
@@ -153,6 +178,12 @@ export function createMetaSignupClient({
         registered: phone.data.status === "CONNECTED",
         paymentMethod: !!funding.data.primary_funding_id,
         profileName: phone.data.verified_name ?? null,
+        ...(checkHealth
+          ? {
+              messagingAvailable:
+                phone.data.health_status?.can_send_message === "AVAILABLE",
+            }
+          : {}),
       };
     },
     async exchangeCode(code) {
@@ -206,8 +237,16 @@ export function createMetaSignupClient({
           `+${phone.display_phone_number.replace(/\D/g, "")}` === number,
       );
     },
-    subscribe: ({ token, wabaId }) =>
-      success(`${wabaId}/subscribed_apps`, token, {}),
+    async subscribe({ token, wabaId }) {
+      if (webhook)
+        await success(`${appId}/subscriptions`, `${appId}|${appSecret}`, {
+          object: "whatsapp_business_account",
+          fields: "messages,account_update",
+          callback_url: webhook.callbackUrl,
+          verify_token: webhook.verifyToken,
+        });
+      await success(`${wabaId}/subscribed_apps`, token, {});
+    },
     register: ({ token, phoneNumberId, pin }) =>
       success(`${phoneNumberId}/register`, token, {
         messaging_product: "whatsapp",
@@ -217,5 +256,7 @@ export function createMetaSignupClient({
 }
 
 import { z } from "zod";
-import { whatsappApiVersion } from "./config";
+import { whatsappApiVersion, whatsappVerifyToken } from "./config";
+import type { BrokenPart } from "./connection";
+import { brokenPartFromMetaCode } from "./health";
 import { whatsAppTestVendorFetch } from "./test-vendor-fetch";

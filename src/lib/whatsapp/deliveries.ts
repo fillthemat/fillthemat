@@ -32,11 +32,13 @@ import {
   bookingConfirmationIsStale,
   onWhatsAppDeliveryDead,
 } from "./confirmation-delivery";
+import { createWhatsAppConnection } from "./connection";
 import { resolveWhatsAppToken } from "./credentials";
 import {
   type WhatsAppWorkerDependencies,
   whatsappWorkerDependencies,
 } from "./dependencies";
+import { brokenPartFromMetaCode } from "./health";
 import type { InboundWhatsAppStatus } from "./status";
 import { WHATSAPP_TEMPLATE_LANGUAGE } from "./templates";
 
@@ -408,12 +410,32 @@ export async function sendWhatsAppDelivery(
             });
 
     if (!outcome.ok) {
+      const part =
+        outcome.kind === "whatsapp_error"
+          ? brokenPartFromMetaCode(outcome.code)
+          : null;
       const lastError = `${
         outcome.kind === "whatsapp_error" && outcome.code != null
           ? `${outcome.code}: `
           : ""
       }${outcome.message}`.slice(0, 500);
-      return failDelivery(delivery, outcome, lastError, dependencies.now());
+      const result = await failDelivery(
+        delivery,
+        outcome,
+        lastError,
+        dependencies.now(),
+      );
+      // A fenced-out sender must not mutate account health either.
+      if (part && result !== "deferred")
+        await createWhatsAppConnection({ now: dependencies.now }).markBroken(
+          school.id,
+          part,
+          {
+            phoneNumberId: delivery.phoneNumberId,
+            tokenEncrypted: school.whatsappTokenEncrypted,
+          },
+        );
+      return result;
     }
 
     const providerId =
@@ -439,6 +461,16 @@ export async function sendWhatsAppDelivery(
       .returning({ id: whatsappDeliveries.id });
     return rows.length ? "sent" : "deferred";
   } catch (error) {
+    if (error instanceof Error && error.message === "whatsapp_token_expired") {
+      await createWhatsAppConnection({ now: dependencies.now }).markBroken(
+        school.id,
+        "access",
+        {
+          phoneNumberId: delivery.phoneNumberId,
+          tokenEncrypted: school.whatsappTokenEncrypted,
+        },
+      );
+    }
     const message = error instanceof Error ? error.message : "send_failed";
     return failDelivery(
       delivery,
@@ -685,6 +717,18 @@ export async function applyWhatsAppStatuses(
         );
     });
     // Only an actual terminal transition may log or enqueue a notification.
+    if (transitioned?.failureReason === "whatsapp_error") {
+      const part = brokenPartFromMetaCode(transitioned.failureCode);
+      if (part)
+        await createWhatsAppConnection({ now: clock }).markBroken(
+          transitioned.schoolId,
+          part,
+          {
+            phoneNumberId: transitioned.phoneNumberId,
+            at: transitioned.statusAt ?? transitioned.sentAt ?? clock(),
+          },
+        );
+    }
     if (transitioned?.state === "dead")
       logDeadTransition(
         deadEventFrom(transitioned, "whatsapp_delivery", "status_callback"),

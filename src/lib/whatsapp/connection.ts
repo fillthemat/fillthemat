@@ -1,9 +1,20 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { type Database, getDb } from "@/db";
 import { schools, type WhatsAppConnectionState } from "@/db/schema";
 import { encryptWhatsAppToken, resolveWhatsAppToken } from "./credentials";
+import { parseAccountUpdates } from "./health";
 import {
   type MetaSignupClient,
   MetaSignupError,
@@ -18,6 +29,13 @@ export const signupCompletionSchema = z.object({
   phoneNumberId: z.string().regex(/^\d+$/).max(64),
 });
 export type SignupCompletion = z.infer<typeof signupCompletionSchema>;
+export type BrokenPart = "card" | "access" | "restricted" | "number";
+const brokenStates = [
+  "broken-card",
+  "broken-access",
+  "broken-restricted",
+  "broken-number",
+] as const;
 
 export type EligibilityGap =
   | "approval"
@@ -26,12 +44,14 @@ export type EligibilityGap =
   | "public-contact-email";
 
 export type NumberProvider = {
+  releaseNumber?(input: { resourceId: string }): Promise<void>;
   /** Carrier-authenticated creation time; webhook signatures have no timestamp. */
   verificationMessageReceivedAt?(messageId: string): Promise<Date | null>;
   /** A repeated allocation must resolve to the same rental, never another purchase. */
   buyUsNumber(input: {
     schoolId: string;
     allocationId: string;
+    excludeNumber?: string;
   }): Promise<
     | { ok: true; number: string; resourceId: string }
     | { ok: false; code: "purchase_failed" | "unconfigured" }
@@ -136,6 +156,12 @@ export function createWhatsAppConnection({
     const connection = await read(schoolId);
     if (connection.gaps.length)
       return { ok: false, code: "ineligible", connection };
+    if (
+      connection.state === "broken-number" &&
+      connection.providerResourceId &&
+      !numberProvider.releaseNumber
+    )
+      return { ok: false, code: "unconfigured", connection };
     const [claim] = await db
       .update(schools)
       .set({
@@ -145,7 +171,11 @@ export function createWhatsAppConnection({
       .where(
         and(
           eq(schools.id, schoolId),
-          inArray(schools.whatsappConnectionState, ["off", "failed"]),
+          inArray(schools.whatsappConnectionState, [
+            "off",
+            "failed",
+            "broken-number",
+          ]),
           isNotNull(schools.approvedAt),
           isNotNull(schools.publishedAt),
           sql`length(trim(${schools.phone})) > 0`,
@@ -161,10 +191,55 @@ export function createWhatsAppConnection({
         connection: current,
       };
     }
+    if (connection.state === "broken-number") {
+      // Meta no longer has this sending number. Release any remaining carrier
+      // rental before buying another; an ambiguous release stays claimed.
+      if (connection.providerResourceId)
+        await numberProvider.releaseNumber?.({
+          resourceId: connection.providerResourceId,
+        });
+      const freshAllocation = randomUUID();
+      await db
+        .update(schools)
+        .set({
+          whatsappAllocationId: freshAllocation,
+          whatsappNumber: null,
+          whatsappProviderResourceId: null,
+          whatsappPhoneNumberId: null,
+          whatsappWabaId: null,
+          whatsappTokenEncrypted: null,
+          whatsappTokenExpiresAt: null,
+          whatsappRegistrationPinEncrypted: null,
+          whatsappSignupAttemptId: null,
+          whatsappSignupStartedAt: null,
+          whatsappVerificationCode: null,
+          whatsappVerificationExpiresAt: null,
+          whatsappVerificationMessageIds: [],
+          whatsappProfileName: null,
+          whatsappHealthUpdatedAt: now(),
+        })
+        .where(
+          and(
+            eq(schools.id, schoolId),
+            eq(schools.whatsappConnectionState, "buying"),
+            eq(schools.whatsappAllocationId, claim.allocationId),
+          ),
+        );
+      claim.allocationId = freshAllocation;
+    }
     const purchased = await numberProvider.buyUsNumber({
       schoolId,
       allocationId: claim.allocationId,
+      ...(connection.state === "broken-number" && connection.number
+        ? { excludeNumber: connection.number }
+        : {}),
     });
+    if (
+      purchased.ok &&
+      connection.state === "broken-number" &&
+      purchased.number === connection.number
+    )
+      throw new Error("Carrier reused a released WhatsApp number");
     if (!purchased.ok) {
       await db
         .update(schools)
@@ -201,7 +276,8 @@ export function createWhatsAppConnection({
   async function checkReadiness(schoolId: string): Promise<EnableResult> {
     const connection = await read(schoolId);
     if (
-      connection.state !== "needs-card" ||
+      (connection.state !== "needs-card" &&
+        !connection.state.startsWith("broken-")) ||
       !connection.wabaId ||
       !connection.phoneNumberId
     )
@@ -211,46 +287,144 @@ export function createWhatsAppConnection({
         id: schools.id,
         whatsappTokenEncrypted: schools.whatsappTokenEncrypted,
         whatsappTokenExpiresAt: schools.whatsappTokenExpiresAt,
+        healthUpdatedAt: schools.whatsappHealthUpdatedAt,
       })
       .from(schools)
       .where(eq(schools.id, schoolId));
     if (!school?.whatsappTokenEncrypted)
       return { ok: false, code: "signup_failed", connection };
-    const token = resolveWhatsAppToken(school, now());
-    if (!token) return { ok: false, code: "signup_failed", connection };
     try {
+      const token = resolveWhatsAppToken(school, now());
+      if (!token) return { ok: false, code: "signup_failed", connection };
       const readiness = await meta.readReadiness({
         token,
         wabaId: connection.wabaId,
         phoneNumberId: connection.phoneNumberId,
+        ...(connection.state.startsWith("broken-")
+          ? { checkHealth: true }
+          : {}),
       });
       await db
         .update(schools)
         .set({
           whatsappConnectionState:
-            readiness.registered && readiness.paymentMethod
+            readiness.registered &&
+            readiness.paymentMethod &&
+            (!connection.state.startsWith("broken-") ||
+              readiness.messagingAvailable === true)
               ? "live"
-              : "needs-card",
+              : connection.state,
           whatsappProfileName: readiness.profileName,
+          whatsappHealthUpdatedAt: new Date(
+            Math.max(
+              now().getTime(),
+              (school.healthUpdatedAt?.getTime() ?? 0) + 1,
+            ),
+          ),
         })
         .where(
           and(
             eq(schools.id, schoolId),
-            eq(schools.whatsappConnectionState, "needs-card"),
+            eq(schools.whatsappConnectionState, connection.state),
             eq(schools.whatsappWabaId, connection.wabaId),
             eq(schools.whatsappPhoneNumberId, connection.phoneNumberId),
             eq(schools.whatsappTokenEncrypted, school.whatsappTokenEncrypted),
+            school.healthUpdatedAt
+              ? eq(schools.whatsappHealthUpdatedAt, school.healthUpdatedAt)
+              : isNull(schools.whatsappHealthUpdatedAt),
           ),
         );
       return { ok: true, connection: await read(schoolId) };
     } catch (error) {
-      if (error instanceof MetaSignupError)
+      if (
+        error instanceof Error &&
+        error.message === "whatsapp_token_expired"
+      ) {
+        await markBroken(schoolId, "access");
+        return {
+          ok: false,
+          code: "signup_failed",
+          connection: await read(schoolId),
+        };
+      }
+      if (error instanceof MetaSignupError) {
+        if (error.brokenPart)
+          await markBroken(schoolId, error.brokenPart, {
+            phoneNumberId: connection.phoneNumberId,
+            tokenEncrypted: school.whatsappTokenEncrypted,
+          });
         return {
           ok: false,
           code: error.code,
           connection: await read(schoolId),
         };
+      }
       throw error;
+    }
+  }
+  async function markBroken(
+    schoolId: string,
+    part: BrokenPart,
+    expected: {
+      phoneNumberId?: string;
+      tokenEncrypted?: string | null;
+      wabaId?: string;
+      at?: Date;
+    } = {},
+  ): Promise<EnableResult> {
+    const [changed] = await db
+      .update(schools)
+      .set({
+        whatsappConnectionState: `broken-${part}`,
+        whatsappHealthUpdatedAt: expected.at ?? now(),
+      })
+      .where(
+        and(
+          eq(schools.id, schoolId),
+          inArray(schools.whatsappConnectionState, [
+            "live",
+            "needs-card",
+            ...brokenStates,
+          ]),
+          expected.phoneNumberId
+            ? eq(schools.whatsappPhoneNumberId, expected.phoneNumberId)
+            : undefined,
+          expected.tokenEncrypted !== undefined
+            ? expected.tokenEncrypted === null
+              ? isNull(schools.whatsappTokenEncrypted)
+              : eq(schools.whatsappTokenEncrypted, expected.tokenEncrypted)
+            : undefined,
+          expected.wabaId
+            ? eq(schools.whatsappWabaId, expected.wabaId)
+            : undefined,
+          expected.at
+            ? or(
+                isNull(schools.whatsappHealthUpdatedAt),
+                lt(schools.whatsappHealthUpdatedAt, expected.at),
+              )
+            : undefined,
+        ),
+      )
+      .returning({ id: schools.id });
+    return changed
+      ? { ok: true, connection: await read(schoolId) }
+      : { ok: false, code: "invalid_state", connection: await read(schoolId) };
+  }
+  /** Trusted entry point: caller must authenticate Meta's raw-body signature. */
+  async function handleAccountUpdates(
+    payload: unknown,
+    appId = process.env.WHATSAPP_APP_ID,
+  ) {
+    for (const update of parseAccountUpdates(payload, appId)) {
+      const matching = await db
+        .select({ id: schools.id })
+        .from(schools)
+        .where(eq(schools.whatsappWabaId, update.wabaId));
+      for (const school of matching)
+        await markBroken(school.id, update.part, {
+          wabaId: update.wabaId,
+          at: update.at,
+        });
     }
   }
   async function startSignup(schoolId: string): Promise<EnableResult> {
@@ -273,6 +447,7 @@ export function createWhatsAppConnection({
             "popup",
             "cancelled",
             "popup-failed",
+            "broken-access",
           ]),
           isNotNull(schools.whatsappNumber),
           isNotNull(schools.whatsappAllocationId),
@@ -461,6 +636,8 @@ export function createWhatsAppConnection({
     startSignup,
     completeSignup,
     checkReadiness,
+    markBroken,
+    handleAccountUpdates,
     receiveVerificationCode,
     cancelSignup: (schoolId: string, attemptId: string) =>
       endSignup(schoolId, attemptId, "cancelled"),

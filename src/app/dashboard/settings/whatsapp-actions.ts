@@ -67,7 +67,9 @@ export async function checkWhatsAppReadinessAction(): Promise<SettingsFormState>
     return successState(
       result.connection.state === "live"
         ? "WhatsApp is Live. Share your number and link with prospects."
-        : "WhatsApp is switched on but not Live. Meta must confirm a registered number and a payment card on file. After adding your card, check again.",
+        : result.connection.state.startsWith("broken-")
+          ? "WhatsApp is still broken. Meta has not confirmed that the connection is healthy; complete the fix shown below, then check again."
+          : "WhatsApp is switched on but not Live. Meta must confirm a registered number and a payment card on file. After adding your card, check again.",
     );
   } catch (error) {
     unstable_rethrow(error);

@@ -2,6 +2,40 @@ import { describe, expect, it } from "vitest";
 import { createMetaSignupClient, MetaSignupError } from "./meta-signup";
 
 describe("Meta signup client", () => {
+  it("subscribes messages and account_update on the app before the customer's WABA", async () => {
+    const requests: {
+      path: string;
+      body: URLSearchParams;
+      token: string | null;
+    }[] = [];
+    const client = createMetaSignupClient({
+      appId: "198",
+      appSecret: "secret",
+      webhook: {
+        callbackUrl: "https://school.test/api/webhooks/whatsapp",
+        verifyToken: "verify",
+      },
+      fetch: async (url, init) => {
+        requests.push({
+          path: new URL(String(url)).pathname,
+          body: new URLSearchParams(String(init?.body ?? "")),
+          token: new Headers(init?.headers).get("Authorization"),
+        });
+        return Response.json({ success: true });
+      },
+    });
+    await client.subscribe({ token: "customer-token", wabaId: "19801" });
+    expect(requests[0]?.path).toBe("/v26.0/198/subscriptions");
+    expect(requests[0]?.body.get("object")).toBe("whatsapp_business_account");
+    expect(requests[0]?.body.get("fields")).toBe("messages,account_update");
+    expect(requests[0]?.body.get("callback_url")).toBe(
+      "https://school.test/api/webhooks/whatsapp",
+    );
+    expect(requests[0]?.body.get("verify_token")).toBe("verify");
+    expect(requests[0]?.token).toBe("Bearer 198|secret");
+    expect(requests[1]?.path).toBe("/v26.0/19801/subscribed_apps");
+    expect(requests[1]?.token).toBe("Bearer customer-token");
+  });
   it.each([
     ["CONNECTED", "funding-196", true, true],
     ["CONNECTED", null, true, false],

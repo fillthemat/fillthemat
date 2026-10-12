@@ -23,6 +23,7 @@ const school: School = {
   whatsappConnectionState: "off",
   whatsappNumber: null,
   whatsappProfileName: null,
+  whatsappHealthUpdatedAt: null,
   whatsappProviderResourceId: null,
   whatsappAllocationId: null,
   phone: "+15125550100",

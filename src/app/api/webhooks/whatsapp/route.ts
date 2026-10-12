@@ -5,6 +5,7 @@ import {
   whatsappAppSecret,
   whatsappVerifyToken,
 } from "@/lib/whatsapp/config";
+import { createWhatsAppConnection } from "@/lib/whatsapp/connection";
 import { applyWhatsAppStatuses } from "@/lib/whatsapp/deliveries";
 import { sendInboundWhatsAppTypingIndicator } from "@/lib/whatsapp/inbound";
 import { enqueueInboundJobs } from "@/lib/whatsapp/jobs";
@@ -69,14 +70,16 @@ export async function POST(request: Request) {
 
   // Perceived-immediacy lever: mark read + typing indicator in one cheap Graph
   // call, best-effort so Meta's 200 is never hard-gated on it.
-  await Promise.allSettled(messages.map(sendInboundWhatsAppTypingIndicator));
-
   try {
+    await createWhatsAppConnection().handleAccountUpdates(payload);
     if (statuses.length > 0) await applyWhatsAppStatuses(statuses);
     if (messages.length > 0) await enqueueInboundJobs(messages);
-  } catch (error) {
-    console.error("whatsapp: webhook enqueue/status failed", error);
+  } catch {
+    console.error(JSON.stringify({ event: "whatsapp_webhook_apply_failed" }));
+    // Do not acknowledge a dropped health update as success. Meta will retry.
+    return Response.json({ error: "apply_failed" }, { status: 503 });
   }
+  await Promise.allSettled(messages.map(sendInboundWhatsAppTypingIndicator));
 
   // Wake the worker after the 200 flushes so inbound messages are answered
   // immediately instead of waiting for the daily cron tick (spike follow-up).
