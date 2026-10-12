@@ -9,7 +9,7 @@
     "setup": "bun scripts/setup-local.ts",
     "doctor": "bun scripts/doctor-local.ts",
     "deps:install": "bun install",
-    "vercel": "vercel",
+    "vercel": "bunx vercel@63.1.2",
     "logs:prod": "bun --no-env-file scripts/logs-prod.ts",
     "db:seed": "bun scripts/seed-local.ts",
     "build": "bun run --bun next build",
@@ -88,7 +88,6 @@
     "supabase": "^2.116.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vercel": "63.1.2",
     "vitest": "^4.1.11"
   },
   "packageManager": "bun@1.4.0",
