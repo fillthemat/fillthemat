@@ -17,6 +17,7 @@ export type ProfileValues = {
   slug: string;
   timezone: string;
   notificationEmail: string;
+  publicContactEmail: string;
   phone: string;
   website: string;
   address: string;
@@ -133,6 +134,20 @@ export function ProfileSection({
           error={errorFor("notificationEmail")}
           helper="Booking and lead alerts. Internal only — never shared with families."
           placeholder="owner@example.com…"
+        />
+        <TextField
+          label="Public contact email"
+          name="publicContactEmail"
+          type="email"
+          autoComplete="email"
+          spellCheck={false}
+          inputMode="email"
+          maxLength={254}
+          value={values.publicContactEmail}
+          onValueChange={(value) => setField("publicContactEmail", value)}
+          error={errorFor("publicContactEmail")}
+          helper="Shared with prospects who want to reach a person, including in trial emails. Separate from your private notification email."
+          placeholder="hello@example.com…"
         />
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField

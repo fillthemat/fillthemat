@@ -1,5 +1,5 @@
 {
-  "id": "fdd49488-b498-461e-a190-cd24d994cb2e",
+  "id": "49f82e8c-b10f-40f9-ae30-a72d63776cd8",
   "prevId": "c9e88132-8b7b-4018-925e-598fb9568510",
   "version": "7",
   "dialect": "postgresql",
@@ -1674,6 +1674,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "public_contact_email": {
+          "name": "public_contact_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "whatsapp_phone_number_id": {
           "name": "whatsapp_phone_number_id",
           "type": "text",
@@ -1683,18 +1689,6 @@
         "whatsapp_waba_id": {
           "name": "whatsapp_waba_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_token_encrypted": {
-          "name": "whatsapp_token_encrypted",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_token_expires_at": {
-          "name": "whatsapp_token_expires_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

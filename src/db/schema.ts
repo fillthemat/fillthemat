@@ -112,6 +112,7 @@ export const schools = appSchema.table(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     previewedAt: timestamp("previewed_at", { withTimezone: true }),
     notificationEmail: text("notification_email").notNull(),
+    publicContactEmail: text("public_contact_email"),
     whatsappPhoneNumberId: text("whatsapp_phone_number_id"),
     whatsappWabaId: text("whatsapp_waba_id"),
     whatsappTokenEncrypted: text("whatsapp_token_encrypted"),

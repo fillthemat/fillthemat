@@ -30,7 +30,7 @@ export function prospectConfirmationEmail(school: School, booking: Booking) {
 ${snapshotBlock(booking)}
 
 ${school.phone ? `School phone: ${school.phone}` : ""}
-${school.notificationEmail ? `School email: ${school.notificationEmail}` : ""}
+${school.publicContactEmail ? `School email: ${school.publicContactEmail}` : ""}
 
 To cancel or reschedule, contact the school directly using the phone or email above. Do not reply to this message if it is unattended.
 
@@ -53,7 +53,7 @@ export function prospectReminderEmail(school: School, booking: Booking) {
 ${snapshotBlock(booking)}
 
 ${school.phone ? `School phone: ${school.phone}` : ""}
-${school.notificationEmail ? `School email: ${school.notificationEmail}` : ""}
+${school.publicContactEmail ? `School email: ${school.publicContactEmail}` : ""}
 
 Fillthemat`;
 
@@ -70,7 +70,7 @@ ${snapshotBlock(booking)}
 
 If this is a surprise, contact the school.
 ${school.phone ? `School phone: ${school.phone}` : ""}
-${school.notificationEmail ? `School email: ${school.notificationEmail}` : ""}
+${school.publicContactEmail ? `School email: ${school.publicContactEmail}` : ""}
 
 Fillthemat`;
 

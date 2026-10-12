@@ -25,8 +25,9 @@ import {
   setOfferingActive,
   updateFaq,
   updateOffering,
+  updateProfile,
 } from "./mutations";
-import { LIMITS } from "./schemas";
+import { LIMITS, profileSchema } from "./schemas";
 
 loadLocalEnv();
 
@@ -109,6 +110,51 @@ afterAll(async () => {
   await deleteAuthUser(sql, ownerA);
   await deleteAuthUser(sql, ownerB);
   await sql.end({ timeout: 5 });
+});
+
+describe("updateProfile", () => {
+  it("sets, edits and clears a public contact email independently of private notifications", async () => {
+    for (const [email, expected] of [
+      ["  HELLO@school.test  ", "hello@school.test"],
+      ["frontdesk@school.test", "frontdesk@school.test"],
+      ["", ""],
+    ]) {
+      const result = await updateProfile(db, schoolA, {
+        ...profileSchema.parse({
+          name: "Mutation School A",
+          publicContactEmail: email,
+          notificationEmail: `mut-a-${suffix}@local.test`,
+          phone: "+15125550100",
+          website: "",
+          address: "",
+          city: "Brooklyn",
+          country: "US",
+          parkingNotes: "",
+          accessNotes: "",
+          trialGuidance: "",
+        }),
+        slug: slugA,
+        timezone: "America/New_York",
+      });
+      expect(result.status).toBe("success");
+      expect(result.values?.publicContactEmail).toBe(expected);
+      expect(result.values?.notificationEmail).toBe(
+        `mut-a-${suffix}@local.test`,
+      );
+      const [saved] = await db
+        .select()
+        .from(schools)
+        .where(eq(schools.id, schoolA));
+      expect(saved?.publicContactEmail).toBe(expected || null);
+      expect(saved?.notificationEmail).toBe(`mut-a-${suffix}@local.test`);
+      const [other] = await db
+        .select()
+        .from(schools)
+        .where(eq(schools.id, schoolB));
+      expect(other?.publicContactEmail).toBeNull();
+      expect(other?.notificationEmail).toBe(`mut-b-${suffix}@local.test`);
+    }
+  });
 });
 
 describe("updateOffering", () => {
