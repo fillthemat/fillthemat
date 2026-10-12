@@ -2,11 +2,13 @@ name: Playwright
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 concurrency:
-  group: playwright-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: playwright-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
   contents: write
@@ -61,7 +63,7 @@ jobs:
 
       - name: Publish visual report to GitHub Pages
         id: pages
-        if: ${{ !cancelled() }}
+        if: github.event_name != 'merge_group' && !cancelled()
         env:
           DEST: playwright/${{ github.event.pull_request.number || github.run_id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,12 +110,14 @@ jobs:
             echo ""
             echo "Status: **${{ steps.playwright.outcome || job.status }}**"
             echo ""
-            echo "Visual report (screenshots + traces in the browser):"
-            echo ""
-            echo "${REPORT_URL}"
-            echo ""
-            echo "Open a test, then **Screenshot** or **Trace** to see the UI."
-            echo ""
+            if [ "$GITHUB_EVENT_NAME" != "merge_group" ]; then
+              echo "Visual report (screenshots + traces in the browser):"
+              echo ""
+              echo "${REPORT_URL}"
+              echo ""
+              echo "Open a test, then **Screenshot** or **Trace** to see the UI."
+              echo ""
+            fi
             echo "Artifacts on this [workflow run](${RUN_URL}):"
             echo ""
             echo "- \`playwright-report\` — HTML report"
