@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import { getDb } from "@/db";
 import { type PoppyClient, poppyClients } from "@/db/schema";
+import { admitPoppyClient, requireUnblockedPoppyClient } from "./admission";
 import { PoppyError } from "./errors";
 import { safeFetch } from "./safe-fetch";
 
@@ -98,6 +99,7 @@ export async function registeredPoppyClient(
   clientId: string,
   kid?: string,
 ): Promise<PoppyClient> {
+  await requireUnblockedPoppyClient(clientId);
   const db = getDb();
   let [client] = await db
     .select()
@@ -135,6 +137,14 @@ export async function registeredPoppyClient(
       )
       .returning();
     if (!lease) throw new PoppyError("invalid_client", 401);
+  } else {
+    return admitPoppyClient(clientId, async () => {
+      try {
+        return await fetchClient(clientId);
+      } catch {
+        throw new PoppyError("invalid_client", 401);
+      }
+    });
   }
   let fetched: Awaited<ReturnType<typeof fetchClient>>;
   try {
@@ -154,19 +164,9 @@ export async function registeredPoppyClient(
       )
       .returning();
     if (!client) throw new PoppyError("invalid_client", 401);
-  } else {
-    [client] = await db
-      .insert(poppyClients)
-      .values({ clientId, ...fetched })
-      .onConflictDoNothing()
-      .returning();
-    if (!client)
-      [client] = await db
-        .select()
-        .from(poppyClients)
-        .where(eq(poppyClients.clientId, clientId));
   }
   if (!client) throw new Error("failed to persist Poppy client");
+  await requireUnblockedPoppyClient(clientId);
   return client;
 }
 

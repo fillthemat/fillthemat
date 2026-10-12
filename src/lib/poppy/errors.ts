@@ -2,6 +2,7 @@ export class PoppyError extends Error {
   constructor(
     public readonly code: string,
     public readonly status = 400,
+    public readonly retryAfter?: number,
   ) {
     super(code);
   }
@@ -23,6 +24,9 @@ export function poppyErrorResponse(
       status,
       headers: {
         "Cache-Control": "no-store",
+        ...(error instanceof PoppyError && error.retryAfter !== undefined
+          ? { "Retry-After": String(error.retryAfter) }
+          : {}),
         ...(protectedRequest && status === 401
           ? { "WWW-Authenticate": `DPoP error="${code}"` }
           : {}),

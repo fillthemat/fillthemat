@@ -198,19 +198,50 @@ export const schoolDomains = appSchema
   )
   .enableRLS();
 
-export const poppyClients = appSchema
-  .table("poppy_clients", {
+// No registry FK: a client can be blocked before its metadata is ever fetched.
+export const poppyBlockedClients = appSchema
+  .table("poppy_blocked_clients", {
     clientId: text("client_id").primaryKey(),
-    displayName: text("display_name").notNull(),
-    extensions: jsonb("extensions").$type<Record<string, unknown>>().notNull(),
-    jwks: jsonb("jwks").$type<{ keys: import("jose").JWK[] }>().notNull(),
-    cachedUntil: timestamp("cached_until", { withTimezone: true }).notNull(),
-    refreshAfter: timestamp("refresh_after", { withTimezone: true }).notNull(),
-    refreshingUntil: timestamp("refreshing_until", { withTimezone: true }),
-    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+    blockedAt: timestamp("blocked_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   })
+  .enableRLS();
+
+export const poppyClients = appSchema
+  .table(
+    "poppy_clients",
+    {
+      clientId: text("client_id").primaryKey(),
+      displayName: text("display_name").notNull(),
+      extensions: jsonb("extensions")
+        .$type<Record<string, unknown>>()
+        .notNull(),
+      jwks: jsonb("jwks").$type<{ keys: import("jose").JWK[] }>().notNull(),
+      cachedUntil: timestamp("cached_until", { withTimezone: true }).notNull(),
+      refreshAfter: timestamp("refresh_after", {
+        withTimezone: true,
+      }).notNull(),
+      refreshingUntil: timestamp("refreshing_until", { withTimezone: true }),
+      firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+        .notNull()
+        .defaultNow(),
+    },
+    (t) => [index("poppy_clients_first_seen_idx").on(t.firstSeenAt)],
+  )
+  .enableRLS();
+
+export const poppyClientAdmissions = appSchema
+  .table(
+    "poppy_client_admissions",
+    {
+      clientId: text("client_id").primaryKey(),
+      leaseId: uuid("lease_id").notNull(),
+      createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+      expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    },
+    (t) => [index("poppy_client_admissions_expiry_idx").on(t.expiresAt)],
+  )
   .enableRLS();
 
 export const poppySessions = appSchema

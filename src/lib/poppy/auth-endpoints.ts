@@ -4,6 +4,10 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { poppySessions, poppySessionTokens } from "@/db/schema";
 import {
+  requirePoppySessionCapacity,
+  requireUnblockedPoppyClient,
+} from "./admission";
+import {
   assertionKid,
   registeredPoppyClient,
   verifyClientJwt,
@@ -143,6 +147,7 @@ export async function handlePoppyToken(
     const accessToken = randomBytes(32).toString("base64url");
     const db = getDb();
     const session = await db.transaction(async (tx) => {
+      if (!sessionId) await requirePoppySessionCapacity(client.clientId, tx);
       const [existing] = sessionId
         ? await tx
             .select()
@@ -160,6 +165,7 @@ export async function handlePoppyToken(
         : [];
       if (sessionId && (!existing || existing.dpopThumbprint !== thumbprint))
         throw new PoppyError("invalid_session");
+      await requireUnblockedPoppyClient(client.clientId, tx);
       const [created] = existing
         ? []
         : await tx
@@ -169,6 +175,7 @@ export async function handlePoppyToken(
               clientId: client.clientId,
               userId: String(claims.sub),
               dpopThumbprint: thumbprint,
+              createdAt: new Date(),
             })
             .returning();
       const current = existing ?? created;
