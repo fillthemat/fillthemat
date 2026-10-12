@@ -9,6 +9,14 @@ export function discoveryDocument(
     protocol_version: "0.1",
     organization: { name: school.name, domain },
     auth: { issuer: schoolIssuer(school.id) },
+    apis: [
+      {
+        type: "openapi",
+        url: `${poppyAppOrigin()}/poppy/schools/${school.id}/openapi.json`,
+        description:
+          "List bookable trials, propose a booking Operation and read booking status.",
+      },
+    ],
     extensions: {
       operations: {
         version: "1",

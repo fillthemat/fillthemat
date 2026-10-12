@@ -186,6 +186,43 @@ const bookingTermsSchema = z.object({
   location: z.string(),
 });
 
+/** API retries identify the action by the submitted details, not by current
+ * capacity or facts that may have changed after the original proposal. Keep
+ * the issued terms immutable; confirmation still revalidates all live facts. */
+export async function openBookingOperation(
+  principal: PoppyPrincipal,
+  request: {
+    occurrence_id: string;
+    participant: BookingTerms["participant"];
+    contact: BookingTerms["contact"];
+  },
+) {
+  const rows = await getDb()
+    .select()
+    .from(poppyOperations)
+    .where(
+      and(
+        eq(poppyOperations.schoolId, principal.schoolId),
+        eq(poppyOperations.sessionId, principal.sessionId),
+        eq(poppyOperations.kind, "booking"),
+        inArray(poppyOperations.state, ["proposed", "in_progress"]),
+      ),
+    );
+  const now = new Date();
+  const row = rows.find((candidate) => {
+    if (candidate.state === "proposed" && candidate.expiresAt <= now)
+      return false;
+    const terms = bookingTermsSchema.safeParse(candidate.terms);
+    return (
+      terms.success &&
+      terms.data.occurrence.slot_id === request.occurrence_id &&
+      isDeepStrictEqual(terms.data.participant, request.participant) &&
+      isDeepStrictEqual(terms.data.contact, request.contact)
+    );
+  });
+  return row ? publicOperation(row) : null;
+}
+
 async function ownedOperation(
   principal: PoppyPrincipal,
   id: string,
