@@ -13,6 +13,7 @@ import { GENERATION_LOCK_TIMEOUT_MS } from "@/lib/conversations/conversation-sto
 import { hashToken, randomToken } from "@/lib/crypto";
 import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
+import { consumeConversationBudget } from "./budgets";
 import { assertNoDirectChild } from "./conversation-direct";
 import {
   appendPoppyEvent,
@@ -186,6 +187,7 @@ export async function acceptPoppyMessage(
     }
     const now = new Date();
     if (!conversation) {
+      await consumeConversationBudget(principal, tx, now);
       const [created] = await tx
         .insert(conversations)
         .values({

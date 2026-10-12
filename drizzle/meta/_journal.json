@@ -162,6 +162,13 @@
       "when": 1791818106476,
       "tag": "0022_many_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791819057086,
+      "tag": "0023_calm_ezekiel_stane",
+      "breakpoints": true
     }
   ]
 }

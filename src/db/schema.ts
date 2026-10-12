@@ -651,6 +651,22 @@ export const poppyConversationMessages = appSchema
   )
   .enableRLS();
 
+/** Private, hashed budget keys avoid indexing unbounded client/User identities. */
+export const poppyBudgetUsages = appSchema
+  .table(
+    "poppy_budget_usages",
+    {
+      id: uuid("id").primaryKey().defaultRandom(),
+      key: text("key").notNull(),
+      expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    },
+    (t) => [
+      index("poppy_budget_usages_key_expiry").on(t.key, t.expiresAt),
+      index("poppy_budget_usages_expiry").on(t.expiresAt),
+    ],
+  )
+  .enableRLS();
+
 export const poppyOperations = appSchema
   .table(
     "poppy_operations",

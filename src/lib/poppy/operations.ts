@@ -17,6 +17,7 @@ import {
   recipientQuotaExceeded,
 } from "@/lib/security/limits";
 import { contactSchema, participantSchema } from "@/lib/validation";
+import { consumeProposalBudget, reserveBookingBudgets } from "./budgets";
 import { PoppyError } from "./errors";
 import type { PoppyPrincipal } from "./protected-request";
 
@@ -99,6 +100,7 @@ export async function proposeBookingOperation(
       expiresAt: new Date(now.getTime() + POPPY_OPERATION_LIFETIME_MS),
       updatedAt: now,
     };
+    await consumeProposalBudget(input, tx, now);
     const [row] = current
       ? await tx
           .update(poppyOperations)
@@ -261,8 +263,17 @@ export async function confirmOperation(
       throw new Error("operation_effect_unavailable");
     const terms = bookingTermsSchema.parse(row.terms);
     const now = new Date();
-    // Email caps remain in force. #184 adds layered booking-budget consumption
-    // here, in the transaction shared by the booking and final Operation.
+    const budget = await reserveBookingBudgets(
+      {
+        schoolId: school.id,
+        clientId: session.clientId,
+        userId: session.userId,
+      },
+      school.timezone,
+      tx,
+      now,
+    );
+    // The School lock also serializes Poppy email-cap checks across clients.
     const limited =
       (await emailBookingQuotaExceeded(school.id, terms.contact.email, now, {
         transaction: tx,
@@ -270,33 +281,35 @@ export async function confirmOperation(
       (await recipientQuotaExceeded(school.id, terms.contact.email, now, {
         transaction: tx,
       }));
-    const booked = limited
-      ? null
-      : await bookSlot(
-          {
-            school,
-            channel: "poppy",
-            offeringId: terms.offering.id,
-            slotId: terms.occurrence.slot_id,
-            idempotencyKey: `poppy-operation/${id}`,
-            contact: terms.contact,
-            participant: terms.participant,
-            conversationId: row.conversationId ?? undefined,
-            poppy: { clientId: session.clientId, sessionId: session.id },
-            expectedTerms: {
-              schoolName: terms.school.name,
-              offeringName: terms.offering.name,
-              start: terms.occurrence.start,
-              end: terms.occurrence.end,
-              timezone: terms.occurrence.time_zone,
-              pricing: terms.pricing,
-              guidance: terms.guidance,
-              location: terms.location,
+    const booked =
+      limited || budget.code
+        ? null
+        : await bookSlot(
+            {
+              school,
+              channel: "poppy",
+              offeringId: terms.offering.id,
+              slotId: terms.occurrence.slot_id,
+              idempotencyKey: `poppy-operation/${id}`,
+              contact: terms.contact,
+              participant: terms.participant,
+              conversationId: row.conversationId ?? undefined,
+              poppy: { clientId: session.clientId, sessionId: session.id },
+              expectedTerms: {
+                schoolName: terms.school.name,
+                offeringName: terms.offering.name,
+                start: terms.occurrence.start,
+                end: terms.occurrence.end,
+                timezone: terms.occurrence.time_zone,
+                pricing: terms.pricing,
+                guidance: terms.guidance,
+                location: terms.location,
+              },
+              now,
             },
-            now,
-          },
-          { transaction: tx },
-        );
+            { transaction: tx },
+          );
+    if (booked?.ok) await budget.consume?.();
     const [finished] = await tx
       .update(poppyOperations)
       .set(
@@ -313,10 +326,16 @@ export async function confirmOperation(
           : {
               state: "failed",
               result: {
-                summary: limited
-                  ? "No booking was made: the Contact's email booking or delivery limit was reached."
-                  : bookingFailureSummary(booked?.code ?? "slot_unavailable"),
-                data: { code: limited ? "email_limit" : booked?.code },
+                summary:
+                  budget.summary ??
+                  (limited
+                    ? "No booking was made: the Contact's email booking or delivery limit was reached."
+                    : bookingFailureSummary(
+                        booked?.code ?? "slot_unavailable",
+                      )),
+                data: {
+                  code: budget.code ?? (limited ? "email_limit" : booked?.code),
+                },
               },
               updatedAt: now,
             },
