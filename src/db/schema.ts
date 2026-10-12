@@ -896,6 +896,26 @@ export const bookings = appSchema.table(
   ],
 );
 
+/** Public cancellation credentials are never stored in recoverable form. */
+export const bookingCancelTokens = appSchema
+  .table(
+    "booking_cancel_tokens",
+    {
+      bookingId: uuid("booking_id").primaryKey(),
+      schoolId: uuid("school_id").notNull(),
+      tokenHash: text("token_hash").notNull(),
+      usedAt: timestamp("used_at", { withTimezone: true }),
+    },
+    (t) => [
+      foreignKey({
+        columns: [t.schoolId, t.bookingId],
+        foreignColumns: [bookings.schoolId, bookings.id],
+        name: "booking_cancel_tokens_booking_fk",
+      }).onDelete("cascade"),
+    ],
+  )
+  .enableRLS();
+
 export const emailDeliveries = appSchema.table(
   "email_deliveries",
   {

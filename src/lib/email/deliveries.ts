@@ -21,6 +21,7 @@ import {
   type School,
   schools,
 } from "@/db/schema";
+import { bookingCancelUrl } from "@/lib/poppy/booking-cancel-token";
 import {
   orderClaimedRows,
   ownedQueueClaim,
@@ -84,7 +85,11 @@ async function renderDelivery(
     case "prospect_confirmation":
       if (!booking) throw new InternalFailure("missing_booking");
       return {
-        ...prospectConfirmationEmail(school, booking),
+        ...prospectConfirmationEmail(
+          school,
+          booking,
+          booking.channel === "poppy" ? bookingCancelUrl(booking) : undefined,
+        ),
         attachments: [icsAttachment(booking, "PUBLISH", now)],
       };
     case "booking_reminder":

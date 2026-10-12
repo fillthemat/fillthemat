@@ -14,6 +14,8 @@ import { POST as confirm } from "@/app/poppy/schools/[schoolId]/operations/[oper
 import { GET as read } from "@/app/poppy/schools/[schoolId]/operations/[operationId]/route";
 import { POST as token } from "@/app/schools/[schoolId]/token/route";
 import * as languageModel from "@/lib/ai/language-model";
+import { attemptPendingForBooking } from "@/lib/email/deliveries";
+import type { EmailMessage } from "@/lib/email/dependencies";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { createTestPoppyAgent } from "@/test/poppy-agent";
@@ -63,6 +65,10 @@ beforeAll(async () => {
     });
   vi.stubEnv("DATABASE_URL", localUrl.toString());
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://app.fillthemat.example");
+  vi.stubEnv(
+    "POPPY_CANCEL_LINK_SECRET",
+    "operations-test-secret-at-least-32-characters",
+  );
   vi.stubEnv("POPPY_AUTH_ORIGIN", "https://auth.fillthemat.example");
   const owner = randomUUID();
   await sql`insert into auth.users (id) values (${owner})`;
@@ -371,6 +377,20 @@ it("repeated and concurrent confirms book at most once and the owner sees Poppy 
     ]),
   );
   expect(deliveries).toHaveLength(2);
+  const messages: EmailMessage[] = [];
+  await attemptPendingForBooking(booked[0].id, {
+    transport: {
+      send: async (message) => {
+        messages.push(message);
+        return { ok: true, kind: "accepted", providerId: randomUUID() };
+      },
+    },
+  });
+  expect(
+    messages.find((message) => message.to === contact.email)?.text,
+  ).toContain(
+    `Not you? Cancel this booking:\nhttps://app.fillthemat.example/poppy/bookings/${booked[0].id}/cancel?token=`,
+  );
 });
 
 it("another Session for the same User can continue a Conversation but cannot read, confirm or cancel its Operation", async () => {

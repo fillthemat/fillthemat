@@ -1,5 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
-import { type Database, getDb, type TransactionOptions } from "@/db";
+import {
+  type Database,
+  getDb,
+  type TransactionOptions,
+  withTransaction,
+} from "@/db";
 import {
   type Booking,
   bookings,
@@ -22,6 +27,7 @@ import {
 import { hashToken, normalizeEmail, normalizePersonName } from "@/lib/crypto";
 import { bookingIcsUid } from "@/lib/email/ics";
 import { FUNNEL_EVENTS, privacySafeMetadata } from "@/lib/funnel";
+import { issueBookingCancelToken } from "@/lib/poppy/booking-cancel-token";
 import { isAgeEligible, listOpenSlots } from "./occurrences";
 import { parseSlotId } from "./slot-id";
 
@@ -450,6 +456,8 @@ export async function bookSlot(
         .returning();
       const saved = updated ?? { ...row, icsUid };
 
+      if (input.channel === "poppy") await issueBookingCancelToken(saved, tx);
+
       // Owner notification always goes by email. The prospect confirmation is
       // emailed only when there is an email; no-email WhatsApp bookings get a
       // WhatsApp template confirmation enqueued by the caller instead.
@@ -542,18 +550,19 @@ export type CancelBookingResult =
   | { ok: true; booking: Booking; replay: boolean }
   | { ok: false; code: "not_found" | "not_cancellable" };
 
-export async function cancelBooking({
-  schoolId,
-  bookingId,
-  now = new Date(),
-}: {
-  schoolId: string;
-  bookingId: string;
-  now?: Date;
-}): Promise<CancelBookingResult> {
-  const db = getDb();
-
-  return db.transaction(async (tx) => {
+export async function cancelBooking(
+  {
+    schoolId,
+    bookingId,
+    now = new Date(),
+  }: {
+    schoolId: string;
+    bookingId: string;
+    now?: Date;
+  },
+  options: TransactionOptions = {},
+): Promise<CancelBookingResult> {
+  return withTransaction(async (tx) => {
     const [booking] = await tx
       .select()
       .from(bookings)
@@ -669,5 +678,5 @@ export async function cancelBooking({
     });
 
     return { ok: true, booking: updated, replay: false };
-  });
+  }, options);
 }
