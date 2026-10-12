@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import type { WhatsAppConnectionView } from "@/lib/whatsapp/connection";
 import { Callout } from "../ui/controls";
 import { checkWhatsAppReadinessAction } from "../whatsapp-actions";
+import type { WhatsAppSettingsView } from "../whatsapp-view";
 
 const fixes = {
   "broken-card":
@@ -21,7 +21,7 @@ export function WhatsAppBroken({
   connection,
   pending,
 }: {
-  connection: WhatsAppConnectionView;
+  connection: WhatsAppSettingsView;
   pending: boolean;
 }) {
   const [checking, transition] = useTransition();
@@ -41,7 +41,7 @@ export function WhatsAppBroken({
       {state === "broken-card" || state === "broken-restricted" ? (
         <>
           <a
-            href={`https://business.facebook.com/wa/manage/home/?waba_id=${encodeURIComponent(connection.wabaId ?? "")}`}
+            href={connection.managerUrl}
             target="_blank"
             rel="noreferrer"
             className="text-sm underline"

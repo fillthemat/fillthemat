@@ -9,7 +9,10 @@ import {
   type SignupCompletion,
   signupCompletionSchema,
 } from "@/lib/whatsapp/connection";
+import { isBroken } from "@/lib/whatsapp/health";
+import { COOLING_OFF_DAYS } from "@/lib/whatsapp/lifecycle";
 import { errorState, type SettingsFormState, successState } from "./form-state";
+import { whatsAppSettingsView } from "./whatsapp-view";
 
 export async function enableWhatsAppAction(
   _previous: SettingsFormState,
@@ -59,7 +62,7 @@ export async function enableWhatsAppAction(
 
 export async function readWhatsAppSignupAction() {
   const { school } = await requireOwnedSchool();
-  return createWhatsAppConnection().read(school.id);
+  return whatsAppSettingsView(await createWhatsAppConnection().read(school.id));
 }
 
 export async function switchOffWhatsAppAction(): Promise<SettingsFormState> {
@@ -69,7 +72,7 @@ export async function switchOffWhatsAppAction(): Promise<SettingsFormState> {
   revalidatePath(`/s/${school.slug}`);
   return result.ok
     ? successState(
-        "WhatsApp is off. Switch back on within 30 days to keep your number.",
+        `WhatsApp is off. Switch back on within ${COOLING_OFF_DAYS} days to keep your number.`,
       )
     : errorState(
         "We could not switch WhatsApp off. Reload settings and check its status.",
@@ -89,7 +92,7 @@ export async function checkWhatsAppReadinessAction(): Promise<SettingsFormState>
     return successState(
       result.connection.state === "live"
         ? "WhatsApp is Live. Share your number and link with prospects."
-        : result.connection.state.startsWith("broken-")
+        : isBroken(result.connection.state)
           ? "WhatsApp is still broken. Meta has not confirmed that the connection is healthy; complete the fix shown below, then check again."
           : "WhatsApp is switched on but not Live. Meta must confirm a registered number and a payment card on file. After adding your card, check again.",
     );
@@ -109,7 +112,7 @@ export async function startWhatsAppSignupAction() {
   const { school } = await requireOwnedSchool();
   const result = await createWhatsAppConnection().startSignup(school.id);
   revalidatePath("/dashboard/settings");
-  return result;
+  return { ...result, connection: whatsAppSettingsView(result.connection) };
 }
 
 export async function endWhatsAppSignupAction(
@@ -128,7 +131,7 @@ export async function endWhatsAppSignupAction(
       ? await connection.cancelSignup(school.id, attemptId)
       : await connection.failSignup(school.id, attemptId);
   revalidatePath("/dashboard/settings");
-  return result;
+  return { ...result, connection: whatsAppSettingsView(result.connection) };
 }
 
 export async function completeWhatsAppSignupAction(input: SignupCompletion) {
@@ -141,7 +144,7 @@ export async function completeWhatsAppSignupAction(input: SignupCompletion) {
       validated.data,
     );
     revalidatePath("/dashboard/settings");
-    return result;
+    return { ...result, connection: whatsAppSettingsView(result.connection) };
   } catch (error) {
     unstable_rethrow(error);
     console.error(

@@ -12,10 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { WhatsAppConnectionState } from "@/db/schema";
-import type {
-  EligibilityGap,
-  WhatsAppConnectionView,
-} from "@/lib/whatsapp/connection";
+import type { EligibilityGap } from "@/lib/whatsapp/connection";
+import { isBroken } from "@/lib/whatsapp/health";
+import {
+  COOLING_OFF_DAYS,
+  DAY_MS,
+  SIGNUP_RESERVATION_DAYS,
+  canSwitchOff as stateCanSwitchOff,
+} from "@/lib/whatsapp/lifecycle";
 import { whatsappShareLink } from "@/lib/whatsapp/sharing";
 import { IDLE_STATE } from "../form-state";
 import { Callout } from "../ui/controls";
@@ -23,6 +27,7 @@ import {
   checkWhatsAppReadinessAction,
   enableWhatsAppAction,
 } from "../whatsapp-actions";
+import type { WhatsAppSettingsView } from "../whatsapp-view";
 import { WhatsAppBroken } from "./whatsapp-broken";
 import { WhatsAppSharing } from "./whatsapp-sharing";
 import { type EmbeddedSignupConfig, WhatsAppSignup } from "./whatsapp-signup";
@@ -82,7 +87,7 @@ export function WhatsAppSection({
   signupConfig,
   qrDataUrl,
 }: {
-  connection: WhatsAppConnectionView;
+  connection: WhatsAppSettingsView;
   signupConfig: EmbeddedSignupConfig | null;
   qrDataUrl: string | null;
 }) {
@@ -98,20 +103,10 @@ export function WhatsAppSection({
   const canEnable = ["off", "failed", "released", "cooling"].includes(
     connection.state,
   );
-  const canSwitchOff = connection.state === "live";
-  const enabled =
-    pending ||
-    ![
-      "off",
-      "failed",
-      "cancelled",
-      "popup-failed",
-      "cooling",
-      "released",
-    ].includes(state);
+  const canSwitchOff = stateCanSwitchOff(connection.state);
+  const enabled = pending || !["off", "cooling", "released"].includes(state);
   const signedUp =
-    ["needs-card", "live", "cooling"].includes(state) ||
-    state.startsWith("broken-");
+    ["needs-card", "live", "cooling"].includes(state) || isBroken(state);
   const shareLink = whatsappShareLink(connection);
 
   return (
@@ -135,7 +130,9 @@ export function WhatsAppSection({
           onCheckedChange={(checked) => {
             if (checked) startTransition(formAction);
             else
-              setConfirmReleaseAt(new Date(Date.now() + 30 * 24 * 60 * 60_000));
+              setConfirmReleaseAt(
+                new Date(Date.now() + COOLING_OFF_DAYS * DAY_MS),
+              );
           }}
         />
       </div>
@@ -228,11 +225,7 @@ export function WhatsAppSection({
       </ol>
       <div className="flex flex-col items-start gap-3" aria-live="polite">
         <Badge
-          variant={
-            state === "failed" || state.startsWith("broken-")
-              ? "warning"
-              : "muted"
-          }
+          variant={state === "failed" || isBroken(state) ? "warning" : "muted"}
         >
           {labels[state]}
         </Badge>
@@ -275,6 +268,14 @@ export function WhatsAppSection({
             Your number is reserved for Meta signup. WhatsApp is not Live yet.
           </p>
         ) : null}
+        {["popup", "cancelled", "popup-failed"].includes(state) &&
+        connection.releaseAt ? (
+          <p className="text-sm">
+            Unfinished signup keeps your number for {SIGNUP_RESERVATION_DAYS}{" "}
+            days. Resume before {releaseDateLabel(connection.releaseAt)} (UTC),
+            or it will be released.
+          </p>
+        ) : null}
         {state === "needs-card" ? (
           <>
             <Callout title="Add your school’s payment card">
@@ -284,7 +285,7 @@ export function WhatsAppSection({
               check readiness here.
             </Callout>
             <a
-              href={`https://business.facebook.com/wa/manage/home/?waba_id=${encodeURIComponent(connection.wabaId ?? "")}`}
+              href={connection.managerUrl}
               target="_blank"
               rel="noreferrer"
               className="text-sm underline"
@@ -336,7 +337,7 @@ export function WhatsAppSection({
         {state === "failed" ? (
           <>
             <Callout tone="warning" title="Setup failed">
-              We could not buy your number. WhatsApp is off; your Assistant
+              We could not buy your number. WhatsApp is not Live; your Assistant
               still works on the web.
             </Callout>
             <Button

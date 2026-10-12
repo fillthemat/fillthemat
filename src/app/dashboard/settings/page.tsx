@@ -17,6 +17,7 @@ import { ProfileSection } from "./sections/profile-section";
 import { ScheduleSection } from "./sections/schedule-section";
 import { WhatsAppSection } from "./sections/whatsapp-section";
 import { SettingsShell } from "./settings-shell";
+import { whatsAppSettingsView } from "./whatsapp-view";
 
 export default async function SettingsPage({
   searchParams,
@@ -79,7 +80,7 @@ async function SectionContent({
       : null;
     return (
       <WhatsAppSection
-        connection={connection}
+        connection={whatsAppSettingsView(connection)}
         qrDataUrl={qrDataUrl}
         signupConfig={
           process.env.WHATSAPP_APP_ID &&

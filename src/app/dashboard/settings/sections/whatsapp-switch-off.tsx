@@ -10,6 +10,7 @@ import {
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { COOLING_OFF_DAYS } from "@/lib/whatsapp/lifecycle";
 import { switchOffWhatsAppAction } from "../whatsapp-actions";
 
 export function releaseDateLabel(at: Date) {
@@ -39,10 +40,11 @@ export function WhatsAppSwitchOff({
         <AlertDialogTitle>Switch WhatsApp off?</AlertDialogTitle>
         <AlertDialogDescription>
           Your number will be released on{" "}
-          {releaseAt ? releaseDateLabel(releaseAt) : ""} (UTC), after 30 days.
-          Switch back on before then to keep the same number. During
-          cooling-off, prospects get only your school phone and public contact
-          email. Old links and QR codes stop working after release.
+          {releaseAt ? releaseDateLabel(releaseAt) : ""} (UTC), after{" "}
+          {COOLING_OFF_DAYS} days. Switch back on before then to keep the same
+          number. During cooling-off, prospects get only your school phone and
+          public contact email. Old links and QR codes stop working after
+          release.
         </AlertDialogDescription>
         {error ? <p role="alert">{error}</p> : null}
         <AlertDialogFooter>

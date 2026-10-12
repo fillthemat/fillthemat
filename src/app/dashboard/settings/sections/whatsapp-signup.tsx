@@ -3,7 +3,7 @@
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import type { WhatsAppConnectionView } from "@/lib/whatsapp/connection";
+import { SIGNUP_RESERVATION_DAYS } from "@/lib/whatsapp/lifecycle";
 import { Callout } from "../ui/controls";
 import {
   completeWhatsAppSignupAction,
@@ -11,6 +11,7 @@ import {
   readWhatsAppSignupAction,
   startWhatsAppSignupAction,
 } from "../whatsapp-actions";
+import type { WhatsAppSettingsView } from "../whatsapp-view";
 
 export type EmbeddedSignupConfig = {
   appId: string;
@@ -51,10 +52,10 @@ export function WhatsAppSignup({
   connection,
   config,
 }: {
-  connection: WhatsAppConnectionView;
+  connection: WhatsAppSettingsView;
   config: EmbeddedSignupConfig | null;
 }) {
-  const [view, setView] = useState<WhatsAppConnectionView | null>(null);
+  const [view, setView] = useState<WhatsAppSettingsView | null>(null);
   const current = view ?? connection;
   const [ready, setReady] = useState(false);
   const [prepared, setPrepared] = useState(false);
@@ -86,8 +87,8 @@ export function WhatsAppSignup({
           setView(result.connection);
           setMessage(
             outcome === "cancelled"
-              ? "Signup cancelled. Your number is kept; resume when you’re ready."
-              : "Meta signup failed. Your number is kept; try again.",
+              ? `Signup cancelled. Your number is kept for ${SIGNUP_RESERVATION_DAYS} days; resume before it is released.`
+              : `Meta signup failed. Your number is kept for ${SIGNUP_RESERVATION_DAYS} days; try again before it is released.`,
           );
         } catch {
           setMessage(
@@ -236,7 +237,8 @@ export function WhatsAppSignup({
   if (!config)
     return (
       <Callout title="Meta signup unavailable" tone="warning">
-        Contact Fillthemat to finish Meta setup. Your reserved number is kept.
+        Contact Fillthemat to finish Meta setup. Your reserved number is kept
+        for {SIGNUP_RESERVATION_DAYS} days.
       </Callout>
     );
   if (["needs-card", "live"].includes(current.state))
@@ -270,7 +272,8 @@ export function WhatsAppSignup({
           Verification code:{" "}
           <strong>
             {open
-              ? (current.verificationCode ?? "Waiting for Meta’s SMS…")
+              ? (current.verificationCode ??
+                "Waiting for Meta’s SMS or voice code…")
               : "Open the popup to request a code"}
           </strong>
         </p>

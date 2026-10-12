@@ -51,6 +51,7 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
       data = { success: true };
     } else if (
       url.pathname.endsWith("/subscribed_apps") ||
+      url.pathname.endsWith("/whatsapp_business_profile") ||
       url.pathname.endsWith("/subscriptions")
     )
       data = { success: true };
@@ -118,6 +119,9 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
     await page.goto("/dashboard/settings?section=whatsapp");
     await page.getByRole("switch", { name: "Enable WhatsApp" }).click();
     await expect(page.getByText("Reserved number: +12125550196")).toBeVisible();
+    await expect(
+      page.getByText(/Unfinished signup keeps your number for 7 days/),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Prepare Meta signup" }).click();
     await page.getByRole("button", { name: "Open Meta popup" }).click();
     await expect(
@@ -126,6 +130,21 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
     await expect(
       page.getByRole("switch", { name: "Enable WhatsApp" }),
     ).toBeChecked();
+    await expect(
+      page.getByRole("switch", { name: "Enable WhatsApp" }),
+    ).toBeEnabled();
+    await page.getByRole("switch", { name: "Enable WhatsApp" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Switch WhatsApp off?" })
+      .getByRole("button", { name: "Switch off", exact: true })
+      .click();
+    await expect(
+      page.getByText("Off · Cooling-off", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("switch", { name: "Enable WhatsApp" }).click();
+    await expect(
+      page.getByText("Setup succeeded · Needs card", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "Add payment card in WhatsApp Manager" }),
     ).toHaveAttribute(
@@ -318,6 +337,17 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Start again with a new number" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("switch", { name: "Enable WhatsApp" }),
+    ).toBeEnabled();
+    await page.getByRole("switch", { name: "Enable WhatsApp" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Switch WhatsApp off?" })
+      .getByRole("button", { name: "Switch off", exact: true })
+      .click();
+    await expect(
+      page.getByText("Off · Cooling-off", { exact: true }),
     ).toBeVisible();
   } finally {
     if (ownerId) {
