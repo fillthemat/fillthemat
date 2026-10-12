@@ -15,6 +15,11 @@ export const MAX_REQUEST_BYTES = 32_768;
 export const MAX_AGENT_STEPS = 8;
 export const MAX_POPPY_NEW_CLIENTS_PER_DAY = 25;
 export const MAX_POPPY_SESSIONS_PER_CLIENT_PER_HOUR = 60;
+export const MAX_POPPY_BOOKINGS_PER_USER_PER_DAY = 3;
+export const MAX_POPPY_BOOKINGS_PER_CLIENT_PER_DAY = 50;
+export const MAX_POPPY_BOOKINGS_PER_SCHOOL_PER_DAY = 20;
+export const MAX_POPPY_CONVERSATIONS_PER_USER_PER_DAY = 10;
+export const MAX_POPPY_PROPOSALS_PER_USER_PER_DAY = 20;
 
 // WhatsApp abuse controls (Phase 5). These mirror the email patterns above but
 // key on the Meta-verified `wa_id` and are intentionally DISTINCT budgets from

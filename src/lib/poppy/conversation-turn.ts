@@ -22,6 +22,7 @@ import { appendPoppyEvent, setPoppyState } from "./conversation-events";
 import { lockPoppyConversationRow } from "./conversation-lifecycle";
 import { poppyMessage } from "./conversation-requests";
 import { closePoppyConversationRow } from "./conversations";
+import { PoppyError } from "./errors";
 import {
   proposeBookingOperation,
   proposeLeadOperation,
@@ -131,7 +132,7 @@ export async function completePoppyTurns(
                 }),
               );
             }
-            const text =
+            let text =
               (reply?.operationError === "extension_required"
                 ? "extension_required: Your Personal Agent must support the Operations extension version 1 to propose and confirm a booking or contact request."
                 : reply?.text) ??
@@ -142,6 +143,39 @@ export async function completePoppyTurns(
                 tx,
               );
               if (!current) throw new Error("conversation_missing");
+              let operation:
+                | Awaited<ReturnType<typeof proposeBookingOperation>>
+                | undefined;
+              let proposalLimit: PoppyError | undefined;
+              try {
+                operation = reply?.bookingIntent?.bookingTerms
+                  ? await proposeBookingOperation(
+                      {
+                        schoolId: school.id,
+                        sessionId: receipt.sessionId,
+                        conversationId,
+                        terms: reply.bookingIntent.bookingTerms,
+                      },
+                      { transaction: tx },
+                    )
+                  : reply?.leadRequest?.leadTerms
+                    ? await proposeLeadOperation(
+                        {
+                          schoolId: school.id,
+                          sessionId: receipt.sessionId,
+                          conversationId,
+                          terms: reply.leadRequest.leadTerms,
+                        },
+                        { transaction: tx },
+                      )
+                    : undefined;
+              } catch (error) {
+                if (!(error instanceof PoppyError) || error.status !== 429)
+                  throw error;
+                proposalLimit = error;
+                text =
+                  "No proposal was issued: the agent user's Operation proposal limit at this School was reached. Please retry after the limit resets.";
+              }
               await appendMessage(
                 {
                   id: inboundId,
@@ -174,27 +208,6 @@ export async function completePoppyTurns(
               );
               // Channel-specific proposals attach to this Company message in
               // the same transaction as the completed Turn.
-              const operation = reply?.bookingIntent?.bookingTerms
-                ? await proposeBookingOperation(
-                    {
-                      schoolId: school.id,
-                      sessionId: receipt.sessionId,
-                      conversationId,
-                      terms: reply.bookingIntent.bookingTerms,
-                    },
-                    { transaction: tx },
-                  )
-                : reply?.leadRequest?.leadTerms
-                  ? await proposeLeadOperation(
-                      {
-                        schoolId: school.id,
-                        sessionId: receipt.sessionId,
-                        conversationId,
-                        terms: reply.leadRequest.leadTerms,
-                      },
-                      { transaction: tx },
-                    )
-                  : undefined;
               await appendPoppyEvent(
                 current,
                 {
@@ -205,6 +218,14 @@ export async function completePoppyTurns(
                     sender: "agent",
                     text,
                     ...(operation ? { operation } : {}),
+                    ...(proposalLimit
+                      ? {
+                          data: {
+                            error: "rate_limited",
+                            retry_after: proposalLimit.retryAfter,
+                          },
+                        }
+                      : {}),
                     ...(reply?.operationError
                       ? {
                           data: {
@@ -221,6 +242,23 @@ export async function completePoppyTurns(
                 .update(poppyConversationMessages)
                 .set({ completedAt: new Date() })
                 .where(eq(poppyConversationMessages.key, receipt.key));
+              if (proposalLimit)
+                await tx
+                  .update(poppyConversationMessages)
+                  .set({
+                    response: {
+                      error: "rate_limited",
+                      retry_at: new Date(
+                        Date.now() + (proposalLimit.retryAfter ?? 1) * 1000,
+                      ).toISOString(),
+                    },
+                  })
+                  .where(
+                    and(
+                      eq(poppyConversationMessages.key, receipt.key),
+                      isNull(poppyConversationMessages.response),
+                    ),
+                  );
               const [total] = await tx
                 .select({ count: count() })
                 .from(messages)

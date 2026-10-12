@@ -8,7 +8,7 @@ Isolated hosted Supabase (preview vs production), verified Resend sending domain
 
 ## Booking quotas and abuse
 
-Per-school and per-IP booking quotas are not stored or enforced. Email/recipient daily caps exist (`src/lib/security/limits.ts`); per-school/IP reservation quotas do not.
+Poppy bookings enforce an atomic per-School calendar-day cap in the School's time zone, alongside rolling client/User budgets and the existing email/recipient caps (`src/lib/security/limits.ts`, `src/lib/poppy/budgets.ts`). Per-School booking quotas for web/WhatsApp and per-IP booking quotas remain unenforced.
 
 ## Chat refresh recovery
 

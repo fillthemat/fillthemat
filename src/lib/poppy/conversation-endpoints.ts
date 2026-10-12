@@ -96,10 +96,20 @@ export async function poppyMessageEndpoint(
         ? await pollEvents(authorization.principal, id, options, true)
         : // A retry returns the original acknowledgement, even after closure.
           { conversation_id: id, status: "working", responder: "agent" });
-    return response(
-      await savePoppyMessageResponse(accepted.messageKey, body),
-      conversationId ? 202 : 201,
-    );
+    const saved = await savePoppyMessageResponse(accepted.messageKey, body);
+    if (saved.error === "rate_limited")
+      return poppyErrorResponse(
+        new PoppyError(
+          "rate_limited",
+          429,
+          Math.max(
+            1,
+            Math.ceil((Date.parse(String(saved.retry_at)) - Date.now()) / 1000),
+          ),
+        ),
+        true,
+      );
+    return response(saved, conversationId ? 202 : 201);
   } catch (error) {
     return poppyErrorResponse(error, true);
   }
