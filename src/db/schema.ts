@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { getTableColumns, sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   boolean,
@@ -120,6 +120,10 @@ export const schools = appSchema.table(
     publicContactEmail: text("public_contact_email"),
     whatsappPhoneNumberId: text("whatsapp_phone_number_id"),
     whatsappWabaId: text("whatsapp_waba_id"),
+    whatsappTokenEncrypted: text("whatsapp_token_encrypted"),
+    whatsappTokenExpiresAt: timestamp("whatsapp_token_expires_at", {
+      withTimezone: true,
+    }),
     phone: text("phone"),
     website: text("website"),
     address: text("address"),
@@ -779,7 +783,18 @@ export const cronRuns = appSchema.table("cron_runs", {
 });
 
 export type User = typeof users.$inferSelect;
-export type School = typeof schools.$inferSelect;
+// General school readers must not load credentials into page/client props.
+const {
+  whatsappTokenEncrypted: _whatsappTokenEncrypted,
+  whatsappTokenExpiresAt: _whatsappTokenExpiresAt,
+  ...schoolDetailsColumns
+} = getTableColumns(schools);
+
+export { schoolDetailsColumns };
+export type School = Omit<
+  typeof schools.$inferSelect,
+  "whatsappTokenEncrypted" | "whatsappTokenExpiresAt"
+>;
 export type Faq = typeof faqs.$inferSelect;
 export type TrialOffering = typeof trialOfferings.$inferSelect;
 export type TrialWindow = typeof trialWindows.$inferSelect;

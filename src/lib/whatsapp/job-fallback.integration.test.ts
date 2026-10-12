@@ -382,6 +382,7 @@ describe("prospect apology after WhatsApp job exhaustion", () => {
       {
         to: payload.waId,
         phoneNumberId,
+        token: null,
         text: "Sorry, we're having trouble replying right now. Please message us again in a bit.",
       },
     ]);
