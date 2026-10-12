@@ -19,6 +19,7 @@
     "check": "biome check .",
     "check:write": "biome check --write .",
     "lint": "oxlint .",
+    "typecheck": "bun run --bun next typegen && tsc --noEmit --project tsconfig.json",
     "test": "vitest run",
     "eval:assistant": "bun scripts/assistant-eval.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",

@@ -15,6 +15,7 @@ Implementation and code review MUST read and apply [CODING_STANDARDS.md](CODING_
 ## Linting
 
 After making changes, run `bun run lint` and fix all errors.
+Before opening a PR, run `bun run typecheck` and fix all errors.
 
 ## Local development
 

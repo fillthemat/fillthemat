@@ -1,0 +1,36 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: true
+
+jobs:
+  checks:
+    name: Lint, format, and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-bun-ci
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Check formatting and Biome rules
+        run: bun run check
+
+      - name: Check all project types (same config as build)
+        run: bun run typecheck
