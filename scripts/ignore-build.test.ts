@@ -1,10 +1,49 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, it, vi } from "vitest";
+import { config } from "../vercel";
 import { ignoredBuildExitCode, isDocsPath } from "./ignore-build";
 
 const preview = {
   VERCEL_ENV: "preview",
   VERCEL_GIT_PREVIOUS_SHA: "a".repeat(40),
 };
+
+it("skips gh-pages without any repository files or Bun available", () => {
+  const directory = mkdtempSync(join(tmpdir(), "fillthemat-ignore-build-"));
+  try {
+    const result = spawnSync("/bin/sh", ["-c", config.ignoreCommand ?? ""], {
+      cwd: directory,
+      env: {
+        NODE_ENV: "test",
+        VERCEL_GIT_COMMIT_REF: "gh-pages",
+        PATH: directory,
+      },
+      encoding: "utf8",
+      timeout: 5_000,
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+  } finally {
+    rmdirSync(directory);
+  }
+});
+
+it("defers to the build script for other branches", () => {
+  const result = spawnSync("/bin/sh", ["-c", config.ignoreCommand ?? ""], {
+    env: {
+      ...process.env,
+      VERCEL_GIT_COMMIT_REF: "docs/supabase-mcp-live-check",
+      VERCEL_ENV: "production",
+    },
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+  expect(result.status).toBe(1);
+  expect(result.stdout).toContain("Build");
+});
 
 it.each([
   ["AGENTS.md", true],
