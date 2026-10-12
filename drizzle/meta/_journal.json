@@ -141,6 +141,13 @@
       "when": 1791815800108,
       "tag": "20261012103800_signup-code-age-195",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791816550852,
+      "tag": "20261012104910_whatsapp-profile-196",
+      "breakpoints": true
     }
   ]
 }

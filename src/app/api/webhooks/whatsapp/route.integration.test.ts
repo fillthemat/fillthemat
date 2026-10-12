@@ -128,6 +128,7 @@ beforeAll(async () => {
       timezone: "America/New_York",
       notificationEmail: `wa-${suffix}@local.test`,
       whatsappPhoneNumberId: phoneNumberId,
+      whatsappConnectionState: "live",
       approvedAt: new Date(),
     })
     .returning({ id: schools.id });

@@ -480,6 +480,16 @@ export async function processWhatsAppJob(
     }
     schoolId = resolved.schoolId;
     const now = dependencies.now();
+    const [school] = await getDb()
+      .select({ state: schools.whatsappConnectionState })
+      .from(schools)
+      .where(eq(schools.id, schoolId));
+    // A reserved/registered number alone is not permission to run the Assistant.
+    // Refusals create no conversation, booking or reply outbox.
+    if (school?.state !== "live") {
+      if (!(await start())) return "deferred";
+      return await done();
+    }
 
     // Assistant/notice saves commit with their reply outbox; confirmations book
     // before saving. An inbound marker therefore means no Turn needs replaying.

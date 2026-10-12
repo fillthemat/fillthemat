@@ -330,6 +330,14 @@ export async function sendWhatsAppDelivery(
       dependencies.now(),
     );
   }
+  if (school.whatsappConnectionState !== "live") {
+    return failDelivery(
+      delivery,
+      { kind: "internal", reason: "school_not_live" },
+      "school_not_live",
+      dependencies.now(),
+    );
+  }
 
   const plan = planWhatsAppDelivery(
     {

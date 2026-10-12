@@ -30,6 +30,7 @@ test("every category is deep-linkable and marked current", async ({ page }) => {
     ["faqs", "Frequently asked questions"],
     ["agent", "Your agent"],
     ["branding", "Branding"],
+    ["whatsapp", "WhatsApp"],
   ];
 
   for (const [section, heading] of sections) {

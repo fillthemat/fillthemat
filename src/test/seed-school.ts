@@ -12,7 +12,8 @@ type Sql = ReturnType<typeof authSql>;
 
 /**
  * Seeds an approved school in America/New_York, its owner (emailed at
- * `<slug>@local.test`) and the given trial offerings. Returns the school id
+ * `<slug>@local.test`) and the given trial offerings. A WhatsApp fixture with a
+ * phone number ID is Live unless explicitly overridden. Returns the school id
  * and the offering ids in order. `deleteSchoolOwner` removes it all again.
  */
 export async function seedSchool(
@@ -23,7 +24,12 @@ export async function seedSchool(
     ...school
   }: Pick<
     typeof schools.$inferInsert,
-    "name" | "slug" | "phone" | "publishedAt" | "whatsappPhoneNumberId"
+    | "name"
+    | "slug"
+    | "phone"
+    | "publishedAt"
+    | "whatsappPhoneNumberId"
+    | "whatsappConnectionState"
   > & {
     ownerId: string;
     offerings: Array<Omit<typeof trialOfferings.$inferInsert, "schoolId">>;
@@ -39,6 +45,9 @@ export async function seedSchool(
     .insert(schools)
     .values({
       ...school,
+      whatsappConnectionState:
+        school.whatsappConnectionState ??
+        (school.whatsappPhoneNumberId ? "live" : "off"),
       ownerUserId: ownerId,
       timezone: "America/New_York",
       notificationEmail: email,

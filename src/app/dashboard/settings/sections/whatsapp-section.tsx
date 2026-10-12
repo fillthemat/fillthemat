@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useRef } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -11,9 +11,14 @@ import type {
   EligibilityGap,
   WhatsAppConnectionView,
 } from "@/lib/whatsapp/connection";
+import { whatsappShareLink } from "@/lib/whatsapp/sharing";
 import { IDLE_STATE } from "../form-state";
 import { Callout } from "../ui/controls";
-import { enableWhatsAppAction } from "../whatsapp-actions";
+import {
+  checkWhatsAppReadinessAction,
+  enableWhatsAppAction,
+} from "../whatsapp-actions";
+import { WhatsAppSharing } from "./whatsapp-sharing";
 import { type EmbeddedSignupConfig, WhatsAppSignup } from "./whatsapp-signup";
 
 const eligibility: {
@@ -68,15 +73,19 @@ const labels: Record<WhatsAppConnectionState, string> = {
 export function WhatsAppSection({
   connection,
   signupConfig,
+  qrDataUrl,
 }: {
   connection: WhatsAppConnectionView;
   signupConfig: EmbeddedSignupConfig | null;
+  qrDataUrl: string | null;
 }) {
   const [result, formAction, pending] = useActionState(
     enableWhatsAppAction,
     IDLE_STATE,
   );
   const form = useRef<HTMLFormElement>(null);
+  const [checking, checkTransition] = useTransition();
+  const [readinessMessage, setReadinessMessage] = useState("");
   const state = pending ? "buying" : connection.state;
   const eligible = connection.gaps.length === 0;
   const canEnable = connection.state === "off" || connection.state === "failed";
@@ -91,6 +100,7 @@ export function WhatsAppSection({
       "released",
     ].includes(state);
   const signedUp = ["needs-card", "live", "cooling"].includes(state);
+  const shareLink = whatsappShareLink(connection);
 
   return (
     <form ref={form} action={formAction} className="flex flex-col gap-5">
@@ -199,7 +209,8 @@ export function WhatsAppSection({
         </Badge>
         {connection.number ? (
           <p className="text-sm">
-            Reserved number: <strong>{connection.number}</strong>
+            {state === "live" ? "WhatsApp number" : "Reserved number"}:{" "}
+            <strong>{connection.number}</strong>
           </p>
         ) : null}
         {state === "off" ? (
@@ -217,6 +228,55 @@ export function WhatsAppSection({
         {state === "popup" ? (
           <p className="text-sm">
             Your number is reserved for Meta signup. WhatsApp is not Live yet.
+          </p>
+        ) : null}
+        {state === "needs-card" ? (
+          <>
+            <Callout title="Add your school’s payment card">
+              WhatsApp is switched on but not Live. Meta bills your school
+              directly for messages; Fillthemat pays for your number. Add a card
+              in WhatsApp Manager: in Overview, choose Add payment method. Then
+              check readiness here.
+            </Callout>
+            <a
+              href={`https://business.facebook.com/wa/manage/home/?waba_id=${encodeURIComponent(connection.wabaId ?? "")}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm underline"
+            >
+              Add payment card in WhatsApp Manager
+            </a>
+            <Button
+              type="button"
+              disabled={checking}
+              onClick={() =>
+                checkTransition(async () => {
+                  try {
+                    setReadinessMessage(
+                      (await checkWhatsAppReadinessAction()).message ?? "",
+                    );
+                  } catch {
+                    setReadinessMessage(
+                      "We could not check readiness. Reload settings and try again.",
+                    );
+                  }
+                })
+              }
+            >
+              {checking ? "Checking Meta…" : "Check readiness"}
+            </Button>
+          </>
+        ) : null}
+        {shareLink && qrDataUrl ? (
+          <WhatsAppSharing
+            link={shareLink}
+            qrDataUrl={qrDataUrl}
+            profileName={connection.profileName}
+          />
+        ) : null}
+        {readinessMessage ? (
+          <p role="status" className="text-sm">
+            {readinessMessage}
           </p>
         ) : null}
         {["popup", "cancelled", "popup-failed", "registering"].includes(

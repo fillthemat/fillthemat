@@ -41,6 +41,7 @@ beforeAll(async () => {
   const seeded = await seedSchool(sql, {
     ownerId,
     name: "Confirmation School",
+    whatsappConnectionState: "live",
     slug: `confirm-${ownerId.slice(0, 8)}`,
     offerings: [{ name: "Kids BJJ" }],
   });

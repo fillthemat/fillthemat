@@ -56,6 +56,7 @@ beforeAll(async () => {
     await seedSchool(sql, {
       ownerId,
       name: "Callback Retry School",
+      whatsappConnectionState: "live",
       slug: `sr-${suffix}`,
       offerings: [{ name: "BJJ" }],
     })

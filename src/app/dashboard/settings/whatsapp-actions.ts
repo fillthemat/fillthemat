@@ -54,6 +54,33 @@ export async function readWhatsAppSignupAction() {
   return createWhatsAppConnection().read(school.id);
 }
 
+export async function checkWhatsAppReadinessAction(): Promise<SettingsFormState> {
+  const { school } = await requireOwnedSchool();
+  try {
+    const result = await createWhatsAppConnection().checkReadiness(school.id);
+    revalidatePath("/dashboard/settings");
+    revalidatePath(`/s/${school.slug}`);
+    if (!result.ok)
+      return errorState(
+        "We could not confirm readiness with Meta. WhatsApp is not Live yet; try checking again.",
+      );
+    return successState(
+      result.connection.state === "live"
+        ? "WhatsApp is Live. Share your number and link with prospects."
+        : "WhatsApp is switched on but not Live. Meta must confirm a registered number and a payment card on file. After adding your card, check again.",
+    );
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error(
+      JSON.stringify({
+        event: "whatsapp_readiness_failed",
+        schoolId: school.id,
+      }),
+    );
+    throw new Error("whatsapp_readiness_failed");
+  }
+}
+
 export async function startWhatsAppSignupAction() {
   const { school } = await requireOwnedSchool();
   const result = await createWhatsAppConnection().startSignup(school.id);

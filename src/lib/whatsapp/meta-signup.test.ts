@@ -2,6 +2,41 @@ import { describe, expect, it } from "vitest";
 import { createMetaSignupClient, MetaSignupError } from "./meta-signup";
 
 describe("Meta signup client", () => {
+  it.each([
+    ["CONNECTED", "funding-196", true, true],
+    ["CONNECTED", null, true, false],
+    ["PENDING", "funding-196", false, true],
+  ])(
+    "reads registration and funding independently (%s, %s)",
+    async (status, funding, registered, paymentMethod) => {
+      const client = createMetaSignupClient({
+        appId: "196",
+        appSecret: "secret",
+        fetch: async (url, init) => {
+          expect(new Headers(init?.headers).get("Authorization")).toBe(
+            "Bearer school-token",
+          );
+          const request = new URL(String(url));
+          if (request.pathname.endsWith("/phone-196")) {
+            expect(request.searchParams.get("fields")).toBe(
+              "status,verified_name",
+            );
+            return Response.json({ status, verified_name: "School profile" });
+          }
+          expect(request.pathname).toBe("/v26.0/account-196");
+          expect(request.searchParams.get("fields")).toBe("primary_funding_id");
+          return Response.json(funding ? { primary_funding_id: funding } : {});
+        },
+      });
+      expect(
+        await client.readReadiness({
+          token: "school-token",
+          wabaId: "account-196",
+          phoneNumberId: "phone-196",
+        }),
+      ).toEqual({ registered, paymentMethod, profileName: "School profile" });
+    },
+  );
   it("rejects a WABA the popup token did not authorize even when its phone matches", async () => {
     const client = createMetaSignupClient({
       appId: "195",

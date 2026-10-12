@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { NumberProvider } from "./connection";
+import { whatsAppTestVendorFetch } from "./test-vendor-fetch";
 
 const usNumber = z.string().regex(/^\+1\d{10}$/);
 const rentalSchema = z.object({
@@ -134,5 +135,10 @@ export function numberProviderFromEnv(): NumberProvider {
       },
     };
   }
-  return createTwilioNumberProvider({ accountSid, authToken, smsWebhookUrl });
+  return createTwilioNumberProvider({
+    accountSid,
+    authToken,
+    smsWebhookUrl,
+    fetch: whatsAppTestVendorFetch(),
+  });
 }

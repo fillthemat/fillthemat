@@ -63,6 +63,77 @@ afterAll(async () => {
 });
 
 describe("WhatsApp connection commands", () => {
+  it("goes Live only after Meta confirms both registration and a payment method", async () => {
+    const id = await school(true);
+    vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "96".repeat(32));
+    let registered = true;
+    let paymentMethod = false;
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550196", resourceId: `PN-${id}` };
+        },
+      },
+      meta: {
+        async exchangeCode() {
+          return { token: "readiness-token", expiresAt: null };
+        },
+        async validateNumber() {
+          return true;
+        },
+        async subscribe() {},
+        async register() {},
+        async readReadiness(input) {
+          expect(input).toEqual({
+            token: "readiness-token",
+            wabaId: "196001",
+            phoneNumberId: "106500000196001",
+          });
+          return {
+            registered,
+            paymentMethod,
+            profileName: "Connection School",
+          };
+        },
+      },
+    });
+    try {
+      expect(await connection.checkReadiness(id)).toMatchObject({
+        ok: false,
+        code: "invalid_state",
+      });
+      await connection.enable(id);
+      const started = await connection.startSignup(id);
+      await connection.completeSignup(id, {
+        attemptId: requireRow(started.connection.attemptId, "attempt"),
+        code: "code",
+        wabaId: "196001",
+        phoneNumberId: "106500000196001",
+      });
+      expect(await connection.checkReadiness(id)).toMatchObject({
+        ok: true,
+        connection: { state: "needs-card" },
+      });
+      paymentMethod = true;
+      registered = false;
+      expect(await connection.checkReadiness(id)).toMatchObject({
+        ok: true,
+        connection: { state: "needs-card" },
+      });
+      registered = true;
+      expect(await connection.checkReadiness(id)).toMatchObject({
+        ok: true,
+        connection: { state: "live", profileName: "Connection School" },
+      });
+      expect(await connection.read(id)).toMatchObject({
+        state: "live",
+        profileName: "Connection School",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it("serializes registration and refuses duplicate completion or cancellation while Meta is working", async () => {
     const id = await school(true);
     vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "ef".repeat(32));
@@ -84,6 +155,9 @@ describe("WhatsApp connection commands", () => {
       meta: {
         async exchangeCode() {
           return { token: "concurrent-token", expiresAt: null };
+        },
+        async readReadiness() {
+          throw new Error("Unexpected readiness check");
         },
         async validateNumber() {
           return true;
@@ -142,6 +216,9 @@ describe("WhatsApp connection commands", () => {
       meta: {
         async exchangeCode() {
           return { token: "unrelated-token", expiresAt: null };
+        },
+        async readReadiness() {
+          throw new Error("Unexpected readiness check");
         },
         async validateNumber() {
           return false;
@@ -376,6 +453,9 @@ describe("WhatsApp connection commands", () => {
         async exchangeCode() {
           return { token: "retry-token", expiresAt: null };
         },
+        async readReadiness() {
+          throw new Error("Unexpected readiness check");
+        },
         async validateNumber() {
           return true;
         },
@@ -443,6 +523,9 @@ describe("WhatsApp connection commands", () => {
             token: "customer-school-token",
             expiresAt: new Date("2027-01-01"),
           };
+        },
+        async readReadiness() {
+          throw new Error("Unexpected readiness check");
         },
         async validateNumber(input) {
           return (
@@ -519,6 +602,9 @@ describe("WhatsApp connection commands", () => {
       meta: {
         async exchangeCode() {
           return { token: "resumed-token", expiresAt: null };
+        },
+        async readReadiness() {
+          throw new Error("Unexpected readiness check");
         },
         async validateNumber() {
           return true;

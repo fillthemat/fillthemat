@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
-import { conversations, whatsappDeliveries, whatsappJobs } from "@/db/schema";
+import {
+  conversations,
+  schools,
+  whatsappDeliveries,
+  whatsappJobs,
+} from "@/db/schema";
 import { findOrCreateConversation } from "@/lib/conversations/conversation-store";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
@@ -48,6 +53,93 @@ afterAll(async () => {
 });
 
 describe("WhatsApp worker dependencies", () => {
+  it("does not send an already queued reply after the school is no longer Live", async () => {
+    const id = await enqueueWhatsAppDelivery(
+      {
+        schoolId,
+        phoneNumberId,
+        recipientWaId: "16505550197",
+        body: "Queued Assistant reply",
+        windowExpiresAt: new Date("2020-01-02T12:00:00Z"),
+        providerIdempotencyKey: `not-live-queued/${suffix}`,
+      },
+      { now },
+    );
+    if (!id) throw new Error("Missing delivery");
+    await db
+      .update(schools)
+      .set({ whatsappConnectionState: "needs-card" })
+      .where(eq(schools.id, schoolId));
+    const sends: string[] = [];
+    try {
+      const result = await attemptWhatsAppDeliveriesNow([id], randomUUID(), {
+        now: () => now,
+        transport: {
+          async sendText() {
+            sends.push("text");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+          async sendTemplate() {
+            sends.push("template");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+          async sendInteractive() {
+            sends.push("interactive");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+        },
+      });
+      expect(result.dead).toBe(1);
+      expect(sends).toEqual([]);
+    } finally {
+      await db
+        .update(schools)
+        .set({ whatsappConnectionState: "live" })
+        .where(eq(schools.id, schoolId));
+    }
+  });
+  it("finishes a not-Live school's inbound job without sending an Assistant reply", async () => {
+    const wamid = `wamid.not-live.${suffix}`;
+    const sends: string[] = [];
+    await db
+      .update(schools)
+      .set({ whatsappConnectionState: "needs-card" })
+      .where(eq(schools.id, schoolId));
+    try {
+      await enqueueInboundJobs([
+        {
+          wamid,
+          waId: "16505550196",
+          phoneNumberId,
+          text: "What trials are available?",
+          profileName: null,
+        },
+      ]);
+      const result = await runWhatsAppWorkerOnce(randomUUID(), {
+        transport: {
+          async sendText() {
+            sends.push("text");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+          async sendTemplate() {
+            sends.push("template");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+          async sendInteractive() {
+            sends.push("interactive");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+        },
+      });
+      expect(result.jobs.done).toBe(1);
+      expect(sends).toEqual([]);
+    } finally {
+      await db
+        .update(schools)
+        .set({ whatsappConnectionState: "live" })
+        .where(eq(schools.id, schoolId));
+    }
+  });
   it("stops an unknown phone number after one execution and never claims it again", async () => {
     const dedupeKey = `unknown/${suffix}`;
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
