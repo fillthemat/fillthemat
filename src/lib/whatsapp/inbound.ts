@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools } from "@/db/schema";
+import { sendWhatsAppTypingIndicator } from "./client";
+import { resolveWhatsAppToken } from "./credentials";
 import type { InboundWhatsAppMessage } from "./parse";
 
 export type ResolveInboundResult =
@@ -19,4 +21,25 @@ export async function resolveInboundSchool(
     .limit(1);
   if (!school) return { resolved: false, reason: "unknown_phone_number" };
   return { resolved: true, schoolId: school.id };
+}
+
+/** Unknown numbers never get a Graph call; receipt failures remain best-effort. */
+export async function sendInboundWhatsAppTypingIndicator(
+  input: InboundWhatsAppMessage,
+) {
+  const [school] = await getDb()
+    .select({
+      id: schools.id,
+      whatsappTokenEncrypted: schools.whatsappTokenEncrypted,
+      whatsappTokenExpiresAt: schools.whatsappTokenExpiresAt,
+    })
+    .from(schools)
+    .where(eq(schools.whatsappPhoneNumberId, input.phoneNumberId))
+    .limit(1);
+  if (!school) return;
+  return sendWhatsAppTypingIndicator({
+    phoneNumberId: input.phoneNumberId,
+    messageId: input.wamid,
+    token: resolveWhatsAppToken(school),
+  });
 }

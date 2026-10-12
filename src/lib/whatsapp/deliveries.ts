@@ -32,6 +32,7 @@ import {
   bookingConfirmationIsStale,
   onWhatsAppDeliveryDead,
 } from "./confirmation-delivery";
+import { resolveWhatsAppToken } from "./credentials";
 import {
   type WhatsAppWorkerDependencies,
   whatsappWorkerDependencies,
@@ -372,10 +373,12 @@ export async function sendWhatsAppDelivery(
   delivery = executing;
 
   try {
+    const token = resolveWhatsAppToken(school, dependencies.now());
     const outcome =
       plan.type === "template"
         ? await dependencies.transport.sendTemplate({
             phoneNumberId: delivery.phoneNumberId,
+            token,
             to: delivery.recipientWaId,
             templateName: plan.templateName,
             languageCode: plan.languageCode,
@@ -384,12 +387,14 @@ export async function sendWhatsAppDelivery(
         : plan.type === "interactive"
           ? await dependencies.transport.sendInteractive({
               phoneNumberId: delivery.phoneNumberId,
+              token,
               to: delivery.recipientWaId,
               body: plan.body,
               buttons: plan.buttons,
             })
           : await dependencies.transport.sendText({
               phoneNumberId: delivery.phoneNumberId,
+              token,
               to: delivery.recipientWaId,
               text: delivery.body ?? "",
             });

@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
-import { sendWhatsAppTypingIndicator } from "@/lib/whatsapp/client";
 import {
   WHATSAPP_MAX_BODY_BYTES,
   whatsappAppSecret,
   whatsappVerifyToken,
 } from "@/lib/whatsapp/config";
 import { applyWhatsAppStatuses } from "@/lib/whatsapp/deliveries";
+import { sendInboundWhatsAppTypingIndicator } from "@/lib/whatsapp/inbound";
 import { enqueueInboundJobs } from "@/lib/whatsapp/jobs";
 import { parseInboundWhatsAppMessages } from "@/lib/whatsapp/parse";
 import { verifyWhatsAppSignature } from "@/lib/whatsapp/signature";
@@ -69,14 +69,7 @@ export async function POST(request: Request) {
 
   // Perceived-immediacy lever: mark read + typing indicator in one cheap Graph
   // call, best-effort so Meta's 200 is never hard-gated on it.
-  await Promise.allSettled(
-    messages.map((message) =>
-      sendWhatsAppTypingIndicator({
-        phoneNumberId: message.phoneNumberId,
-        messageId: message.wamid,
-      }),
-    ),
-  );
+  await Promise.allSettled(messages.map(sendInboundWhatsAppTypingIndicator));
 
   try {
     if (statuses.length > 0) await applyWhatsAppStatuses(statuses);
