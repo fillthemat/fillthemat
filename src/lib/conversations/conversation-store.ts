@@ -27,12 +27,19 @@ import {
   whatsappBookingIntents,
 } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
+import { appendPoppyEvent } from "@/lib/poppy/conversation-events";
 import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 
 export type ConversationIdentity =
   | { channel: "web"; resumeToken: string }
-  | { channel: "whatsapp"; waId: string };
+  | { channel: "whatsapp"; waId: string }
+  | {
+      channel: "poppy";
+      clientId: string;
+      userId: string;
+      conversationId: string;
+    };
 
 type ConversationInput = {
   schoolId: string;
@@ -44,6 +51,12 @@ type ConversationInput = {
 type ConversationDb = Pick<Database, "select" | "insert" | "update">;
 
 function identityPredicate(identity: ConversationIdentity) {
+  if (identity.channel === "poppy")
+    return and(
+      eq(conversations.id, identity.conversationId),
+      eq(conversations.poppyClientId, identity.clientId),
+      eq(conversations.poppyUserId, identity.userId),
+    );
   return identity.channel === "web"
     ? eq(conversations.resumeTokenHash, hashToken(identity.resumeToken))
     : eq(conversations.waIdHash, hashWaId(identity.waId));
@@ -82,6 +95,13 @@ export async function findOrCreateConversation({
   identity,
   now = new Date(),
 }: ConversationInput): Promise<FindOrCreateConversationResult> {
+  // Poppy starts explicitly; an ended public id is never recreated/resumed.
+  if (identity.channel === "poppy") {
+    const conversation = await findConversation({ schoolId, identity, now });
+    return conversation
+      ? { ok: true, conversation }
+      : { ok: false, reason: "invalid_conversation" };
+  }
   const expiresAt = addDays(now, CONVERSATION_INACTIVITY_DAYS);
   return getDb().transaction(async (tx) => {
     for (;;) {
@@ -160,10 +180,27 @@ async function endMatchingConversations(
 ): Promise<number> {
   const ended = await db
     .update(conversations)
-    .set({ endedAt: now, endReason: reason, updatedAt: now })
+    .set({
+      endedAt: now,
+      endReason: reason,
+      updatedAt: now,
+      poppyStatus: sql`case when ${conversations.poppyClientId} is not null then 'closed' else ${conversations.poppyStatus} end`,
+    })
     .where(and(isNull(conversations.endedAt), predicate))
-    .returning({ id: conversations.id });
+    .returning({
+      id: conversations.id,
+      schoolId: conversations.schoolId,
+      poppyClientId: conversations.poppyClientId,
+    });
   if (ended.length === 0) return 0;
+  for (const conversation of ended) {
+    if (conversation.poppyClientId)
+      await appendPoppyEvent(
+        conversation,
+        { type: "state", status: "closed", responder: "agent" },
+        db,
+      );
+  }
   await db
     .update(whatsappBookingIntents)
     .set({ state: "expired", updatedAt: now })
@@ -209,7 +246,7 @@ export async function endConversationAtMessageLimit(
 export type GenerationLock = { release: () => Promise<void> };
 
 // Longer than a live function can run, so only abandoned turns are recovered.
-const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
+export const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 
 function generationAvailable(now: Date) {
   return or(

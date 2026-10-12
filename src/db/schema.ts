@@ -18,7 +18,11 @@ import {
 export const appSchema = pgSchema("app");
 export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 
-export const channelEnum = appSchema.enum("channel", ["web", "whatsapp"]);
+export const channelEnum = appSchema.enum("channel", [
+  "web",
+  "whatsapp",
+  "poppy",
+]);
 
 export const bookingStatusEnum = appSchema.enum("booking_status", [
   "booked",
@@ -76,7 +80,7 @@ export const messageCompletionEnum = appSchema.enum("message_completion", [
 
 export const conversationEndReasonEnum = appSchema.enum(
   "conversation_end_reason",
-  ["inactivity", "message_limit"],
+  ["inactivity", "message_limit", "closed"],
 );
 
 export const cronResultEnum = appSchema.enum("cron_result", [
@@ -531,6 +535,13 @@ export const conversations = appSchema.table(
     contactId: uuid("contact_id"),
     resumeTokenHash: text("resume_token_hash").notNull(),
     waIdHash: text("wa_id_hash"),
+    poppyClientId: text("poppy_client_id").references(
+      () => poppyClients.clientId,
+    ),
+    poppyUserId: text("poppy_user_id"),
+    poppyContext: jsonb("poppy_context").$type<Record<string, unknown>>(),
+    poppyStatus: text("poppy_status").notNull().default("idle"),
+    poppyEventSequence: integer("poppy_event_sequence").notNull().default(0),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     generatingAt: timestamp("generating_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
@@ -562,6 +573,68 @@ export const conversations = appSchema.table(
     }).onDelete("set null"),
   ],
 );
+
+export const poppyConversationEvents = appSchema
+  .table(
+    "poppy_conversation_events",
+    {
+      id: text("id").primaryKey(),
+      schoolId: uuid("school_id").notNull(),
+      conversationId: uuid("conversation_id").notNull(),
+      sequence: integer("sequence").notNull(),
+      event: jsonb("event").notNull().$type<Record<string, unknown>>(),
+      createdAt: timestamp("created_at", { withTimezone: true })
+        .notNull()
+        .defaultNow(),
+    },
+    (t) => [
+      unique("poppy_events_conversation_sequence").on(
+        t.conversationId,
+        t.sequence,
+      ),
+      foreignKey({
+        columns: [t.schoolId, t.conversationId],
+        foreignColumns: [conversations.schoolId, conversations.id],
+        name: "poppy_events_conversation_fk",
+      }).onDelete("cascade"),
+    ],
+  )
+  .enableRLS();
+
+export const poppyConversationMessages = appSchema
+  .table(
+    "poppy_conversation_messages",
+    {
+      key: text("key").primaryKey(),
+      schoolId: uuid("school_id").notNull(),
+      conversationId: uuid("conversation_id").notNull(),
+      sessionId: uuid("session_id").notNull(),
+      message: jsonb("message").notNull().$type<Record<string, unknown>>(),
+      context: jsonb("context").notNull().$type<Record<string, unknown>>(),
+      sequence: integer("sequence").notNull(),
+      response: jsonb("response").$type<Record<string, unknown>>(),
+      completedAt: timestamp("completed_at", { withTimezone: true }),
+      createdAt: timestamp("created_at", { withTimezone: true })
+        .notNull()
+        .defaultNow(),
+    },
+    (t) => [
+      index("poppy_messages_pending")
+        .on(t.conversationId, t.sequence)
+        .where(sql`${t.completedAt} IS NULL`),
+      foreignKey({
+        columns: [t.schoolId, t.conversationId],
+        foreignColumns: [conversations.schoolId, conversations.id],
+        name: "poppy_messages_conversation_fk",
+      }).onDelete("cascade"),
+      foreignKey({
+        columns: [t.schoolId, t.sessionId],
+        foreignColumns: [poppySessions.schoolId, poppySessions.id],
+        name: "poppy_messages_session_fk",
+      }).onDelete("cascade"),
+    ],
+  )
+  .enableRLS();
 
 export const messages = appSchema.table(
   "messages",

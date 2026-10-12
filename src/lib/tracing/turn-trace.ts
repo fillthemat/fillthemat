@@ -13,6 +13,8 @@ export type TurnTraceStart = {
   /** The id of the inbound message's saved row. */
   inboundMessageId: string;
   inboundText: string;
+  /** Display label only: never include the Personal Agent's private User ID. */
+  clientDisplayName?: string;
 };
 
 export type TurnReply = {
@@ -73,12 +75,16 @@ export function startTurnTrace({
   schoolId,
   inboundMessageId,
   inboundText,
+  clientDisplayName,
 }: TurnTraceStart): TurnTrace {
   // Each turn is its own trace, never a child of whatever span is active.
   const root = context.with(ROOT_CONTEXT, () =>
     startObservation(TRACE_NAME, {
       input: inboundText,
-      metadata: { inboundMessageId },
+      metadata: {
+        inboundMessageId,
+        ...(clientDisplayName ? { clientDisplayName } : {}),
+      },
     }),
   );
   // Spans started in this context nest under the root and carry the session,

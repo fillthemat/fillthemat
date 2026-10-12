@@ -5,6 +5,7 @@ import { PLATFORM_INSTRUCTIONS } from "./instructions";
 /** Hash only platform-authored instructions and model-facing tool definitions. */
 export async function platformInstructionsHash(
   tools: Record<string, Pick<Tool, "description" | "inputSchema">>,
+  channelInstructions?: string,
 ): Promise<string> {
   const definitions = await Promise.all(
     Object.entries(tools).map(async ([name, definition]) => ({
@@ -16,7 +17,11 @@ export async function platformInstructionsHash(
   return createHash("sha256")
     .update(
       JSON.stringify(
-        { instructions: PLATFORM_INSTRUCTIONS, tools: definitions },
+        {
+          instructions: PLATFORM_INSTRUCTIONS,
+          ...(channelInstructions ? { channelInstructions } : {}),
+          tools: definitions,
+        },
         (_key, value: unknown) => {
           // JSON object key order is not behaviour; array order is preserved.
           if (value && typeof value === "object" && !Array.isArray(value)) {
