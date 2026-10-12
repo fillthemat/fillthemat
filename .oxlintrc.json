@@ -41,7 +41,12 @@
   },
   "overrides": [
     {
-      "files": ["src/app/api/**"],
+      "files": [
+        "src/app/api/**",
+        "src/app/poppy/**",
+        "src/app/schools/**",
+        "src/app/.well-known/**"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",
