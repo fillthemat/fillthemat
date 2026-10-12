@@ -1,10 +1,5 @@
 import { isLocalWhatsAppNoop } from "@/lib/dev-flags";
-import {
-  whatsappApiVersion,
-  whatsappGraphBase,
-  whatsappSystemUserToken,
-} from "./config";
-import { whatsappTemplateComponents } from "./templates";
+import { whatsappApiVersion, whatsappGraphBase } from "./config";
 
 export type WhatsAppSendFailure =
   | {
@@ -54,12 +49,14 @@ function record(value: unknown): Record<string, unknown> {
 function graphPost(
   phoneNumberId: string,
   payload: Record<string, unknown>,
+  schoolToken: string | null | undefined,
   dependencies?: WhatsAppGraphDependencies,
   requireMessageId?: true,
 ): Promise<WhatsAppSendOutcome>;
 function graphPost(
   phoneNumberId: string,
   payload: Record<string, unknown>,
+  schoolToken: string | null | undefined,
   dependencies: WhatsAppGraphDependencies | undefined,
   requireMessageId: false,
 ): Promise<WhatsAppReceiptOutcome>;
@@ -67,13 +64,11 @@ function graphPost(
 function graphPost(
   phoneNumberId: string,
   payload: Record<string, unknown>,
+  schoolToken: string | null | undefined,
   dependencies: WhatsAppGraphDependencies = {},
   requireMessageId = true,
 ): Promise<WhatsAppSendOutcome | WhatsAppReceiptOutcome> {
-  const token =
-    dependencies.token === undefined
-      ? whatsappSystemUserToken()
-      : dependencies.token;
+  const token = schoolToken === undefined ? dependencies.token : schoolToken;
   if (!token) {
     if (dependencies.localNoop ?? isLocalWhatsAppNoop()) {
       console.info(
@@ -88,7 +83,7 @@ function graphPost(
     return Promise.resolve({
       ok: false,
       kind: "missing_credentials",
-      message: "WHATSAPP_SYSTEM_USER_TOKEN is not set",
+      message: "School WhatsApp credential is missing",
     });
   }
 
@@ -186,11 +181,13 @@ function graphPost(
 export function sendWhatsAppText(
   {
     phoneNumberId,
+    token,
     to,
     text,
     callbackData,
   }: {
     phoneNumberId: string;
+    token?: string | null;
     to: string;
     text: string;
     callbackData?: string;
@@ -207,6 +204,7 @@ export function sendWhatsAppText(
       text: { body: text },
       ...(callbackData ? { biz_opaque_callback_data: callbackData } : {}),
     },
+    token,
     dependencies,
   );
 }
@@ -220,9 +218,11 @@ export function sendWhatsAppText(
 export function sendWhatsAppTypingIndicator(
   {
     phoneNumberId,
+    token,
     messageId,
   }: {
     phoneNumberId: string;
+    token?: string | null;
     messageId: string;
   },
   dependencies?: WhatsAppGraphDependencies,
@@ -235,45 +235,9 @@ export function sendWhatsAppTypingIndicator(
       message_id: messageId,
       typing_indicator: { type: "text" },
     },
+    token,
     dependencies,
     false,
-  );
-}
-
-export function sendWhatsAppTemplate(
-  {
-    phoneNumberId,
-    to,
-    templateName,
-    languageCode,
-    params,
-    callbackData,
-  }: {
-    phoneNumberId: string;
-    to: string;
-    templateName: string;
-    languageCode: string;
-    params: unknown[];
-    callbackData?: string;
-  },
-  dependencies?: WhatsAppGraphDependencies,
-): Promise<WhatsAppSendOutcome> {
-  const components = whatsappTemplateComponents(params);
-  return graphPost(
-    phoneNumberId,
-    {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to,
-      type: "template",
-      ...(callbackData ? { biz_opaque_callback_data: callbackData } : {}),
-      template: {
-        name: templateName,
-        language: { code: languageCode },
-        components,
-      },
-    },
-    dependencies,
   );
 }
 
@@ -286,12 +250,14 @@ export const WHATSAPP_INTERACTIVE_TITLE_CHAR_LIMIT = 20;
 export function sendWhatsAppInteractive(
   {
     phoneNumberId,
+    token,
     to,
     body,
     buttons,
     callbackData,
   }: {
     phoneNumberId: string;
+    token?: string | null;
     to: string;
     body: string;
     buttons: Array<{ id: string; title: string }>;
@@ -324,6 +290,7 @@ export function sendWhatsAppInteractive(
         },
       },
     },
+    token,
     dependencies,
   );
 }

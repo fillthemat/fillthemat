@@ -2,16 +2,21 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
-import { conversations, whatsappDeliveries, whatsappJobs } from "@/db/schema";
-import { findOrCreateConversation } from "@/lib/conversations/conversation-store";
+import {
+  conversations,
+  schools,
+  whatsappDeliveries,
+  whatsappJobs,
+} from "@/db/schema";
+import {
+  findConversation,
+  findOrCreateConversation,
+} from "@/lib/conversations/conversation-store";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
-import {
-  sendWhatsAppInteractive,
-  sendWhatsAppTemplate,
-  sendWhatsAppText,
-} from "./client";
+import { sendWhatsAppInteractive, sendWhatsAppText } from "./client";
+import { createWhatsAppConnection } from "./connection";
 import {
   attemptWhatsAppDeliveriesNow,
   enqueueWhatsAppDelivery,
@@ -48,6 +53,231 @@ afterAll(async () => {
 });
 
 describe("WhatsApp worker dependencies", () => {
+  it("sends exactly the fixed public-contact reply while cooling, without an Assistant conversation or duplicate reply", async () => {
+    const wamid = `wamid.cooling.${suffix}`;
+    const at = new Date();
+    const sends: string[] = [];
+    await db
+      .update(schools)
+      .set({
+        whatsappConnectionState: "cooling",
+        phone: "+12125550100",
+        publicContactEmail: "hello@school.test",
+        whatsappCoolingStartedAt: at,
+        whatsappReleaseAt: new Date(at.getTime() + 30 * 24 * 60 * 60_000),
+      })
+      .where(eq(schools.id, schoolId));
+    try {
+      const message = {
+        wamid,
+        waId: "16505550195",
+        phoneNumberId,
+        text: "confirm_booking:old-intent",
+        profileName: null,
+      };
+      await enqueueInboundJobs([message]);
+      const overrides = {
+        now: () => new Date(at.getTime() + 1000),
+        transport: {
+          async sendText(input: { text: string }) {
+            sends.push(input.text);
+            return {
+              ok: true as const,
+              kind: "local_noop" as const,
+              providerId: null,
+            };
+          },
+          async sendTemplate() {
+            throw new Error("Must not send a template");
+          },
+          async sendInteractive() {
+            throw new Error("Must not offer booking");
+          },
+        },
+      };
+      expect(
+        (await runWhatsAppWorkerOnce(randomUUID(), overrides)).jobs.done,
+      ).toBe(1);
+      expect(sends).toEqual([
+        "WhatsApp is switched off for this school. Please contact the school on +12125550100 or hello@school.test.",
+      ]);
+      await enqueueInboundJobs([message]);
+      await runWhatsAppWorkerOnce(randomUUID(), overrides);
+      expect(sends).toHaveLength(1);
+      expect(
+        await findConversation({
+          schoolId,
+          identity: { channel: "whatsapp", waId: message.waId },
+          now: at,
+        }),
+      ).toBeUndefined();
+    } finally {
+      await db
+        .delete(whatsappDeliveries)
+        .where(
+          eq(
+            whatsappDeliveries.providerIdempotencyKey,
+            `wa-cooling/${at.toISOString()}/${wamid}`,
+          ),
+        );
+      await db
+        .update(schools)
+        .set({
+          whatsappConnectionState: "live",
+          whatsappCoolingStartedAt: null,
+          whatsappReleaseAt: null,
+        })
+        .where(eq(schools.id, schoolId));
+    }
+  });
+  it.each([
+    [190, "access"],
+    [102, "access"],
+    [131042, "card"],
+    [131031, "restricted"],
+    [133010, "number"],
+  ] as const)(
+    "marks the connection broken after Meta send error %s, then suppresses replies",
+    async (code, part) => {
+      const connection = createWhatsAppConnection({ db });
+      let sends = 0;
+      const transport = {
+        async sendText() {
+          sends++;
+          return {
+            ok: false as const,
+            kind: "whatsapp_error" as const,
+            code,
+            subcode: null,
+            details: null,
+            status: 400,
+            message: "Meta refused",
+          };
+        },
+        async sendInteractive() {
+          throw new Error("No interactive expected");
+        },
+      };
+      try {
+        for (const attempt of [1, 2]) {
+          const id = await enqueueWhatsAppDelivery(
+            {
+              schoolId,
+              phoneNumberId,
+              recipientWaId: "16505550198",
+              body: "Reply",
+              windowExpiresAt: new Date("2020-01-02T12:00:00Z"),
+              providerIdempotencyKey: `broken/${code}/${attempt}/${suffix}`,
+            },
+            { now },
+          );
+          if (!id) throw new Error("Missing delivery");
+          await attemptWhatsAppDeliveriesNow([id], randomUUID(), {
+            now: () => now,
+            transport,
+          });
+          expect((await connection.read(schoolId)).state).toBe(
+            `broken-${part}`,
+          );
+        }
+        await enqueueInboundJobs([
+          {
+            wamid: `wamid.broken.${code}.${suffix}`,
+            waId: "16505550198",
+            phoneNumberId,
+            text: "Hello",
+            profileName: null,
+          },
+        ]);
+        await runWhatsAppWorkerOnce(randomUUID(), { transport });
+        expect(sends).toBe(1);
+      } finally {
+        await db
+          .update(schools)
+          .set({ whatsappConnectionState: "live" })
+          .where(eq(schools.id, schoolId));
+      }
+    },
+  );
+  it("does not send an already queued reply after the school is no longer Live", async () => {
+    const id = await enqueueWhatsAppDelivery(
+      {
+        schoolId,
+        phoneNumberId,
+        recipientWaId: "16505550197",
+        body: "Queued Assistant reply",
+        windowExpiresAt: new Date("2020-01-02T12:00:00Z"),
+        providerIdempotencyKey: `not-live-queued/${suffix}`,
+      },
+      { now },
+    );
+    if (!id) throw new Error("Missing delivery");
+    await db
+      .update(schools)
+      .set({ whatsappConnectionState: "needs-card" })
+      .where(eq(schools.id, schoolId));
+    const sends: string[] = [];
+    try {
+      const result = await attemptWhatsAppDeliveriesNow([id], randomUUID(), {
+        now: () => now,
+        transport: {
+          async sendText() {
+            sends.push("text");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+          async sendInteractive() {
+            sends.push("interactive");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+        },
+      });
+      expect(result.dead).toBe(1);
+      expect(sends).toEqual([]);
+    } finally {
+      await db
+        .update(schools)
+        .set({ whatsappConnectionState: "live" })
+        .where(eq(schools.id, schoolId));
+    }
+  });
+  it("finishes a not-Live school's inbound job without sending an Assistant reply", async () => {
+    const wamid = `wamid.not-live.${suffix}`;
+    const sends: string[] = [];
+    await db
+      .update(schools)
+      .set({ whatsappConnectionState: "needs-card" })
+      .where(eq(schools.id, schoolId));
+    try {
+      await enqueueInboundJobs([
+        {
+          wamid,
+          waId: "16505550196",
+          phoneNumberId,
+          text: "What trials are available?",
+          profileName: null,
+        },
+      ]);
+      const result = await runWhatsAppWorkerOnce(randomUUID(), {
+        transport: {
+          async sendText() {
+            sends.push("text");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+          async sendInteractive() {
+            sends.push("interactive");
+            return { ok: true, kind: "local_noop", providerId: null };
+          },
+        },
+      });
+      expect(result.jobs.done).toBe(1);
+      expect(sends).toEqual([]);
+    } finally {
+      await db
+        .update(schools)
+        .set({ whatsappConnectionState: "live" })
+        .where(eq(schools.id, schoolId));
+    }
+  });
   it("stops an unknown phone number after one execution and never claims it again", async () => {
     const dedupeKey = `unknown/${suffix}`;
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -199,9 +429,6 @@ describe("WhatsApp worker dependencies", () => {
         sendText: async () => {
           throw new Error("busy conversation must not send");
         },
-        sendTemplate: async () => {
-          throw new Error("busy conversation must not send");
-        },
         sendInteractive: async () => {
           throw new Error("busy conversation must not send");
         },
@@ -230,7 +457,7 @@ describe("WhatsApp worker dependencies", () => {
       nextAttemptAt: new Date("2020-01-01T12:00:05Z"),
     });
   });
-  it.each(["http", "text", "template", "interactive"])(
+  it.each(["http", "text", "interactive"])(
     "records %s response failures with the shared short backoff on the injected clock",
     async (type) => {
       const id = await enqueueWhatsAppDelivery(
@@ -239,7 +466,6 @@ describe("WhatsApp worker dependencies", () => {
           phoneNumberId,
           recipientWaId: "16505550003",
           body: "Hello",
-          templateName: type === "template" ? "booking_confirmation" : null,
           interactiveButtons:
             type === "interactive"
               ? [{ id: "confirm", title: "Confirm" }]
@@ -264,9 +490,10 @@ describe("WhatsApp worker dependencies", () => {
           throw new Error("unexpected retry pause");
         },
         transport: {
-          sendText: (input) => sendWhatsAppText(input, graph),
-          sendTemplate: (input) => sendWhatsAppTemplate(input, graph),
-          sendInteractive: (input) => sendWhatsAppInteractive(input, graph),
+          sendText: (input) =>
+            sendWhatsAppText({ ...input, token: "test-token" }, graph),
+          sendInteractive: (input) =>
+            sendWhatsAppInteractive({ ...input, token: "test-token" }, graph),
         },
       });
       const [row] = await db
@@ -343,9 +570,6 @@ describe("WhatsApp worker dependencies", () => {
     const result = await runWhatsAppWorkerOnce(randomUUID(), {
       transport: {
         sendText,
-        sendTemplate: async () => {
-          throw new Error("unexpected template");
-        },
         sendInteractive: async () => {
           throw new Error("unexpected interactive");
         },

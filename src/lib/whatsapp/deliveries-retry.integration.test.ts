@@ -50,7 +50,11 @@ afterEach(async () => {
   now = initialNow;
   await db
     .update(schools)
-    .set({ approvedAt: new Date() })
+    .set({
+      approvedAt: new Date(),
+      whatsappConnectionState: "live",
+      whatsappHealthUpdatedAt: null,
+    })
     .where(eq(schools.id, schoolId));
   vi.restoreAllMocks();
 });
@@ -95,7 +99,7 @@ function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
     sleep: async () => {
       throw new Error("unexpected retry loop");
     },
-    transport: { sendText: send, sendTemplate: send, sendInteractive: send },
+    transport: { sendText: send, sendInteractive: send },
   };
 }
 

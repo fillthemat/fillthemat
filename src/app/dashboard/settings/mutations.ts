@@ -1,9 +1,39 @@
 import { and, eq, type SQL, sql } from "drizzle-orm";
+import type { z } from "zod";
 import type { Database } from "@/db";
-import { faqs, trialOfferings } from "@/db/schema";
+import { faqs, schools, trialOfferings } from "@/db/schema";
 import { errorState, type SettingsFormState, successState } from "./form-state";
 import { nullToEmpty, serializeTimestamp } from "./form-utils";
-import { LIMITS } from "./schemas";
+import { LIMITS, type profileSchema } from "./schemas";
+
+export async function updateProfile(
+  db: Database,
+  schoolId: string,
+  input: z.output<typeof profileSchema> & { slug: string; timezone: string },
+): Promise<SettingsFormState> {
+  const [saved] = await db
+    .update(schools)
+    .set({ ...input, updatedAt: new Date() })
+    .where(eq(schools.id, schoolId))
+    .returning();
+  if (!saved)
+    return errorState("That school no longer exists. Refresh the page.");
+  return successState("School details saved. Your agent uses them now.", {
+    name: saved.name,
+    slug: saved.slug,
+    timezone: saved.timezone,
+    notificationEmail: saved.notificationEmail,
+    publicContactEmail: nullToEmpty(saved.publicContactEmail),
+    phone: nullToEmpty(saved.phone),
+    website: nullToEmpty(saved.website),
+    address: nullToEmpty(saved.address),
+    city: nullToEmpty(saved.city),
+    country: saved.country,
+    parkingNotes: nullToEmpty(saved.parkingNotes),
+    accessNotes: nullToEmpty(saved.accessNotes),
+    trialGuidance: nullToEmpty(saved.trialGuidance),
+  });
+}
 
 /** Compare timestamptz at millisecond precision so ISO round-trips match. */
 function matchesUpdatedAt(

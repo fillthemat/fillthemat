@@ -1,299 +1,86 @@
-# Phase 6 — WhatsApp production rollout (human-only)
+# WhatsApp pilot — first real school through self-serve onboarding
 
-**Do not paste this into a Director implementation session.** Phases 1–5 are the code. Phase 6 is
-Meta + Vercel + one pilot school. A Director sub-agent cannot register a Meta app, submit templates,
-or complete App Review.
+Operator runbook for [spec #188](https://github.com/fillthemat/fillthemat/issues/188) and [ADR-0005](adr/0005-school-owned-whatsapp-accounts.md). This replaces the [historical Phase 6 runbook](archive/whatsapp-shared-account-phase6-kickoff.md). The pilot proves the product flow, not manual SQL enablement or a shared Fillthemat WABA.
 
-After [PR #38](https://github.com/jakegoodmandev/fillthemat/pull/38) (Phase 5) is merged and migrated,
-the product path is live in stub mode. This document is the operator runbook.
+**Status: pending.** No real school was onboarded by ticket #199. Fill in the evidence below after the operator and School Owner complete it. Local fake-provider tests are not production evidence.
 
-Source of truth: `docs/whatsapp-plan.md` §3 Phase 6, §5 production checklist, decisions **C / D / G /
-D10 / D11** and §1.6 (implemented bounded retries), plus `docs/decisions/whatsapp-cron-after.md`
-(Hobby-safe daily cron; do not add a sub-daily Vercel cron on Hobby) and
-`docs/decisions/whatsapp-retry-limits-research.md` (#79 shipped policy).
+## 1. Provider prerequisites
 
----
+- Complete Fillthemat business verification, Tech Provider setup, App Review for advanced WhatsApp management/messaging permissions, and Access Verification. Budget approximately 4–6 weeks. App-role test numbers do not prove public onboarding.
+- Configure Facebook Login for Business Embedded Signup **v4**, direct Cloud API, no Solution Partner. Each customer creates/confirms their own school-owned business/WABA; never add separate businesses' numbers to one account.
+- Configure one global Meta app/webhook at `https://<site>/api/webhooks/whatsapp`: GET verification uses the chosen verify token; POST uses the separate app signing secret. Subscribe to messages/statuses and the account/phone status events handled by the broken-connection implementation. No template-status subscription or approved message templates are required.
+- Create/fund an AgentPhone account/project and server-only API key. Create a dedicated verification agent with `voiceMode: "webhook"`, English transcription (`language: "en-US"`, `sttMode: "accurate"`), no greeting/backchannel (`beginMessage: ""`, `enableBackchannel: false`), and a short silence timeout (`maxSilenceMs: 60000`). Save its ID as `AGENTPHONE_VERIFICATION_AGENT_ID`; purchases attach US SMS/voice numbers to it. Fillthemat pays rental (approximately $3/number/month); the school pays Meta messaging fees with its card.
+- Configure that agent's webhook using `POST /v1/agents/{agent_id}/webhook` with `url: "https://<site>/api/webhooks/agentphone"` and `contextLimit: 0`. Save the returned secret as `AGENTPHONE_WEBHOOK_SECRET`; **each webhook create/update rotates the secret**, requiring a coordinated environment update. A per-agent webhook overrides the project webhook. Test with `POST /v1/agents/{agent_id}/webhook/test`; inspect delivery history without sharing OTPs. See AgentPhone's [webhooks](https://docs.agentphone.ai/documentation/guides/webhooks), [numbers](https://docs.agentphone.ai/documentation/guides/phone-numbers) and [live OpenAPI](https://docs.agentphone.ai/openapi.json).
+- Numbers are tagged at purchase with the allocation UUID in unique `externalId`; retries first query `GET /v1/numbers?externalId=<allocation>`. If a POST times out or returns an ambiguous response, the connection remains Buying: reconcile the rental with support, never reset it blindly and buy twice. Confirm the live account honors `externalId` during provisioning before enabling the pilot. AgentPhone WhatsApp-beta integration is **not** used; direct Meta onboarding/messaging is unchanged (ADR-0006).
 
-## 0. What is already shipped (do not re-derive)
+## 2. Deploy configuration
 
-| Phase | In tree |
-| --- | --- |
-| 1 | `whatsapp_deliveries`, nullable `contacts.email` + unique `(school_id, phone)`, `schools.whatsapp_phone_number_id` / `whatsapp_waba_id`, `isLocalWhatsAppNoop()` |
-| 2 | `/api/webhooks/whatsapp` GET verify + POST `X-Hub-Signature-256`, wamid dedupe, replay CLI |
-| 3 | `conversations.wa_id_hash`, inbound UIMessage parts, `generatingAt` |
-| 4 | `whatsapp_jobs` worker, Graph client + noop, 24h window enforced for text/interactive; explicit utility templates only, `after()` wake, typing indicator, daily cron `0 5 * * *` |
-| 5 | intents + confirmation buttons, shared `create-lead`, `bookSlot` no-email + WA template confirmation, per-`wa_id` caps |
-| #79 | terminal `dead`, five-execution cap for WhatsApp jobs and WhatsApp/email sends, fresh/retry claim lanes, bounded in-run WhatsApp retries, stale-confirmation cutoff, owner email and one in-window prospect apology |
+Apply committed migrations using the repo's existing deployment workflow and run `bun run verify`. Before production inspection, read `docs/agents/supabase-mcp.md`; before retrieving runtime logs, read `docs/agents/production-logs.md`. Do not deploy or mutate hosted data from this checklist without operator authorization.
 
-**Toggle today:** a school is WhatsApp-routable iff `schools.whatsapp_phone_number_id` is set (unique
-when non-null). Local seed uses `LOCAL_WHATSAPP_PHONE_NUMBER_ID`. There is **no dashboard UI** for
-these columns and **no extra boolean flag**. D10's "per-school toggle" is: set or clear
-`whatsapp_phone_number_id` (and `whatsapp_waba_id`) on the pilot row. If you want an owner-facing
-settings form, that is a **separate, optional, small Director task** — not Phase 6.
+Set these in the intended deployment environment, not routinely in worktree `.env.local`:
 
----
-
-## 1. Preconditions (code)
-
-1. Merge Phase 5 and #79. Apply all committed Drizzle migrations on staging then production (including
-   job/WhatsApp/email `dead` enums, failure metadata, legacy accepted-send backfill, and new owner email kind).
-2. Confirm production/staging has the Hobby-safe cron only: `vercel.ts` → `/api/cron/whatsapp` at `0 5 * * *`.
-   D11: do **not** add a 1-minute / 5-minute cron unless you are on Pro **and** the pilot proves need.
-3. Confirm `WHATSAPP_API_VERSION` default (`src/lib/whatsapp/config.ts`, currently `v26.0`) is still a
-   live Graph version. Meta EOLs versions. If it is dead, bump the default **and** the Vercel env together.
-4. Template **names and body variable counts** in `src/lib/whatsapp/templates.ts` must match Meta
-   exactly (`en_US`):
-
-   | name | body params (order) |
-   | --- | --- |
-   | `booking_confirmation` | school, participant, offering, when |
-   | `booking_reminder` | school, participant, when |
-   | `lead_confirmation` | school |
-
-   Local render strings in that file are **not** what Meta stores. You submit real copy in Business
-   Manager; Graph send only passes the name + ordered body params.
-
-5. Optional deploy-time check (not required locally): `after()` / `waitUntil` actually runs on the
-    Vercel runtime you ship. Daily cron is the safety net if it does not.
-6. **Pre-pilot correctness gate: [#78](https://github.com/fillthemat/fillthemat/issues/78).** Customer-service
-   windows must use the verified customer's message time, not processing time. #79 does not fix that bug;
-   its apology uses original inbound receipt time, which still is not the verified Meta timestamp.
-
----
-
-## 2. Env (Vercel — never `bun run setup`)
-
-Five keys (`.env.example`). Local stays blank → stub.
-
-```
-WHATSAPP_APP_SECRET            # Meta App Secret; HMAC for X-Hub-Signature-256. NOT the verify token.
-WHATSAPP_VERIFY_TOKEN          # you invent this string; Meta GET handshake must match.
-WHATSAPP_SYSTEM_USER_TOKEN     # permanent System User token (see §3.4)
-WHATSAPP_API_VERSION           # e.g. v26.0 if still live; else the current Graph version
-WHATSAPP_GRAPH_BASE            # optional; default https://graph.facebook.com
+```text
+WHATSAPP_APP_ID
+WHATSAPP_APP_SECRET
+WHATSAPP_VERIFY_TOKEN
+WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID
+WHATSAPP_TOKEN_ENCRYPTION_KEY
+AGENTPHONE_API_KEY
+AGENTPHONE_VERIFICATION_AGENT_ID
+AGENTPHONE_WEBHOOK_SECRET
 ```
 
-Set them on the **staging** Vercel project first, then production. Do not put real tokens in
-`.env.local` on a worktree unless you are deliberately leaving stub mode.
+The encryption key is stable, server-only, 64 hex characters; retain it securely for all stored school tokens. Optional overrides: `WHATSAPP_API_VERSION` (currently defaults to `v26.0`, confirm supported at rollout) and `WHATSAPP_GRAPH_BASE`. `NEXT_PUBLIC_SITE_URL` must be the configured HTTPS origin and `CRON_SECRET` must authenticate jobs. **Remove obsolete `WHATSAPP_SYSTEM_USER_TOKEN`**: it is ignored and cannot enable a school.
 
-Also required and already used by the app: `CRON_SECRET` (cron routes), `NEXT_PUBLIC_SITE_URL`
-(must be the HTTPS origin Meta will call).
+Secrets authenticate both school identity and purpose (`token` or `pin`) using AES-GCM associated data. Pre-pilot local ciphertext from the earlier school-only format must be regenerated by repeating signup; never reuse a token ciphertext as a registration PIN.
 
----
+Inbound SMS (`agent.message`, `channel: "sms"`) and live/final voice transcripts (`agent.message` / `agent.call_ended`, `channel: "voice"`) arrive at the same endpoint. It verifies HMAC-SHA256 over `{timestamp}.{raw_body}` with constant-time comparison and a five-minute clock window. The authenticated number lookup binds the allocation and recipient; original SMS `receivedAt` or carrier call `startedAt`, current signup attempt, ten-minute expiry and durable replay checks apply. Delivery IDs are required, but not HMAC-signed: deduplication also uses signed SMS identity or call identity so changing a header cannot replay an OTP. Only an unambiguous six-digit code (including spoken digit words) reaches Settings; raw transcripts/audio URLs are never exposed to the browser or logs. Voice responses stay silent until a full code, then hang up. Ambiguous/unavailable transcription requires retrying SMS, not guessing.
 
-## 3. Meta setup (order of operations)
+**AgentPhone retention gate:** its published API has no call/transcript/message deletion endpoint, and number release keeps history. Leave the optional call-recording add-on disabled. Obtain and record founder/support confirmation of actual recording behavior, OTP transcript/SMS/webhook-delivery retention/deletion controls and applicable consent requirements **before the pilot**. Disabling the add-on is not proof that no audio is retained; the docs mention recordings can exist without an exposed URL. The app cannot promise automatic vendor OTP erasure. Monitor missing/failed callbacks and confirm original call lookup fields against a real payload; this fallback is implemented, not proof of voice reliability.
 
-Follow this order. Use cases cannot be removed once added.
+**Mandatory AgentPhone compatibility gate:** using an actual rented US number and Meta Embedded Signup, receive Meta's real six-digit OTP by **SMS and voice**, show the right short-lived code in Settings, and successfully **register that same number on direct Cloud API**. Verify delivery within ten minutes, transcript accuracy and no greeting interference. Do not infer compatibility from generic SMS/voice support, an AgentPhone test webhook or fake-provider tests. If either path or registration fails, stop rollout and work with founder support; do not adopt the WhatsApp beta as an implicit workaround.
 
-### 3.1 Meta app
+Keep Hobby-safe daily WhatsApp cron plus the inbound `after()` wake. Active runs already retry bounded failures; no sub-daily Hobby cron. Delivery counters/logs are not `cron_runs` or an infrastructure alerting service. Existing owner confirmation-failure emails are business follow-up, not operator incident alerts.
 
-1. [developers.facebook.com/apps/creation/](https://developers.facebook.com/apps/creation/)
-2. Name + contact email.
-3. Use case: **"Connect with customers through WhatsApp"**.
+## 3. No-training gate — before real WhatsApp traffic
 
-### 3.2 Business portfolio
+WhatsApp transcripts, derived/anonymized content, and pooled-school data must not train/fine-tune/improve shared models or feed shared evaluation datasets. Verify against [Meta terms §4.7](https://www.facebook.com/legal/Meta-Terms-for-WhatsApp-Business-Platform).
 
-Connect a business portfolio. Complete business verification if Meta requires it for the products
-you actually use (WABA + system user + templates).
+Record the actual production `BOOKING_AGENT_MODEL`, Gateway upstream/fallback routing, and no-training terms/account settings for every inference provider. Audit Langfuse retention, processor terms, integrations, manual/automatic dataset exports, and evaluation pipelines. ADR-0001 exports masked traces and ADR-0002 retains them: **masking and retention are not training permission**. Repository inspection alone cannot attest to external account configuration. Any model/routing/processor change must recheck this gate.
 
-### 3.3 WABA + phone number (decision C)
+## 4. Owner flow — no SQL shortcut
 
-One **shared** Fillthemat Meta app + WABA. Per-school Cloud API `phone_number_id`.
+1. Select one real School Owner and school. Approve and publish it; fill in school phone and public contact email separately from private notification email.
+2. In **Settings → WhatsApp**, enable WhatsApp. Confirm exactly one reserved US number, checklist, and retry/resume behavior. Do not replace the owner's current number.
+3. Owner opens the Meta popup, signs in, chooses/creates **their school's business/WABA**, and enters the number and six-digit OTP shown in Settings. Record observed v4 screens and SMS/voice receipt behavior without retaining the OTP or authorization code.
+4. Complete signup. Confirm school profile, correct WABA/phone assets, customer-scoped access, and actual token expiry. The owner chooses the school display name in the popup (Meta reviews it); after registration Fillthemat updates the business profile's About with the school name and its public contact email/website. Private notification email is never sent to the profile. Never paste tokens/ciphertext into rollout evidence or logs. Resolve expiry/refresh expectations before relying on long-lived access.
+5. Follow Settings' WhatsApp Manager link; the **school adds its card**. Confirm readiness reads a funded payment method and registered number, and only then reports **Live**. Record how Meta exposes payment status; do not waive this gate or write Live manually.
+6. Confirm Settings number/profile/wa.me link/QR and public page link. Meta fees go directly to the school; record actual current US reply rates instead of claiming reply-only is free.
 
-In WhatsApp → API Setup:
+## 5. Real delivery and lifecycle acceptance
 
-1. Connect or create the WhatsApp Business Account. Record **WABA ID**.
-2. Add the **pilot school's** business phone number. Record **`phone_number_id`**.
-3. Write those onto the pilot `schools` row (`whatsapp_waba_id`, `whatsapp_phone_number_id`).
-   Until that row is set, inbound webhooks for that number resolve to unknown-phone and fail closed.
+- A non-role prospect texts the school's number cold. The signed webhook routes to the right school; its Assistant replies with school-specific context, and actual delivery/read statuses reconcile. Public phone/email is offered on a human-contact request.
+- Complete a consented Lead Request, then propose and confirm a trial booking. Confirm exactly one booking on inbound replay and a **delivered plain-text confirmation within the verified inbound 24-hour window**, no template approval. Owner notification email still works.
+- In a controlled test, a confirmation whose window closes fails closed and emails the owner once; at class start it becomes stale without follow-up mail. No out-of-window template or reminder send is allowed.
+- Verify another school's token/number cannot send for this school, and owners see only their own read-only web/WhatsApp conversations and booking-intent markers.
+- Exercise card/access/restricted/number breakage using safe operator-approved procedures: Settings names the broken part, Assistant/queued sends stop, and the documented recovery works. Do not compromise live accounts just to test.
+- Switch off with the owner: record the 30-day release date and old-link/QR warning; verify only the fixed public phone/email reply during cooling. Switch on within the window and keep the number. Verify expiry/release separately without accelerating or deleting the real pilot's history. Re-enable after release must obtain a new number.
+- Switch-off is available for every switched-on setup/working/broken state, including registration in flight; all enter the same 30-day cooling period. Unfinished popup reservations (including cancellation or failure) instead expire seven days after the last signup attempt. Settings shows that deadline; the daily sweep releases expired reservations. Successful registration clears the reservation deadline. Never let a removed/expired Meta token strand a paid carrier number: release attempts Meta deregistration, records a sanitized failure in `whatsapp_deregistration_failure` if impossible, then releases the carrier rental anyway. Carrier failure retains the deadline/completed progress and clears the lease for safe retry; past conversations remain linked to the school.
 
-Do **not** create per-school WABAs or Embedded Signup in v1 (plan non-goals).
+Do not enable a second real school until the first school's acceptance is recorded. The next school uses **its own WABA, token and number**, on the same Fillthemat app/webhook.
 
-### 3.4 System User + permanent token
+## 6. Evidence record (pending)
 
-Business Settings → System users:
+| Gate | Evidence to record | Status |
+| --- | --- | --- |
+| Deployment | Commit, environment, migration verification, checks | Pending |
+| Processor no-training | Operator/date, actual providers/routing, terms/settings, tracing/export audit | Pending |
+| AgentPhone compatibility | Real Meta SMS OTP and voice OTP arrival/code display, same rented US number registers on Cloud API; no OTP retained | Pending |
+| AgentPhone retention | Founder/support confirmation of recording behavior and OTP SMS/transcript/delivery-log retention/deletion controls, consent review | Pending |
+| School goes Live | School ID, owner completion date, school-owned WABA/phone IDs, registration/funding evidence; no secrets | Pending |
+| Token lifetime | Observed expiry and refresh/reconnect requirement | Pending |
+| Popup and billing | v4 screens, OTP receipt, payment-status mechanism, current US rates | Pending |
+| Deliveries | Cold inbound, actual reply/booking-confirmation delivery, status callbacks | Pending |
+| Isolation/lifecycle | Owner history isolation, broken gates/recovery, cooling/switch-on, release test | Pending |
 
-1. Create an **admin** system user.
-2. Assign assets: app (Manage app, Full control); WhatsApp account (Manage WhatsApp Business
-   accounts, Full control).
-3. Generate a token with:
-   - `business_management`
-   - `whatsapp_business_messaging`
-   - `whatsapp_business_management`
-4. Store it as `WHATSAPP_SYSTEM_USER_TOKEN` on Vercel. Treat it as a production secret.
-
-### 3.5 Utility templates (decision G)
-
-Submit **Fillthemat-owned** shared templates, language `en_US`, names **identical** to the registry
-above. Approvals gate **out-of-window** sends (and Phase 5's no-email booking confirmation, which
-always uses `booking_confirmation`).
-
-Submit at least:
-
-- `booking_confirmation` (4 body vars)
-- `booking_reminder` (3 body vars)
-- `lead_confirmation` (1 body var)
-
-Wait for **APPROVED** before testing out-of-window or relying on no-email confirmation in prod.
-In-window free-form text still works without templates.
-
-### 3.6 Webhook
-
-Callback URL: `https://<NEXT_PUBLIC_SITE_URL>/api/webhooks/whatsapp`
-
-- GET verify: `hub.mode=subscribe` + `hub.verify_token === WHATSAPP_VERIFY_TOKEN` → 200 `text/plain`
-  challenge (already implemented).
-- Subscribe fields: `messages` and `message_template_status_update`.
-- App secret = `WHATSAPP_APP_SECRET` (HMAC). Must differ from the verify token.
-
-Meta must be able to reach this URL from the public internet. Staging Vercel origin first.
-
-### 3.7 App Review
-
-Required only if people **without a role** on the app/business will message the number. Budget this
-before a public (non-tester) rollout. Testers/roles can exercise the number before Review.
-
----
-
-## 4. Pilot school enablement (decision D / D10)
-
-Ship order is **leads first, bookings second**, **one** approved + published school.
-
-1. School is `approvedAt` + `publishedAt` (same public gate as `/s/<slug>`).
-2. Set `whatsapp_phone_number_id` + `whatsapp_waba_id` on that row only.
-3. Leave every other school null → they never match inbound `metadata.phone_number_id`.
-4. Do **not** enable a second school until the acceptance bar below is green.
-
-v1: **no WhatsApp cancellation** (decision K). Point the pilot owner at the dashboard/email cancel
-path.
-
----
-
-## 5. Acceptance bar (real Meta — not replay)
-
-All of these on **staging**, then the same on **production** with the pilot number.
-
-1. **Two-way in-window:** send a text from a test phone (app role / tester) → webhook 200, job
-   processed, reply arrives in WhatsApp. Typing indicator optional-nice.
-2. **Statuses:** outbound `whatsapp_deliveries` moves `sent` → `delivered` (and `read` if the client
-   sends it). Failed Graph sends surface `last_error`, not a silent pending.
-3. **Lead path first:** consent → `leads` row, synthesized landing session `utm_source='whatsapp'`,
-   contact upsert on `(school_id, phone)` if no email, `lead_captured` with `{channel:'whatsapp'}`,
-   owner email still fires.
-4. **Booking path second:** `prepare_booking` → interactive confirm → `bookings` row, occupancy +1,
-   no double-write on Meta retry of the same wamid. No-email contact → `booking_confirmation`
-    template enqueued (needs the template APPROVED even inside 24h; checking the row alone is not delivery).
-5. **Out-of-window template:** after 24h with no inbound (or force-closed window in a controlled
-   test), a template send succeeds once approved.
-6. **Caps:** do not load-test a real number into the daily cap; the integration tests already cover
-   429-equivalent. Spot-check that prod logging would show the notice path.
-
-Only then: production env + production webhook + production school row → **publish** (school already
-published; "publish" here means the WhatsApp number is the live customer channel). Second school is
-a later ops step: another `phone_number_id` on another row, same WABA.
-
----
-
-## 6. Retry behavior and monitoring
-
-Implemented states:
-
-- Jobs: `pending|claimed|done|failed|dead`; WhatsApp deliveries:
-  `pending|claimed|sent|delivered|read|failed|dead`; email:
-  `pending|claimed|sent|failed|delivered|bounced|complained|dead`.
-- `failed` means retryable; `dead` means no automatic retry/replay. Rows keep payload, dedupe key,
-  execution count, last error, structured failure reason/code where present and terminal cause
-  (`permanent`, `attempts_exhausted`, `stale`); active claims clear.
-- **Five started executions total** across all runs. Counts are saved before side effects, so accepted
-  sends and crashes consume the budget; a fifth success is allowed. Single-flight deferrals do not
-  consume it, and failed status callbacks do not increment it again. Delivered/read cannot regress
-  into retries, duplicate/out-of-order failures cannot reschedule a send, and dead rows cannot revive.
-- Known permanent school/mapping/window/credential failures and Meta recipient/payload/template/auth/
-  permission/policy errors stop immediately. Rate limits, temporary/network failures and unknown/no-code
-  outcomes retry within the cap. Shared classifier: `src/lib/retry-policy.ts`; matrix: the decision record.
-- Initial claims reserve **8 fresh + 2 retry jobs**, **20 + 5 WhatsApp deliveries**, and **20 + 5 email
-  deliveries**, refilling unused capacity. Each lane is oldest-first by `created_at, id` under `SKIP LOCKED`.
-- In both inbound `after()` and cron runs, initial fresh-first batches are followed by retry-only claims
-  with roughly **10/20/40/80-second** due times, within **four minutes from run entry**. The worker stops
-  when no retry is due before the deadline, does not chase new fresh arrivals, and does not cancel work
-  already started. Daily cron continues remaining work without resetting the cap. Email still uses
-  **1/2/4/8-minute** due gates and ordinary email runs/maintenance, not this fast loop. Status-only
-  callbacks do not wake the WhatsApp worker.
-- Text/interactive with a closed or missing window stops permanently; Meta's re-engagement code is
-  **`131047`**. **No generic template fallback exists.** Explicit registered utility templates are separate.
-- Booking confirmations stop stale at/after class start, without owner mail. Non-stale confirmation
-  death atomically enqueues one `owner_whatsapp_confirmation_failed` email per booking, unless class
-  has already started. Ordinary replies/other templates do not notify owners; email death never recurses.
-- Inbound transient exhaustion can enqueue one fixed in-window “trouble replying” plain-text apology,
-  deduped per job, with normal send caps and no recursive fallback. No apology for permanent failures
-  or closed windows. Its receipt-based window assumption remains subject to #78.
-
-No new product monitoring surface or operator alerting exists. For diagnosis, inspect:
-
-- `whatsapp_jobs` / `whatsapp_deliveries` stuck `claimed`, retryable `failed`, and terminal `dead` counts
-  and reasons. Stale claims recover with counts intact; exhausted claims stop, never get a fresh budget.
-- One privacy-safe `queue.dead` log per successful terminal transition: row/school IDs, machine
-  reason/code, cause, execution count and run ID; no message body, phone or raw provider ID.
-- `/api/cron/whatsapp` at 05:00 UTC returns job `{claimed, done, retrying, dead, deferred}` and delivery
-  `{claimed, sent, retrying, dead, deferred}` counters; use its Vercel logs/response. Counters aggregate
-  execution outcomes, not unique rows; inline sends are separate and recovery deaths can exceed claims.
-  The route **does not write `cron_runs`**; those rows/dashboard health are email-maintenance metrics.
-- Wamid uniqueness: duplicate Meta deliveries must no-op.
-- Per-`wa_id` caps in `src/lib/security/limits.ts` (`MAX_BOOKINGS_PER_WA_ID_PER_DAY`,
-  `MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY`) — distinct from email recipient quota.
-
-Nobody is assigned to watch these logs/rows. **No operator configuration/credential alerting** is an
-accepted pilot gap, not an implemented control. Owner booking-confirmation emails are actionable
-business notifications, not infrastructure alerts. See `docs/known-gaps.md` for the gap and deferred
-minute-scale timed wakes outside active runs.
-
----
-
-## 7. Explicit non-goals (still)
-
-- No Director re-implementation of Phases 1–5.
-- No sub-daily Vercel cron on Hobby (D11 deferred).
-- No `cancelBooking` over WhatsApp.
-- No per-school WABAs, Embedded Signup, groups, calling.
-- No email/OAuth changes.
-- Do not put production `WHATSAPP_*` in worktree `.env.local` as a matter of course.
-
----
-
-## 8. Optional follow-ups (only if you want code)
-
-These are **not** Phase 6. Each is a small, separate Director plan if you choose:
-
-1. **Dashboard WhatsApp settings** — owner (or you) can set/clear `whatsapp_phone_number_id` /
-   `whatsapp_waba_id` without SQL. Closest match to D10's "dashboard flag".
-2. **Graph version bump** — if `v26.0` is EOL at rollout.
-3. **Minute-scale timed retry wake** — Vercel Pro cron or Supabase `pg_cron`, deferred for revisit if
-   daily idle recovery is too slow (D11); active-run retries already exist.
-4. **Operator alerting** — configuration/credential failures remain logs + table only, with no assigned
-   watcher. Define a recipient, dedupe and recursion policy before adding alerts.
-
----
-
-## 9. Operator checklist (copy/paste)
-
-```
-[ ] Phase 5 + #79 merged; all committed Drizzle migrations applied on staging then prod
-[ ] #78 verified inbound-message window timestamp fix shipped before pilot
-[ ] Accepted operator-alerting gap understood; WhatsApp logs/counters are not maintenance cron_runs
-[ ] Graph version still live; WHATSAPP_API_VERSION set to match
-[ ] Meta app + WhatsApp use case
-[ ] Business portfolio (+ verification if required)
-[ ] WABA + pilot phone_number_id recorded
-[ ] System User token on Vercel (staging)
-[ ] Templates submitted; booking_confirmation APPROVED before no-email / out-of-window
-[ ] Webhook URL + verify token + app secret; fields messages + message_template_status_update
-[ ] Staging: two-way in-window message
-[ ] Staging: delivery statuses
-[ ] Staging: lead on WhatsApp
-[ ] Staging: booking on WhatsApp (then out-of-window template)
-[ ] Pilot school row: approved+published + whatsapp_* columns set; all other schools null
-[ ] Same env + webhook on production
-[ ] Production smoke on a tester number
-[ ] App Review if non-role users will write in
-[ ] Second school: later, new phone_number_id only
-```
+The operator must attach redacted evidence and sign off these gates. This runbook is not proof that the first real school is already Live or that external vendors' no-training settings have been verified.

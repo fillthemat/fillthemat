@@ -6,6 +6,7 @@ export const SECTION_IDS = [
   "faqs",
   "agent",
   "branding",
+  "whatsapp",
 ] as const;
 
 export type SectionId = (typeof SECTION_IDS)[number];
@@ -54,6 +55,7 @@ export const SECTIONS: readonly SectionMeta[] = [
     label: "Branding",
     title: "Branding",
   },
+  { id: "whatsapp", label: "WhatsApp", title: "WhatsApp" },
 ] as const;
 
 export const DEFAULT_SECTION: SectionId = "profile";

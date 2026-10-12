@@ -72,7 +72,12 @@ TURNSTILE_SECRET_KEY=
 BOOKING_AGENT_MODEL=
 WHATSAPP_APP_SECRET=
 WHATSAPP_VERIFY_TOKEN=
-WHATSAPP_SYSTEM_USER_TOKEN=
+WHATSAPP_TOKEN_ENCRYPTION_KEY=
+WHATSAPP_APP_ID=
+WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID=
+AGENTPHONE_API_KEY=
+AGENTPHONE_VERIFICATION_AGENT_ID=
+AGENTPHONE_WEBHOOK_SECRET=
 WHATSAPP_API_VERSION=
 WHATSAPP_GRAPH_BASE=
 ```
@@ -83,7 +88,7 @@ Notes:
 - `BOOKING_AGENT_MODEL` is required unless the team has paid Gateway access to `anthropic/claude-sonnet-4.6`. Locally a free-tier-allowed model was needed. Set the same model in Vercel.
 - `DIRECT_URL` is required for the Production build's migrations, not the serverless runtime. Preview does not need migration credentials; keep this credential scoped to Production.
 - Generate `RESEND_WEBHOOK_SECRET` from the Resend dashboard when you create the webhook, then paste it into Vercel.
-- WhatsApp env vars are **optional until WhatsApp rolls out in production**. Leave them unset: the webhook/worker use dev-stub values only when `NODE_ENV !== "production"`; production fails closed when they are missing once the feature ships. `WHATSAPP_API_VERSION` defaults to `v23.0` and `WHATSAPP_GRAPH_BASE` to `https://graph.facebook.com`; set them only to override. Meta app/use-case setup belongs to the Phase 6 human rollout, not this deploy doc.
+- WhatsApp env vars are **optional until WhatsApp rolls out in production**. The webhook/worker use dev-stub values only outside production; production fails closed. `WHATSAPP_API_VERSION` defaults to `v26.0` and `WHATSAPP_GRAPH_BASE` to `https://graph.facebook.com`. Every school must onboard its own WABA/customer token through Settings; a shared system-user token is obsolete. Follow `docs/whatsapp-phase6-kickoff.md` for provider setup, key handling and the first real-school/no-training gates.
 
 Pull is optional; do not overwrite `.env.local` OIDC token carelessly:
 

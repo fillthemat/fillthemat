@@ -6,19 +6,33 @@ import {
   schools,
   type WhatsAppDelivery,
 } from "@/db/schema";
+import { BOOKING_CONFIRMATION_DELIVERY_PREFIX } from "./confirmation";
 
 type Database = ReturnType<typeof getDb>;
 export type DeliveryTransaction = Parameters<
   Parameters<Database["transaction"]>[0]
 >[0];
 
+function isBookingConfirmation(delivery: WhatsAppDelivery): boolean {
+  if (!delivery.bookingId) return false;
+  // Recognize pending legacy confirmations too, without consulting the shared
+  // template registry. Other booking-linked replies must not trigger alerts.
+  if (delivery.templateName)
+    return delivery.templateName === "booking_confirmation";
+  return (
+    !delivery.interactiveButtons?.length &&
+    delivery.providerIdempotencyKey.startsWith(
+      BOOKING_CONFIRMATION_DELIVERY_PREFIX,
+    )
+  );
+}
+
 export async function bookingConfirmationIsStale(
   delivery: WhatsAppDelivery,
   now: Date,
   db: Database | DeliveryTransaction = getDb(),
 ): Promise<boolean> {
-  if (!delivery.bookingId || delivery.templateName !== "booking_confirmation")
-    return false;
+  if (!isBookingConfirmation(delivery) || !delivery.bookingId) return false;
   const [booking] = await db
     .select({ startAt: bookings.startAt })
     .from(bookings)
@@ -39,8 +53,7 @@ export async function onWhatsAppDeliveryDead(
   if (
     delivery.state !== "dead" ||
     delivery.terminalCause === "stale" ||
-    !delivery.bookingId ||
-    delivery.templateName !== "booking_confirmation"
+    !isBookingConfirmation(delivery)
   )
     return;
   if (await bookingConfirmationIsStale(delivery, now, tx)) return;
@@ -72,7 +85,7 @@ export async function onWhatsAppDeliveryConfirmed(
 ): Promise<void> {
   if (
     !delivery.bookingId ||
-    delivery.templateName !== "booking_confirmation" ||
+    !isBookingConfirmation(delivery) ||
     !["delivered", "read"].includes(delivery.state)
   )
     return;

@@ -18,6 +18,7 @@ const input: AssistantInput = {
     city: null,
     address: null,
     phone: null,
+    publicContactEmail: null,
     website: null,
     parkingNotes: null,
     accessNotes: null,

@@ -49,7 +49,7 @@ const dependencies = {
   sleep: async () => {
     throw new Error("unexpected sleep");
   },
-  transport: { sendText: send, sendTemplate: send, sendInteractive: send },
+  transport: { sendText: send, sendInteractive: send },
 };
 
 beforeAll(async () => {
@@ -57,6 +57,8 @@ beforeAll(async () => {
     await seedSchool(sql, {
       ownerId,
       name: "Callback Retry School",
+      whatsappConnectionState: "live",
+      whatsappPhoneNumberId: `callback-${suffix}`,
       slug: `sr-${suffix}`,
       offerings: [{ name: "BJJ" }],
     })

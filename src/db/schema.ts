@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { getTableColumns, sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   boolean,
@@ -16,6 +16,28 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const appSchema = pgSchema("app");
+export const whatsappConnectionStateEnum = appSchema.enum(
+  "whatsapp_connection_state",
+  [
+    "off",
+    "buying",
+    "popup",
+    "cancelled",
+    "popup-failed",
+    "failed",
+    "needs-card",
+    "registering",
+    "live",
+    "cooling",
+    "released",
+    "broken-card",
+    "broken-access",
+    "broken-restricted",
+    "broken-number",
+  ],
+);
+export type WhatsAppConnectionState =
+  (typeof whatsappConnectionStateEnum.enumValues)[number];
 export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 
 export const bookingStatusEnum = appSchema.enum("booking_status", [
@@ -76,6 +98,11 @@ export const conversationEndReasonEnum = appSchema.enum(
   ["inactivity", "message_limit"],
 );
 
+export const conversationChannelEnum = appSchema.enum("conversation_channel", [
+  "web",
+  "whatsapp",
+]);
+
 export const cronResultEnum = appSchema.enum("cron_result", [
   "success",
   "error",
@@ -112,8 +139,52 @@ export const schools = appSchema.table(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     previewedAt: timestamp("previewed_at", { withTimezone: true }),
     notificationEmail: text("notification_email").notNull(),
+    publicContactEmail: text("public_contact_email"),
     whatsappPhoneNumberId: text("whatsapp_phone_number_id"),
     whatsappWabaId: text("whatsapp_waba_id"),
+    whatsappTokenEncrypted: text("whatsapp_token_encrypted"),
+    whatsappTokenExpiresAt: timestamp("whatsapp_token_expires_at", {
+      withTimezone: true,
+    }),
+    whatsappConnectionState: whatsappConnectionStateEnum(
+      "whatsapp_connection_state",
+    )
+      .notNull()
+      .default("off"),
+    whatsappNumber: text("whatsapp_number"),
+    whatsappProfileName: text("whatsapp_profile_name"),
+    whatsappCoolingStartedAt: timestamp("whatsapp_cooling_started_at", {
+      withTimezone: true,
+    }),
+    whatsappReleaseAt: timestamp("whatsapp_release_at", { withTimezone: true }),
+    whatsappReleaseClaimedAt: timestamp("whatsapp_release_claimed_at", {
+      withTimezone: true,
+    }),
+    whatsappDeregisteredAt: timestamp("whatsapp_deregistered_at", {
+      withTimezone: true,
+    }),
+    whatsappDeregistrationFailure: text("whatsapp_deregistration_failure"),
+    whatsappHealthUpdatedAt: timestamp("whatsapp_health_updated_at", {
+      withTimezone: true,
+    }),
+    whatsappProviderResourceId: text("whatsapp_provider_resource_id"),
+    whatsappAllocationId: uuid("whatsapp_allocation_id"),
+    whatsappSignupAttemptId: uuid("whatsapp_signup_attempt_id"),
+    whatsappSignupStartedAt: timestamp("whatsapp_signup_started_at", {
+      withTimezone: true,
+    }),
+    whatsappVerificationCode: text("whatsapp_verification_code"),
+    whatsappVerificationExpiresAt: timestamp(
+      "whatsapp_verification_expires_at",
+      { withTimezone: true },
+    ),
+    whatsappVerificationMessageIds: text("whatsapp_verification_message_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    whatsappRegistrationPinEncrypted: text(
+      "whatsapp_registration_pin_encrypted",
+    ),
     phone: text("phone"),
     website: text("website"),
     address: text("address"),
@@ -136,6 +207,9 @@ export const schools = appSchema.table(
     uniqueIndex("schools_whatsapp_phone_number_id_unique")
       .on(t.whatsappPhoneNumberId)
       .where(sql`${t.whatsappPhoneNumberId} IS NOT NULL`),
+    uniqueIndex("schools_whatsapp_provider_resource_id_unique")
+      .on(t.whatsappProviderResourceId)
+      .where(sql`${t.whatsappProviderResourceId} IS NOT NULL`),
     check(
       "schools_slug_format",
       sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(${t.slug}) BETWEEN 3 AND 48`,
@@ -376,6 +450,7 @@ export const conversations = appSchema.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     schoolId: uuid("school_id").notNull(),
+    channel: conversationChannelEnum("channel").notNull(),
     landingSessionId: uuid("landing_session_id"),
     contactId: uuid("contact_id"),
     resumeTokenHash: text("resume_token_hash").notNull(),
@@ -780,7 +855,33 @@ export const cronRuns = appSchema.table("cron_runs", {
 });
 
 export type User = typeof users.$inferSelect;
-export type School = typeof schools.$inferSelect;
+// General school readers must not load credentials into page/client props.
+const {
+  whatsappTokenEncrypted: _whatsappTokenEncrypted,
+  whatsappTokenExpiresAt: _whatsappTokenExpiresAt,
+  whatsappVerificationCode: _whatsappVerificationCode,
+  whatsappVerificationExpiresAt: _whatsappVerificationExpiresAt,
+  whatsappVerificationMessageIds: _whatsappVerificationMessageIds,
+  whatsappRegistrationPinEncrypted: _whatsappRegistrationPinEncrypted,
+  whatsappSignupAttemptId: _whatsappSignupAttemptId,
+  whatsappSignupStartedAt: _whatsappSignupStartedAt,
+  whatsappDeregistrationFailure: _whatsappDeregistrationFailure,
+  ...schoolDetailsColumns
+} = getTableColumns(schools);
+
+export { schoolDetailsColumns };
+export type School = Omit<
+  typeof schools.$inferSelect,
+  | "whatsappTokenEncrypted"
+  | "whatsappTokenExpiresAt"
+  | "whatsappVerificationCode"
+  | "whatsappVerificationExpiresAt"
+  | "whatsappVerificationMessageIds"
+  | "whatsappRegistrationPinEncrypted"
+  | "whatsappSignupAttemptId"
+  | "whatsappSignupStartedAt"
+  | "whatsappDeregistrationFailure"
+>;
 export type Faq = typeof faqs.$inferSelect;
 export type TrialOffering = typeof trialOfferings.$inferSelect;
 export type TrialWindow = typeof trialWindows.$inferSelect;

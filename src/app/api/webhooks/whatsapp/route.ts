@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
-import { sendWhatsAppTypingIndicator } from "@/lib/whatsapp/client";
 import {
   WHATSAPP_MAX_BODY_BYTES,
   whatsappAppSecret,
   whatsappVerifyToken,
 } from "@/lib/whatsapp/config";
+import { createWhatsAppConnection } from "@/lib/whatsapp/connection";
 import { applyWhatsAppStatuses } from "@/lib/whatsapp/deliveries";
+import { sendInboundWhatsAppTypingIndicator } from "@/lib/whatsapp/inbound";
 import { enqueueInboundJobs } from "@/lib/whatsapp/jobs";
 import { parseInboundWhatsAppMessages } from "@/lib/whatsapp/parse";
 import { verifyWhatsAppSignature } from "@/lib/whatsapp/signature";
@@ -61,13 +62,21 @@ export async function POST(request: Request) {
   }
 
   // Enqueue-then-ack (decision D12): the webhook never runs the agent. Inbound
-  // messages become `whatsapp_jobs` rows (idempotent by wamid) for the worker;
-  // status callbacks are applied directly by `provider_id` (wamid). Ack 200 fast
-  // for small/unknown events and best-effort statuses, but return 500 if inbound
-  // enqueue fails so Meta redelivers safely using the wamid dedupe key.
+  // messages become `whatsapp_jobs` rows (idempotent by wamid) for the worker.
   const statuses = parseInboundWhatsAppStatuses(payload);
   const messages = parseInboundWhatsAppMessages(payload);
 
+  // Apply account-health updates before acknowledging; Meta should retry if these
+  // durable lifecycle writes fail.
+  try {
+    await createWhatsAppConnection().handleAccountUpdates(payload);
+  } catch {
+    console.error(JSON.stringify({ event: "whatsapp_webhook_apply_failed" }));
+    return Response.json({ error: "apply_failed" }, { status: 503 });
+  }
+
+  // Status callbacks are best-effort; inbound enqueue failures must be retried
+  // by Meta. The wamid dedupe key makes that retry safe.
   try {
     if (statuses.length > 0) await applyWhatsAppStatuses(statuses);
   } catch (error) {
@@ -86,7 +95,7 @@ export async function POST(request: Request) {
     console.error(
       JSON.stringify({
         event: "whatsapp_webhook_enqueue_failed",
-        // Database error messages may contain query parameters (contact PII).
+        // Database errors can contain query parameters (contact PII).
         error: error instanceof Error ? error.name : "unknown",
         messageCount: messages.length,
         wamids: messages.map((message) => message.wamid),
@@ -95,18 +104,10 @@ export async function POST(request: Request) {
     return Response.json({ error: "enqueue_failed" }, { status: 500 });
   }
 
-  // Only mark read + show typing after new inbound messages are durable.
-  // A fully deduplicated Meta retry must not repeat these signals.
-  // Best-effort so Meta's 200 is never hard-gated on the Graph call.
+  // Mark read/show typing only after newly received inbound messages are durable.
+  // Fully deduplicated Meta retries must not repeat these signals.
   if (enqueued > 0) {
-    await Promise.allSettled(
-      messages.map((message) =>
-        sendWhatsAppTypingIndicator({
-          phoneNumberId: message.phoneNumberId,
-          messageId: message.wamid,
-        }),
-      ),
-    );
+    await Promise.allSettled(messages.map(sendInboundWhatsAppTypingIndicator));
   }
 
   // Wake the worker after the 200 flushes so inbound messages are answered

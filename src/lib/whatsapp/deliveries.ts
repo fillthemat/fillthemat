@@ -36,12 +36,15 @@ import {
   onWhatsAppDeliveryConfirmed,
   onWhatsAppDeliveryDead,
 } from "./confirmation-delivery";
+import { createWhatsAppConnection } from "./connection";
+import { coolingReply, coolingReplyPrefix } from "./cooling-reply";
+import { resolveSchoolSecret } from "./credentials";
 import {
   type WhatsAppWorkerDependencies,
   whatsappWorkerDependencies,
 } from "./dependencies";
+import { brokenPartFromMetaCode } from "./health";
 import type { InboundWhatsAppStatus } from "./status";
-import { WHATSAPP_TEMPLATE_LANGUAGE } from "./templates";
 
 function ownedClaim(delivery: WhatsAppDelivery) {
   return ownedQueueClaim(whatsappDeliveries, delivery);
@@ -117,12 +120,7 @@ async function failDelivery(
 
 export type WhatsappDeliveryPlan =
   | { type: "text" }
-  | {
-      type: "template";
-      templateName: string;
-      languageCode: string;
-      params: unknown[];
-    }
+  | { type: "template_retired" }
   | {
       type: "interactive";
       body: string;
@@ -131,12 +129,8 @@ export type WhatsappDeliveryPlan =
   | { type: "window_closed" };
 
 /**
- * Decide how a delivery should be sent: an explicit template always goes as a
- * template; then an interactive message (reply buttons); otherwise free-form
- * text is allowed only while the 24h customer-service window is open.
- * Closed-window free-form/interactive replies have no Meta-approved template
- * equivalent in v1, so they fail closed instead of sending an out-of-window
- * message.
+ * Replies only: legacy templates fail closed while retained for history.
+ * Text and interactive replies require an open customer-service window.
  */
 export function planWhatsAppDelivery(
   delivery: {
@@ -149,14 +143,7 @@ export function planWhatsAppDelivery(
   now = new Date(),
 ): WhatsappDeliveryPlan {
   if (delivery.templateName) {
-    return {
-      type: "template",
-      templateName: delivery.templateName,
-      languageCode: WHATSAPP_TEMPLATE_LANGUAGE,
-      params: Array.isArray(delivery.templateParams)
-        ? delivery.templateParams
-        : [],
-    };
+    return { type: "template_retired" };
   }
   if (delivery.interactiveButtons && delivery.interactiveButtons.length > 0) {
     if (!windowOpen(delivery.windowExpiresAt, now)) {
@@ -344,6 +331,31 @@ export async function sendWhatsAppDelivery(
       dependencies.now(),
     );
   }
+  const coolingNotice =
+    school.whatsappConnectionState === "cooling" &&
+    school.whatsappCoolingStartedAt &&
+    school.whatsappReleaseAt &&
+    school.whatsappReleaseAt > dependencies.now() &&
+    !school.whatsappReleaseClaimedAt &&
+    delivery.providerIdempotencyKey.startsWith(
+      coolingReplyPrefix(school.whatsappCoolingStartedAt),
+    ) &&
+    !delivery.templateName &&
+    !delivery.interactiveButtons &&
+    delivery.body === coolingReply(school);
+  if (
+    school.whatsappPhoneNumberId !== delivery.phoneNumberId ||
+    (school.whatsappConnectionState !== "live" && !coolingNotice) ||
+    (school.whatsappConnectionState === "live" &&
+      delivery.providerIdempotencyKey.startsWith("wa-cooling/"))
+  ) {
+    return failDelivery(
+      delivery,
+      { kind: "internal", reason: "school_not_live" },
+      "school_not_live",
+      dependencies.now(),
+    );
+  }
 
   const plan = planWhatsAppDelivery(
     {
@@ -355,11 +367,11 @@ export async function sendWhatsAppDelivery(
     },
     dependencies.now(),
   );
-  if (plan.type === "window_closed") {
+  if (plan.type === "window_closed" || plan.type === "template_retired") {
     return failDelivery(
       delivery,
-      { kind: "internal", reason: "window_closed" },
-      "window_closed",
+      { kind: "internal", reason: plan.type },
+      plan.type,
       dependencies.now(),
     );
   }
@@ -391,30 +403,52 @@ export async function sendWhatsAppDelivery(
 
   let outcome: WhatsAppSendOutcome;
   try {
-    outcome =
-      plan.type === "template"
-        ? await dependencies.transport.sendTemplate({
+    const credential = resolveSchoolSecret(
+      {
+        id: school.id,
+        encrypted: school.whatsappTokenEncrypted,
+        expiresAt: school.whatsappTokenExpiresAt,
+      },
+      "token",
+      dependencies.now(),
+    );
+    if (!credential.ok && credential.code === "expired_secret") {
+      const result = await failDelivery(
+        delivery,
+        { kind: "internal", reason: "send_failed" },
+        credential.code,
+        dependencies.now(),
+      );
+      if (result !== "deferred")
+        await createWhatsAppConnection({ now: dependencies.now }).markBroken(
+          school.id,
+          "access",
+          {
             phoneNumberId: delivery.phoneNumberId,
+            tokenEncrypted: school.whatsappTokenEncrypted,
+          },
+        );
+      return result;
+    }
+    const token = credential.ok ? credential.secret : null;
+    const callbackData = `${delivery.id}:${delivery.attempts}`;
+    outcome =
+      plan.type === "interactive"
+        ? await dependencies.transport.sendInteractive({
+            phoneNumberId: delivery.phoneNumberId,
+            token,
             to: delivery.recipientWaId,
-            templateName: plan.templateName,
-            languageCode: plan.languageCode,
-            params: plan.params,
-            callbackData: `${delivery.id}:${delivery.attempts}`,
+            body: plan.body,
+            buttons: plan.buttons,
+            callbackData,
           })
-        : plan.type === "interactive"
-          ? await dependencies.transport.sendInteractive({
-              phoneNumberId: delivery.phoneNumberId,
-              to: delivery.recipientWaId,
-              body: plan.body,
-              buttons: plan.buttons,
-              callbackData: `${delivery.id}:${delivery.attempts}`,
-            })
-          : await dependencies.transport.sendText({
-              phoneNumberId: delivery.phoneNumberId,
-              to: delivery.recipientWaId,
-              text: delivery.body ?? "",
-              callbackData: `${delivery.id}:${delivery.attempts}`,
-            });
+        : await dependencies.transport.sendText({
+            phoneNumberId: delivery.phoneNumberId,
+            token,
+            to: delivery.recipientWaId,
+            text: delivery.body ?? "",
+            callbackData,
+          });
   } catch (error) {
     const message = error instanceof Error ? error.message : "send_failed";
     return failDelivery(
@@ -426,12 +460,32 @@ export async function sendWhatsAppDelivery(
   }
 
   if (!outcome.ok) {
+    const part =
+      outcome.kind === "whatsapp_error"
+        ? brokenPartFromMetaCode(outcome.code)
+        : null;
     const lastError = `${
       outcome.kind === "whatsapp_error" && outcome.code != null
         ? `${outcome.code}: `
         : ""
     }${outcome.message}`.slice(0, 500);
-    return failDelivery(delivery, outcome, lastError, dependencies.now());
+    const result = await failDelivery(
+      delivery,
+      outcome,
+      lastError,
+      dependencies.now(),
+    );
+    // A fenced-out sender must not mutate account health either.
+    if (part && result !== "deferred")
+      await createWhatsAppConnection({ now: dependencies.now }).markBroken(
+        school.id,
+        part,
+        {
+          phoneNumberId: delivery.phoneNumberId,
+          tokenEncrypted: school.whatsappTokenEncrypted,
+        },
+      );
+    return result;
   }
 
   const providerId =
@@ -733,6 +787,18 @@ export async function applyWhatsAppStatuses(
       if (confirmed) await onWhatsAppDeliveryConfirmed(tx, confirmed);
     });
     // Only an actual terminal transition may log or enqueue a notification.
+    if (transitioned?.failureReason === "whatsapp_error") {
+      const part = brokenPartFromMetaCode(transitioned.failureCode);
+      if (part)
+        await createWhatsAppConnection({ now: clock }).markBroken(
+          transitioned.schoolId,
+          part,
+          {
+            phoneNumberId: transitioned.phoneNumberId,
+            at: transitioned.statusAt ?? transitioned.sentAt ?? clock(),
+          },
+        );
+    }
     if (transitioned?.state === "dead")
       logDeadTransition(
         deadEventFrom(transitioned, "whatsapp_delivery", "status_callback"),

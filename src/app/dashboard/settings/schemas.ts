@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isValidTimezone } from "@/lib/timezones";
-import { slugSchema } from "@/lib/validation";
+import { emailSchema, slugSchema } from "@/lib/validation";
 
 /** Limits mirrored in the UI so owners see counters before the server rejects. */
 export const LIMITS = {
@@ -78,6 +78,11 @@ export const profileSchema = z.object({
     .toLowerCase()
     .max(254, "That email address is too long.")
     .pipe(z.email("Enter an email address we can notify.")),
+  publicContactEmail: z
+    .string()
+    .trim()
+    .pipe(z.union([z.literal(""), emailSchema]))
+    .transform((value) => value || null),
   phone: optional(LIMITS.phone, "That phone number is too long."),
   website: optional(LIMITS.website, "That web address is too long.").refine(
     (value) => value == null || /^https?:\/\/\S+\.\S+/.test(value),

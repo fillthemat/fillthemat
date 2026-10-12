@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
 import {
@@ -124,6 +124,7 @@ async function makeConversation(waId: string): Promise<string> {
     .insert(conversations)
     .values({
       schoolId,
+      channel: "whatsapp",
       resumeTokenHash: hashToken(randomToken()),
       waIdHash,
       expiresAt: addDays(new Date(), 30),
@@ -174,6 +175,7 @@ beforeAll(async () => {
       timezone: "America/New_York",
       notificationEmail: `wa-bk-${suffix}@local.test`,
       whatsappPhoneNumberId: phoneNumberId,
+      whatsappConnectionState: "live",
       approvedAt: new Date(),
       publishedAt: new Date(),
     })
@@ -308,26 +310,22 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       ).status,
     ).toBe(200);
     const workerNow = new Date();
+    const sendText = vi.fn(async () => ({
+      ok: true as const,
+      kind: "accepted" as const,
+      providerId: `fake-text:${suffix}`,
+    }));
     await runWhatsAppWorkerOnce(randomUUID(), {
       now: () => new Date(workerNow),
       sleep: async () => {
         throw new Error("unexpected booking pause");
       },
       transport: {
-        sendText: async () => ({
-          ok: true,
-          kind: "accepted",
-          providerId: `fake-text:${suffix}`,
-        }),
+        sendText,
         sendInteractive: async () => ({
           ok: true,
           kind: "accepted",
           providerId: `fake-interactive:${suffix}`,
-        }),
-        sendTemplate: async () => ({
-          ok: true,
-          kind: "accepted",
-          providerId: `fake-booking:${suffix}`,
         }),
       },
     });
@@ -378,14 +376,26 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       .select()
       .from(whatsappDeliveries)
       .where(eq(whatsappDeliveries.bookingId, booking.id));
-    const templateDelivery = deliveries.find(
-      (row) => row.templateName === "booking_confirmation",
-    );
-    expect(templateDelivery).toBeTruthy();
-    expect(templateDelivery?.state).toBe("sent");
-    expect(templateDelivery?.recipientWaId).toBe(waA);
-    expect(templateDelivery?.providerId).toBe(`fake-booking:${suffix}`);
-    expect(templateDelivery?.sentAt).toEqual(workerNow);
+    expect(deliveries).toHaveLength(1);
+    const confirmationDelivery = deliveries[0];
+    expect(confirmationDelivery).toMatchObject({
+      templateName: null,
+      templateParams: null,
+      state: "sent",
+      recipientWaId: waA,
+      providerId: `fake-text:${suffix}`,
+      sentAt: workerNow,
+      body: expect.stringMatching(
+        /^Booked! Alex's trial for Kids beginner trial/,
+      ),
+    });
+    expect(sendText).toHaveBeenCalledWith({
+      phoneNumberId,
+      token: null,
+      callbackData: expect.any(String),
+      to: waA,
+      text: confirmationDelivery.body,
+    });
 
     const ownerEmails = await db
       .select()

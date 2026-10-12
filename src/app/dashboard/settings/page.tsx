@@ -1,6 +1,9 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { requireOwnedSchool } from "@/lib/auth/current-school";
 import { listTimezones } from "@/lib/timezones";
+import { whatsappApiVersion } from "@/lib/whatsapp/config";
+import { createWhatsAppConnection } from "@/lib/whatsapp/connection";
+import { whatsappShareLink } from "@/lib/whatsapp/sharing";
 import { serializeTimestamp } from "./form-utils";
 import { formatTimezone } from "./format";
 import { loadFaqs, loadOfferings, loadWindows } from "./queries";
@@ -12,7 +15,9 @@ import { OfferingsSection } from "./sections/offerings-section";
 import { PricingSection } from "./sections/pricing-section";
 import { ProfileSection } from "./sections/profile-section";
 import { ScheduleSection } from "./sections/schedule-section";
+import { WhatsAppSection } from "./sections/whatsapp-section";
 import { SettingsShell } from "./settings-shell";
+import { whatsAppSettingsView } from "./whatsapp-view";
 
 export default async function SettingsPage({
   searchParams,
@@ -63,6 +68,37 @@ async function SectionContent({
   school: Awaited<ReturnType<typeof requireOwnedSchool>>["school"];
   location: string | null;
 }) {
+  if (section === "whatsapp") {
+    const connection = await createWhatsAppConnection().read(schoolId);
+    const shareLink = whatsappShareLink(connection);
+    // Generate locally on the server, not with a third-party QR tracking service.
+    const qrDataUrl = shareLink
+      ? await (await import("qrcode")).toDataURL(shareLink, {
+          width: 240,
+          margin: 4,
+        })
+      : null;
+    return (
+      <WhatsAppSection
+        connection={whatsAppSettingsView(connection)}
+        qrDataUrl={qrDataUrl}
+        signupConfig={
+          process.env.WHATSAPP_APP_ID &&
+          process.env.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID &&
+          process.env.WHATSAPP_APP_SECRET &&
+          /^[a-fA-F0-9]{64}$/.test(
+            process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY ?? "",
+          )
+            ? {
+                appId: process.env.WHATSAPP_APP_ID,
+                configId: process.env.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID,
+                version: whatsappApiVersion(),
+              }
+            : null
+        }
+      />
+    );
+  }
   if (section === "profile") {
     const published = school.publishedAt != null;
     return (
@@ -74,6 +110,7 @@ async function SectionContent({
           slug: school.slug,
           timezone: school.timezone,
           notificationEmail: school.notificationEmail,
+          publicContactEmail: school.publicContactEmail ?? "",
           phone: school.phone ?? "",
           website: school.website ?? "",
           address: school.address ?? "",

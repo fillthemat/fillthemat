@@ -137,6 +137,7 @@ async function startConversation(waId: string) {
     .insert(conversations)
     .values({
       schoolId,
+      channel: "whatsapp",
       resumeTokenHash: hashToken(randomToken()),
       waIdHash: hashWaId(waId),
       expiresAt: addDays(new Date(), 30),
@@ -787,9 +788,6 @@ describe("a failed attempt at a WhatsApp turn", () => {
               kind: "accepted",
               providerId: `trace-${suffix}`,
             }),
-            sendTemplate: async () => {
-              throw new Error("unexpected template");
-            },
             sendInteractive: async () => {
               throw new Error("unexpected interactive");
             },

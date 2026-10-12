@@ -1,13 +1,102 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   sendWhatsAppInteractive,
-  sendWhatsAppTemplate,
   sendWhatsAppText,
   sendWhatsAppTypingIndicator,
   WHATSAPP_WINDOW_CLOSED_CODE,
 } from "./client";
 
 describe("WhatsApp Graph sends", () => {
+  it("never uses a shared environment token when the school credential is missing", async () => {
+    vi.stubEnv("WHATSAPP_SYSTEM_USER_TOKEN", "legacy-shared-token");
+    const request = vi.fn(async () =>
+      Response.json({ messages: [{ id: "unexpected" }] }),
+    );
+    try {
+      expect(
+        await sendWhatsAppText(
+          { phoneNumberId: "school-phone", to: "recipient", text: "Hello" },
+          { fetch: request, localNoop: false },
+        ),
+      ).toMatchObject({ ok: false, kind: "missing_credentials" });
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("does not replace an explicitly missing school credential with an injected token", async () => {
+    const request = vi.fn(async () =>
+      Response.json({ messages: [{ id: "unexpected" }] }),
+    );
+    expect(
+      await sendWhatsAppText(
+        {
+          phoneNumberId: "school-phone",
+          token: null,
+          to: "recipient",
+          text: "Hello",
+        },
+        { token: "other-token", fetch: request, localNoop: false },
+      ),
+    ).toMatchObject({ ok: false, kind: "missing_credentials" });
+    expect(request).not.toHaveBeenCalled();
+  });
+  it("uses the school credential rather than a shared Graph token", async () => {
+    let authorization: string | null = null;
+    await sendWhatsAppText(
+      {
+        phoneNumberId: "school-a-phone",
+        to: "recipient",
+        text: "Hello",
+        token: "school-a-token",
+      },
+      {
+        token: "shared-token",
+        fetch: async (_url, init) => {
+          authorization = new Headers(init?.headers).get("authorization");
+          return Response.json({ messages: [{ id: "wamid.accepted" }] });
+        },
+      },
+    );
+    expect(authorization).toBe("Bearer school-a-token");
+  });
+  it.each(["interactive", "typing"])(
+    "uses the school credential for %s calls too",
+    async (type) => {
+      let authorization: string | null = null;
+      const dependencies = {
+        token: "shared-token",
+        fetch: async (_url: string | URL | Request, init?: RequestInit) => {
+          authorization = new Headers(init?.headers).get("authorization");
+          return Response.json({
+            messages: [{ id: "wamid.accepted" }],
+            success: true,
+          });
+        },
+      };
+      const school = {
+        phoneNumberId: "school-a-phone",
+        token: "school-a-token",
+      };
+      if (type === "interactive") {
+        await sendWhatsAppInteractive(
+          {
+            ...school,
+            to: "recipient",
+            body: "Hello",
+            buttons: [{ id: "yes", title: "Yes" }],
+          },
+          dependencies,
+        );
+      } else {
+        await sendWhatsAppTypingIndicator(
+          { ...school, messageId: "wamid.inbound" },
+          dependencies,
+        );
+      }
+      expect(authorization).toBe("Bearer school-a-token");
+    },
+  );
   it.each([
     {
       response: () => Response.json({ messages: [{ id: "wamid.accepted" }] }),
@@ -98,7 +187,7 @@ describe("WhatsApp Graph sends", () => {
           : {
               ok: false,
               kind: "missing_credentials",
-              message: "WHATSAPP_SYSTEM_USER_TOKEN is not set",
+              message: "School WhatsApp credential is missing",
             },
       );
     },
@@ -132,7 +221,7 @@ describe("WhatsApp Graph sends", () => {
       message: "Re-engagement",
     });
   });
-  it.each(["text", "template", "interactive"])(
+  it.each(["text", "interactive"])(
     "rejects a %s success without a message id",
     async (type) => {
       let payload: Record<string, unknown> | undefined;
@@ -155,24 +244,14 @@ describe("WhatsApp Graph sends", () => {
               { ...recipient, text: "Hello" },
               dependencies,
             )
-          : type === "template"
-            ? await sendWhatsAppTemplate(
-                {
-                  ...recipient,
-                  templateName: "booking_confirmation",
-                  languageCode: "en",
-                  params: [],
-                },
-                dependencies,
-              )
-            : await sendWhatsAppInteractive(
-                {
-                  ...recipient,
-                  body: "Confirm?",
-                  buttons: [{ id: "confirm", title: "Confirm" }],
-                },
-                dependencies,
-              );
+          : await sendWhatsAppInteractive(
+              {
+                ...recipient,
+                body: "Confirm?",
+                buttons: [{ id: "confirm", title: "Confirm" }],
+              },
+              dependencies,
+            );
       expect(outcome).toEqual({
         ok: false,
         kind: "unknown",

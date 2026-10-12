@@ -41,6 +41,8 @@ beforeAll(async () => {
   const seeded = await seedSchool(sql, {
     ownerId,
     name: "Confirmation School",
+    whatsappConnectionState: "live",
+    whatsappPhoneNumberId: `confirmation-${ownerId}`,
     slug: `confirm-${ownerId.slice(0, 8)}`,
     offerings: [{ name: "Kids BJJ" }],
   });
@@ -131,14 +133,9 @@ async function enqueue(
         bookingId,
         phoneNumberId: `confirmation-${ownerId}`,
         recipientWaId: "16505550086",
-        templateName: "booking_confirmation",
-        templateParams: [
-          "Confirmation School",
-          "Alex Rivera",
-          "Kids BJJ",
-          "Monday",
-        ],
-        providerIdempotencyKey: randomUUID(),
+        body: "Booked! Alex Rivera's trial for Kids BJJ is Monday at 1:00 PM. Confirmation School will see you there.",
+        windowExpiresAt: new Date("2018-01-02T17:00:00Z"),
+        providerIdempotencyKey: `booking-confirmation-template/${randomUUID()}`,
       },
       { now },
     ),
@@ -171,10 +168,97 @@ async function emails() {
 function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
   return {
     now: () => new Date(now),
-    transport: { sendText: send, sendInteractive: send, sendTemplate: send },
+    transport: { sendText: send, sendInteractive: send },
   };
 }
 describe("booking confirmation delivery through the worker", () => {
+  it("retires queued legacy templates without sending and emails the confirmation owner once", async () => {
+    now = new Date("2018-01-01T17:00:00Z");
+    const id = await enqueue({
+      templateName: "booking_confirmation",
+      templateParams: ["Old school"],
+    });
+    const send = vi.fn(
+      async (): Promise<WhatsAppSendOutcome> => ({
+        ok: true,
+        kind: "accepted",
+        providerId: randomUUID(),
+      }),
+    );
+    await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+    expect(send).not.toHaveBeenCalled();
+    expect(await stored(id)).toMatchObject({
+      state: "dead",
+      failureReason: "template_retired",
+      terminalCause: "permanent",
+      templateName: "booking_confirmation",
+    });
+    expect(await emails()).toMatchObject([
+      { kind: "owner_whatsapp_confirmation_failed", bookingId },
+    ]);
+    await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+    expect(await emails()).toHaveLength(1);
+  });
+  it("sends the owner a follow-up email without attempting an already-closed confirmation", async () => {
+    now = new Date("2018-01-01T17:00:00Z");
+    await enqueue({ windowExpiresAt: now });
+    const send = vi.fn(
+      async (): Promise<WhatsAppSendOutcome> => ({
+        ok: true,
+        kind: "accepted",
+        providerId: randomUUID(),
+      }),
+    );
+    await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+    expect(send).not.toHaveBeenCalled();
+    const pending = await emails();
+    const sent: EmailMessage[] = [];
+    await runEmailSendOnce(
+      randomUUID(),
+      {
+        now: () => now,
+        transport: {
+          send: async (message): Promise<EmailSendOutcome> => {
+            sent.push(message);
+            return { ok: true, kind: "accepted", providerId: randomUUID() };
+          },
+        },
+      },
+      { ids: pending.map((row) => row.id) },
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0].to).toBe(`confirm-${ownerId.slice(0, 8)}@local.test`);
+    expect(sent[0].text).toContain("Please contact them");
+  });
+  it("emails the owner once without sending when the confirmation window closes during retry", async () => {
+    now = new Date("2018-01-01T16:59:59Z");
+    const id = await enqueue({
+      windowExpiresAt: new Date("2018-01-01T17:00:00Z"),
+    });
+    const send = vi.fn(
+      async (): Promise<WhatsAppSendOutcome> => ({
+        ok: false,
+        kind: "network_error",
+        message: "network unavailable",
+      }),
+    );
+    await drainDueWhatsAppDeliveries(randomUUID(), 25, dependencies(send));
+    expect(await emails()).toEqual([]);
+    now = (await stored(id)).nextAttemptAt;
+    await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(await stored(id)).toMatchObject({
+      state: "dead",
+      attempts: 1,
+      failureReason: "window_closed",
+      terminalCause: "permanent",
+    });
+    expect(await emails()).toMatchObject([
+      { kind: "owner_whatsapp_confirmation_failed", bookingId },
+    ]);
+    await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
+    expect(await emails()).toHaveLength(1);
+  });
   it.each(["delivered", "read"] as const)(
     "cancels an unstarted owner failure email when a late %s callback confirms an exhausted unknown send",
     async (status) => {
@@ -387,6 +471,10 @@ describe("booking confirmation delivery through the worker", () => {
       windowExpiresAt: new Date("2018-01-02T17:00:00Z"),
     });
     await enqueue({ templateName: "booking_reminder" });
+    await enqueue({
+      body: "Other booking-linked update",
+      providerIdempotencyKey: `booking-update/${randomUUID()}`,
+    });
     await enqueue({
       templateName: null,
       body: "Booking proposal",

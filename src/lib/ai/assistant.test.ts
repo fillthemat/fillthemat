@@ -137,6 +137,7 @@ const school = {
   city: "Austin",
   address: null,
   phone: null,
+  publicContactEmail: null,
   website: null,
   parkingNotes: null,
   accessNotes: null,
@@ -223,6 +224,7 @@ describe("the assistant's instructions", () => {
       ...school,
       address: "12 Main St",
       phone: "+1 512 555 0100",
+      publicContactEmail: "hello@tigerdojo.test",
       website: "https://tigerdojo.test",
       parkingNotes: "Park behind the building.",
       accessNotes: "Step-free entrance on Oak St.",
@@ -258,6 +260,7 @@ timezone: America/New_York
 city: Austin
 address: 12 Main St
 phone: +1 512 555 0100
+public_contact_email: hello@tigerdojo.test
 website: https://tigerdojo.test
 parking_notes: Park behind the building.
 access_notes: Step-free entrance on Oak St.

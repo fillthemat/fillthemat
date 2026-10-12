@@ -41,6 +41,7 @@ import {
   isAffirmativeConfirmation,
   parseConfirmBookingButton,
 } from "./confirmation";
+import { coolingReply, coolingReplyPrefix } from "./cooling-reply";
 import {
   attemptWhatsAppDeliveriesNow,
   drainDueWhatsAppDeliveries,
@@ -480,6 +481,49 @@ export async function processWhatsAppJob(
     }
     schoolId = resolved.schoolId;
     const now = dependencies.now();
+    const [school] = await getDb()
+      .select({
+        state: schools.whatsappConnectionState,
+        phone: schools.phone,
+        publicContactEmail: schools.publicContactEmail,
+        coolingStartedAt: schools.whatsappCoolingStartedAt,
+        releaseAt: schools.whatsappReleaseAt,
+        releaseClaimedAt: schools.whatsappReleaseClaimedAt,
+      })
+      .from(schools)
+      .where(eq(schools.id, schoolId));
+    // A reserved/registered number alone is not permission to run the Assistant.
+    // Refusals create no conversation, booking or reply outbox.
+    if (
+      school?.state === "cooling" &&
+      school.coolingStartedAt &&
+      school.releaseAt &&
+      school.releaseAt > now &&
+      !school.releaseClaimedAt &&
+      school.phone &&
+      school.publicContactEmail
+    ) {
+      if (!(await start())) return "deferred";
+      const deliveryId = await enqueueWhatsAppDelivery(
+        {
+          schoolId,
+          phoneNumberId: message.phoneNumberId,
+          recipientWaId: message.waId,
+          providerIdempotencyKey: `${coolingReplyPrefix(school.coolingStartedAt)}${message.wamid}`,
+          body: coolingReply(school),
+          // Retrying this inbound job must not extend the service window.
+          windowExpiresAt: addHours(job.createdAt, 24),
+        },
+        { now },
+      );
+      if (deliveryId)
+        await attemptWhatsAppDeliveriesNow([deliveryId], runId, dependencies);
+      return await done();
+    }
+    if (school?.state !== "live") {
+      if (!(await start())) return "deferred";
+      return await done();
+    }
 
     // Assistant/notice saves commit with their reply outbox; confirmations book
     // before saving. An inbound marker therefore means no Turn needs replaying.

@@ -1,16 +1,22 @@
 import { after } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sendWhatsAppTypingIndicator } from "@/lib/whatsapp/client";
 import { WHATSAPP_STUB_APP_SECRET } from "@/lib/whatsapp/config";
 import { applyWhatsAppStatuses } from "@/lib/whatsapp/deliveries";
+import { sendInboundWhatsAppTypingIndicator } from "@/lib/whatsapp/inbound";
 import { enqueueInboundJobs } from "@/lib/whatsapp/jobs";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
 import { post, textInboundPayload } from "@/test/whatsapp-webhook";
 import { POST } from "./route";
 
 vi.mock("next/server", () => ({ after: vi.fn() }));
+vi.mock("@/lib/whatsapp/connection", () => ({
+  createWhatsAppConnection: () => ({ handleAccountUpdates: vi.fn() }),
+}));
 vi.mock("@/lib/whatsapp/client", () => ({
   sendWhatsAppTypingIndicator: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/whatsapp/inbound", () => ({
+  sendInboundWhatsAppTypingIndicator: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/whatsapp/deliveries", () => ({
   applyWhatsAppStatuses: vi.fn(),
@@ -55,7 +61,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "enqueue_failed" });
-    expect(sendWhatsAppTypingIndicator).not.toHaveBeenCalled();
+    expect(sendInboundWhatsAppTypingIndicator).not.toHaveBeenCalled();
     expect(after).not.toHaveBeenCalled();
     expect(runWhatsAppWorkerOnce).not.toHaveBeenCalled();
   });
@@ -67,7 +73,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
 
     expect(response.status).toBe(200);
     expect(enqueueInboundJobs).toHaveBeenCalledOnce();
-    expect(sendWhatsAppTypingIndicator).not.toHaveBeenCalled();
+    expect(sendInboundWhatsAppTypingIndicator).not.toHaveBeenCalled();
     expect(after).toHaveBeenCalledOnce();
   });
 
@@ -108,23 +114,20 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
 
     const pendingResponse = POST(post(inboundPayload()));
     await vi.waitFor(() => expect(enqueueInboundJobs).toHaveBeenCalledOnce());
-    expect(sendWhatsAppTypingIndicator).not.toHaveBeenCalled();
+    expect(sendInboundWhatsAppTypingIndicator).not.toHaveBeenCalled();
     enqueue.resolve(1);
     const response = await pendingResponse;
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(enqueueInboundJobs).toHaveBeenCalledOnce();
-    expect(sendWhatsAppTypingIndicator).toHaveBeenCalledExactlyOnceWith({
-      phoneNumberId: "phone-123",
-      messageId: "wamid.inbound",
-    });
+    expect(sendInboundWhatsAppTypingIndicator).toHaveBeenCalledOnce();
     expect(after).toHaveBeenCalledOnce();
     expect(runWhatsAppWorkerOnce).not.toHaveBeenCalled();
   });
 
   it("still acknowledges durable messages when the read/typing Graph call fails", async () => {
-    vi.mocked(sendWhatsAppTypingIndicator).mockRejectedValueOnce(
+    vi.mocked(sendInboundWhatsAppTypingIndicator).mockRejectedValueOnce(
       new Error("Graph unavailable"),
     );
 
@@ -132,7 +135,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
 
     expect(response.status).toBe(200);
     expect(enqueueInboundJobs).toHaveBeenCalledOnce();
-    expect(sendWhatsAppTypingIndicator).toHaveBeenCalledOnce();
+    expect(sendInboundWhatsAppTypingIndicator).toHaveBeenCalledOnce();
     expect(after).toHaveBeenCalledOnce();
   });
 

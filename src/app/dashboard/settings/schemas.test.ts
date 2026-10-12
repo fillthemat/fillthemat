@@ -17,6 +17,7 @@ import {
 const VALID_PROFILE = {
   name: "Northside Martial Arts",
   notificationEmail: "Owner@example.com",
+  publicContactEmail: "",
   phone: "",
   website: "",
   address: "",
@@ -28,10 +29,20 @@ const VALID_PROFILE = {
 };
 
 describe("profileSchema", () => {
+  it("rejects an invalid public contact email without using the notification email as a fallback", () => {
+    const result = profileSchema.safeParse({
+      ...VALID_PROFILE,
+      publicContactEmail: "not-an-email",
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(fieldErrorsFrom(result.error).publicContactEmail).toBeTruthy();
+  });
   it("normalizes optional fields to null and defaults the country", () => {
     const parsed = profileSchema.parse(VALID_PROFILE);
     expect(parsed.notificationEmail).toBe("owner@example.com");
     expect(parsed.phone).toBeNull();
+    expect(parsed.publicContactEmail).toBeNull();
     expect(parsed.country).toBe("US");
   });
 

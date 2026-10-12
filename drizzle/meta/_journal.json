@@ -106,6 +106,76 @@
       "when": 1791837849642,
       "tag": "0014_whatsapp-unknown-send",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791775378889,
+      "tag": "0015_202610112323-public-contact-email",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791775349366,
+      "tag": "0016_conversation-channel-192",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791775407925,
+      "tag": "0017_faithful_pepper_potts",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791775794974,
+      "tag": "0018_whatsapp-connection-194",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791813552461,
+      "tag": "0019_signup-195",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791815800108,
+      "tag": "0020_signup-code-age-195",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791816550852,
+      "tag": "0021_whatsapp-profile-196",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791817906362,
+      "tag": "0022_whatsapp-cooling-release-197",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791818102770,
+      "tag": "0023_whatsapp-health-198",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791819604109,
+      "tag": "0024_whatsapp-release-audit",
+      "breakpoints": true
     }
   ]
 }
