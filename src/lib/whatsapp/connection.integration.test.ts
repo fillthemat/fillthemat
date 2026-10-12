@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
@@ -12,9 +12,15 @@ import {
 } from "@/test/integration-env";
 import { createWhatsAppConnection } from "./connection";
 import {
+  resolveInboundSchool,
+  sendInboundWhatsAppTypingIndicator,
+} from "./inbound";
+import { MetaSignupError } from "./meta-signup";
+import {
   createTwilioNumberProvider,
   numberProviderFromEnv,
 } from "./number-provider";
+import { handleTwilioVerification } from "./verification-webhook";
 
 loadLocalEnv();
 const db = getDb();
@@ -57,6 +63,510 @@ afterAll(async () => {
 });
 
 describe("WhatsApp connection commands", () => {
+  it("serializes registration and refuses duplicate completion or cancellation while Meta is working", async () => {
+    const id = await school(true);
+    vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "ef".repeat(32));
+    let unblock: (() => void) | undefined;
+    let registering: (() => void) | undefined;
+    const startedRegistration = new Promise<void>((resolve) => {
+      registering = resolve;
+    });
+    const registration = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550156", resourceId: `PN-${id}` };
+        },
+      },
+      meta: {
+        async exchangeCode() {
+          return { token: "concurrent-token", expiresAt: null };
+        },
+        async validateNumber() {
+          return true;
+        },
+        async subscribe() {},
+        async register() {
+          registering?.();
+          await registration;
+        },
+      },
+    });
+    try {
+      await connection.enable(id);
+      const started = await connection.startSignup(id);
+      const input = {
+        attemptId: requireRow(started.connection.attemptId, "attempt"),
+        code: "code",
+        wabaId: "195006",
+        phoneNumberId: "106500000195006",
+      };
+      const completion = connection.completeSignup(id, input);
+      await startedRegistration;
+      try {
+        expect(await connection.completeSignup(id, input)).toMatchObject({
+          ok: false,
+          code: "invalid_state",
+          connection: { state: "registering" },
+        });
+        expect(
+          await connection.cancelSignup(id, input.attemptId),
+        ).toMatchObject({ ok: false, code: "invalid_state" });
+        expect(await connection.startSignup(id)).toMatchObject({
+          ok: false,
+          code: "invalid_state",
+        });
+      } finally {
+        unblock?.();
+      }
+      expect(await completion).toMatchObject({
+        ok: true,
+        connection: { state: "needs-card" },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("refuses another school's attempt and assets without subscribing or registering", async () => {
+    const id = await school(true);
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550154", resourceId: `PN-${id}` };
+        },
+      },
+      meta: {
+        async exchangeCode() {
+          return { token: "unrelated-token", expiresAt: null };
+        },
+        async validateNumber() {
+          return false;
+        },
+        async subscribe() {
+          throw new Error("Must not subscribe unrelated assets");
+        },
+        async register() {
+          throw new Error("Must not register unrelated assets");
+        },
+      },
+    });
+    await connection.enable(id);
+    const started = await connection.startSignup(id);
+    const input = {
+      attemptId: requireRow(started.connection.attemptId, "attempt"),
+      code: "code",
+      wabaId: "195004",
+      phoneNumberId: "106500000195004",
+    };
+    expect(
+      await connection.completeSignup(await school(true), input),
+    ).toMatchObject({ ok: false, code: "invalid_state" });
+    expect(await connection.completeSignup(id, input)).toMatchObject({
+      ok: false,
+      code: "invalid_assets",
+      connection: {
+        state: "popup-failed",
+        wabaId: null,
+        phoneNumberId: null,
+        number: "+12125550154",
+      },
+    });
+  });
+  it("fails visibly without Meta credentials and permits a fresh popup retry", async () => {
+    vi.stubEnv("WHATSAPP_APP_ID", "");
+    vi.stubEnv("WHATSAPP_APP_SECRET", "");
+    const id = await school(true);
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550155", resourceId: `PN-${id}` };
+        },
+      },
+    });
+    try {
+      await connection.enable(id);
+      const started = await connection.startSignup(id);
+      expect(
+        await connection.completeSignup(id, {
+          attemptId: requireRow(started.connection.attemptId, "attempt"),
+          code: "code",
+          wabaId: "195005",
+          phoneNumberId: "106500000195005",
+        }),
+      ).toMatchObject({
+        ok: false,
+        code: "unconfigured",
+        connection: { state: "popup-failed", number: "+12125550155" },
+      });
+      expect(await connection.startSignup(id)).toMatchObject({
+        ok: true,
+        connection: { state: "popup", number: "+12125550155" },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("captures the reserved number's OTP through a signed carrier callback, not an unsigned or cross-allocation callback", async () => {
+    const id = await school(true);
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550153", resourceId: `PN-${id}` };
+        },
+      },
+    });
+    await connection.enable(id);
+    const started = await connection.startSignup(id);
+    const config = {
+      accountSid: `AC${"a".repeat(32)}`,
+      authToken: "webhook-secret",
+      smsWebhookUrl: "https://fillthemat.test/api/webhooks/twilio",
+    };
+    const numberProvider = createTwilioNumberProvider({
+      ...config,
+      fetch: async (url) => {
+        expect(String(url)).toContain(`/Messages/SM${"b".repeat(32)}.json`);
+        return Response.json({
+          sid: `SM${"b".repeat(32)}`,
+          account_sid: config.accountSid,
+          date_created: new Date().toUTCString(),
+        });
+      },
+    });
+    const url = `${config.smsWebhookUrl}?allocationId=${started.connection.allocationId}`;
+    const body = new URLSearchParams({
+      AccountSid: config.accountSid,
+      To: "+12125550153",
+      MessageSid: `SM${"b".repeat(32)}`,
+      Body: "Your WhatsApp code: 123-456. Do not share it.",
+    });
+    const signed = createHmac("sha1", config.authToken)
+      .update(
+        url +
+          [...body.entries()]
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([key, value]) => key + value)
+            .join(""),
+      )
+      .digest("base64");
+    const request = (signature: string) =>
+      new Request(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Twilio-Signature": signature,
+        },
+        body,
+      });
+    expect(
+      (
+        await handleTwilioVerification(request("fake"), {
+          connection,
+          config,
+          numberProvider,
+        })
+      ).status,
+    ).toBe(403);
+    expect((await connection.read(id)).verificationCode).toBeNull();
+    expect(
+      (
+        await handleTwilioVerification(request(signed), {
+          connection,
+          config,
+          numberProvider,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await connection.read(id)).verificationCode).toBe("123456");
+    await connection.cancelSignup(
+      id,
+      requireRow(started.connection.attemptId, "attempt"),
+    );
+    await connection.startSignup(id);
+    await handleTwilioVerification(request(signed), {
+      connection,
+      config,
+      numberProvider,
+    });
+    expect((await connection.read(id)).verificationCode).toBeNull();
+  });
+  it("shows a current six-digit carrier code only during signup, rejects old allocations and does not extend replays", async () => {
+    const id = await school(true);
+    let now = new Date("2026-10-12T10:00:00Z");
+    const connection = createWhatsAppConnection({
+      db,
+      now: () => now,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550151", resourceId: `PN-${id}` };
+        },
+      },
+    });
+    await connection.enable(id);
+    const started = await connection.startSignup(id);
+    const input = {
+      allocationId: requireRow(started.connection.allocationId, "allocation"),
+      number: "+12125550151",
+      messageId: "SM195-code",
+      code: "654321",
+      receivedAt: now,
+    };
+    expect(
+      await connection.receiveVerificationCode({
+        ...input,
+        allocationId: randomUUID(),
+      }),
+    ).toBe(false);
+    expect(
+      await connection.receiveVerificationCode({ ...input, code: "12345" }),
+    ).toBe(false);
+    expect(await connection.receiveVerificationCode(input)).toBe(true);
+    expect(await connection.read(id)).toMatchObject({
+      verificationCode: "654321",
+    });
+    expect(
+      (await connection.read(await school(true))).verificationCode,
+    ).toBeNull();
+    now = new Date("2026-10-12T10:11:00Z");
+    expect(await connection.receiveVerificationCode(input)).toBe(false);
+    expect((await connection.read(id)).verificationCode).toBeNull();
+    now = new Date("2026-10-12T10:01:00Z");
+    await connection.cancelSignup(
+      id,
+      requireRow(started.connection.attemptId, "attempt"),
+    );
+    expect(
+      await connection.receiveVerificationCode({
+        ...input,
+        messageId: "SM195-late",
+      }),
+    ).toBe(false);
+    expect((await connection.read(id)).verificationCode).toBeNull();
+    await connection.startSignup(id);
+    expect(await connection.receiveVerificationCode(input)).toBe(false);
+    expect(
+      await connection.receiveVerificationCode({
+        ...input,
+        messageId: "SM195-delayed-from-prior-popup",
+      }),
+    ).toBe(false);
+    expect((await connection.read(id)).verificationCode).toBeNull();
+  });
+  it("keeps the number through a failed popup and failed registration, then retries with the same PIN", async () => {
+    const id = await school(true);
+    vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "cd".repeat(32));
+    let purchased = false;
+    const pins: string[] = [];
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async buyUsNumber() {
+          if (purchased) throw new Error("Must not repurchase");
+          purchased = true;
+          return { ok: true, number: "+12125550150", resourceId: `PN-${id}` };
+        },
+      },
+      meta: {
+        async exchangeCode() {
+          return { token: "retry-token", expiresAt: null };
+        },
+        async validateNumber() {
+          return true;
+        },
+        async subscribe() {},
+        async register({ pin }) {
+          pins.push(pin);
+          if (pins.length === 1) throw new MetaSignupError("signup_failed");
+        },
+      },
+    });
+    try {
+      await connection.enable(id);
+      const initial = await connection.startSignup(id);
+      await connection.failSignup(
+        id,
+        requireRow(initial.connection.attemptId, "attempt"),
+      );
+      expect(await connection.read(id)).toMatchObject({
+        state: "popup-failed",
+        number: "+12125550150",
+      });
+      const resumed = await connection.startSignup(id);
+      const input = {
+        attemptId: requireRow(resumed.connection.attemptId, "attempt"),
+        code: "retry-code",
+        wabaId: "195002",
+        phoneNumberId: "106500000195002",
+      };
+      expect(await connection.completeSignup(id, input)).toMatchObject({
+        ok: false,
+        code: "signup_failed",
+        connection: { state: "popup-failed", number: "+12125550150" },
+      });
+      const retried = await connection.startSignup(id);
+      expect(
+        await connection.completeSignup(id, {
+          ...input,
+          attemptId: requireRow(retried.connection.attemptId, "attempt"),
+        }),
+      ).toMatchObject({
+        ok: true,
+        connection: { state: "needs-card", number: "+12125550150" },
+      });
+      expect(pins).toHaveLength(2);
+      expect(pins[1]).toBe(pins[0]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("completes Meta signup, registers the reserved number and uses the school's saved credential", async () => {
+    const id = await school(true);
+    const phoneNumberId = "106500000195001";
+    vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "ab".repeat(32));
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550149", resourceId: `PN-${id}` };
+        },
+      },
+      meta: {
+        async exchangeCode(code) {
+          expect(code).toBe("popup-code");
+          return {
+            token: "customer-school-token",
+            expiresAt: new Date("2027-01-01"),
+          };
+        },
+        async validateNumber(input) {
+          return (
+            input.token === "customer-school-token" &&
+            input.number === "+12125550149" &&
+            input.phoneNumberId === phoneNumberId &&
+            input.wabaId === "195001"
+          );
+        },
+        async subscribe() {},
+        async register(input) {
+          expect(input.pin).toMatch(/^\d{6}$/);
+        },
+      },
+    });
+    try {
+      await connection.enable(id);
+      const started = await connection.startSignup(id);
+      expect(
+        await connection.completeSignup(id, {
+          attemptId: requireRow(started.connection.attemptId, "attempt"),
+          code: "popup-code",
+          wabaId: "195001",
+          phoneNumberId,
+        }),
+      ).toMatchObject({
+        ok: true,
+        connection: {
+          state: "needs-card",
+          number: "+12125550149",
+          wabaId: "195001",
+          phoneNumberId,
+        },
+      });
+      const message = {
+        phoneNumberId,
+        wamid: "wamid.signup",
+        waId: "12125550200",
+        profileName: null,
+        text: "Hello",
+      };
+      expect(await resolveInboundSchool(message)).toEqual({
+        resolved: true,
+        schoolId: id,
+      });
+      const sends: string[] = [];
+      vi.stubGlobal("fetch", async (_url: unknown, init: RequestInit) => {
+        sends.push(new Headers(init.headers).get("Authorization") ?? "");
+        return Response.json({ success: true });
+      });
+      await sendInboundWhatsAppTypingIndicator(message);
+      expect(sends).toEqual(["Bearer customer-school-token"]);
+      expect(JSON.stringify(await connection.read(id))).not.toContain(
+        "customer-school-token",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  });
+  it("resumes a cancelled popup with its reserved number, without another purchase", async () => {
+    const id = await school(true);
+    vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "19".repeat(32));
+    let purchased = false;
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async buyUsNumber() {
+          if (purchased) throw new Error("Must keep the reserved number");
+          purchased = true;
+          return { ok: true, number: "+12125550148", resourceId: `PN-${id}` };
+        },
+      },
+      meta: {
+        async exchangeCode() {
+          return { token: "resumed-token", expiresAt: null };
+        },
+        async validateNumber() {
+          return true;
+        },
+        async subscribe() {},
+        async register() {},
+      },
+    });
+    try {
+      await connection.enable(id);
+      const started = await connection.startSignup(id);
+      expect(started.ok).toBe(true);
+      const attemptId = requireRow(started.connection.attemptId, "attempt");
+      expect(await connection.cancelSignup(id, attemptId)).toMatchObject({
+        ok: true,
+        connection: { state: "cancelled", number: "+12125550148" },
+      });
+      expect(await connection.startSignup(id)).toMatchObject({
+        ok: true,
+        connection: {
+          state: "popup",
+          number: "+12125550148",
+          providerResourceId: `PN-${id}`,
+        },
+      });
+      expect((await connection.read(id)).attemptId).not.toBe(attemptId);
+      expect(await connection.cancelSignup(id, attemptId)).toMatchObject({
+        ok: false,
+        code: "invalid_state",
+      });
+      expect(
+        await connection.completeSignup(id, {
+          attemptId: requireRow(
+            (await connection.read(id)).attemptId,
+            "resumed attempt",
+          ),
+          code: "resumed-code",
+          wabaId: "195007",
+          phoneNumberId: "106500000195007",
+        }),
+      ).toMatchObject({
+        ok: true,
+        connection: { state: "needs-card", number: "+12125550148" },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it("reports setup unavailable without carrier credentials and permits a later retry", async () => {
     const id = await school(true);
     vi.stubEnv("TWILIO_ACCOUNT_SID", "");
@@ -194,7 +704,9 @@ describe("WhatsApp connection commands", () => {
     );
     const body = new URLSearchParams(requests[2]?.body);
     expect(body.get("PhoneNumber")).toBe("+12125550145");
-    expect(body.get("SmsUrl")).toBe("https://example.test/api/webhooks/twilio");
+    expect(body.get("SmsUrl")).toBe(
+      `https://example.test/api/webhooks/twilio?allocationId=${(await connection.read(id)).allocationId}`,
+    );
     expect(body.get("FriendlyName")).toBe(
       `fillthemat:${(await connection.read(id)).allocationId}`,
     );

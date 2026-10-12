@@ -14,6 +14,7 @@ import type {
 import { IDLE_STATE } from "../form-state";
 import { Callout } from "../ui/controls";
 import { enableWhatsAppAction } from "../whatsapp-actions";
+import { type EmbeddedSignupConfig, WhatsAppSignup } from "./whatsapp-signup";
 
 const eligibility: {
   gap: EligibilityGap;
@@ -66,8 +67,10 @@ const labels: Record<WhatsAppConnectionState, string> = {
 
 export function WhatsAppSection({
   connection,
+  signupConfig,
 }: {
   connection: WhatsAppConnectionView;
+  signupConfig: EmbeddedSignupConfig | null;
 }) {
   const [result, formAction, pending] = useActionState(
     enableWhatsAppAction,
@@ -215,6 +218,11 @@ export function WhatsAppSection({
           <p className="text-sm">
             Your number is reserved for Meta signup. WhatsApp is not Live yet.
           </p>
+        ) : null}
+        {["popup", "cancelled", "popup-failed", "registering"].includes(
+          state,
+        ) ? (
+          <WhatsAppSignup connection={connection} config={signupConfig} />
         ) : null}
         {state === "failed" ? (
           <>

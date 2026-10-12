@@ -154,6 +154,22 @@ export const schools = appSchema.table(
     whatsappNumber: text("whatsapp_number"),
     whatsappProviderResourceId: text("whatsapp_provider_resource_id"),
     whatsappAllocationId: uuid("whatsapp_allocation_id"),
+    whatsappSignupAttemptId: uuid("whatsapp_signup_attempt_id"),
+    whatsappSignupStartedAt: timestamp("whatsapp_signup_started_at", {
+      withTimezone: true,
+    }),
+    whatsappVerificationCode: text("whatsapp_verification_code"),
+    whatsappVerificationExpiresAt: timestamp(
+      "whatsapp_verification_expires_at",
+      { withTimezone: true },
+    ),
+    whatsappVerificationMessageIds: text("whatsapp_verification_message_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    whatsappRegistrationPinEncrypted: text(
+      "whatsapp_registration_pin_encrypted",
+    ),
     phone: text("phone"),
     website: text("website"),
     address: text("address"),
@@ -820,13 +836,26 @@ export type User = typeof users.$inferSelect;
 const {
   whatsappTokenEncrypted: _whatsappTokenEncrypted,
   whatsappTokenExpiresAt: _whatsappTokenExpiresAt,
+  whatsappVerificationCode: _whatsappVerificationCode,
+  whatsappVerificationExpiresAt: _whatsappVerificationExpiresAt,
+  whatsappVerificationMessageIds: _whatsappVerificationMessageIds,
+  whatsappRegistrationPinEncrypted: _whatsappRegistrationPinEncrypted,
+  whatsappSignupAttemptId: _whatsappSignupAttemptId,
+  whatsappSignupStartedAt: _whatsappSignupStartedAt,
   ...schoolDetailsColumns
 } = getTableColumns(schools);
 
 export { schoolDetailsColumns };
 export type School = Omit<
   typeof schools.$inferSelect,
-  "whatsappTokenEncrypted" | "whatsappTokenExpiresAt"
+  | "whatsappTokenEncrypted"
+  | "whatsappTokenExpiresAt"
+  | "whatsappVerificationCode"
+  | "whatsappVerificationExpiresAt"
+  | "whatsappVerificationMessageIds"
+  | "whatsappRegistrationPinEncrypted"
+  | "whatsappSignupAttemptId"
+  | "whatsappSignupStartedAt"
 >;
 export type Faq = typeof faqs.$inferSelect;
 export type TrialOffering = typeof trialOfferings.$inferSelect;

@@ -66,6 +66,10 @@ describe("school-scoped WhatsApp sends", () => {
       expect(school?.id).toBe(schoolIds[0]);
       expect(school).not.toHaveProperty("whatsappTokenEncrypted");
       expect(school).not.toHaveProperty("whatsappTokenExpiresAt");
+      expect(school).not.toHaveProperty("whatsappRegistrationPinEncrypted");
+      expect(school).not.toHaveProperty("whatsappVerificationCode");
+      expect(school).not.toHaveProperty("whatsappVerificationExpiresAt");
+      expect(school).not.toHaveProperty("whatsappVerificationMessageIds");
     }
   });
   it("marks school A's inbound message read/typing using A's credential", async () => {

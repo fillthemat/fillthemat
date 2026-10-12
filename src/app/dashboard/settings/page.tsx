@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { requireOwnedSchool } from "@/lib/auth/current-school";
 import { listTimezones } from "@/lib/timezones";
+import { whatsappApiVersion } from "@/lib/whatsapp/config";
 import { createWhatsAppConnection } from "@/lib/whatsapp/connection";
 import { serializeTimestamp } from "./form-utils";
 import { formatTimezone } from "./format";
@@ -69,6 +70,20 @@ async function SectionContent({
     return (
       <WhatsAppSection
         connection={await createWhatsAppConnection().read(schoolId)}
+        signupConfig={
+          process.env.WHATSAPP_APP_ID &&
+          process.env.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID &&
+          process.env.WHATSAPP_APP_SECRET &&
+          /^[a-fA-F0-9]{64}$/.test(
+            process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY ?? "",
+          )
+            ? {
+                appId: process.env.WHATSAPP_APP_ID,
+                configId: process.env.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID,
+                version: whatsappApiVersion(),
+              }
+            : null
+        }
       />
     );
   }
