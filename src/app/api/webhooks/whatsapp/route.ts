@@ -62,8 +62,9 @@ export async function POST(request: Request) {
 
   // Enqueue-then-ack (decision D12): the webhook never runs the agent. Inbound
   // messages become `whatsapp_jobs` rows (idempotent by wamid) for the worker;
-  // status callbacks are applied directly by `provider_id` (wamid). Always ack
-  // 200 fast so Meta does not retry the whole webhook on a small/unknown event.
+  // status callbacks are applied directly by `provider_id` (wamid). Ack 200 fast
+  // for small/unknown events and best-effort statuses, but return 500 if inbound
+  // enqueue fails so Meta redelivers safely using the wamid dedupe key.
   const statuses = parseInboundWhatsAppStatuses(payload);
   const messages = parseInboundWhatsAppMessages(payload);
 
@@ -80,9 +81,25 @@ export async function POST(request: Request) {
 
   try {
     if (statuses.length > 0) await applyWhatsAppStatuses(statuses);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "whatsapp_webhook_status_failed",
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+
+  try {
     if (messages.length > 0) await enqueueInboundJobs(messages);
   } catch (error) {
-    console.error("whatsapp: webhook enqueue/status failed", error);
+    console.error(
+      JSON.stringify({
+        event: "whatsapp_webhook_enqueue_failed",
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return Response.json({ error: "enqueue_failed" }, { status: 500 });
   }
 
   // Wake the worker after the 200 flushes so inbound messages are answered
