@@ -1,10 +1,10 @@
-import { handleTwilioVerification } from "@/lib/whatsapp/verification-webhook";
+import { handleAgentPhoneVerification } from "@/lib/whatsapp/verification-webhook";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    return await handleTwilioVerification(request);
+    return await handleAgentPhoneVerification(request);
   } catch {
     console.error(
       JSON.stringify({ event: "whatsapp_verification_webhook_failed" }),

@@ -1,100 +1,76 @@
-import { validateRequest } from "twilio/lib/webhooks/webhooks";
-import { z } from "zod";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { WHATSAPP_MAX_BODY_BYTES } from "./config";
 
-export type CarrierWebhookConfig = {
-  accountSid: string;
-  authToken: string;
-  smsWebhookUrl: string;
-};
+export type CarrierWebhookConfig = { secret: string; agentId: string };
 export function carrierWebhookConfig(): CarrierWebhookConfig {
   return {
-    accountSid: process.env.TWILIO_ACCOUNT_SID ?? "",
-    authToken: process.env.TWILIO_AUTH_TOKEN ?? "",
-    smsWebhookUrl: process.env.TWILIO_SMS_WEBHOOK_URL ?? "",
+    secret: process.env.AGENTPHONE_WEBHOOK_SECRET ?? "",
+    agentId: process.env.AGENTPHONE_VERIFICATION_AGENT_ID ?? "",
   };
 }
-export function voiceWebhookUrl(smsWebhookUrl: string) {
-  const url = new URL(smsWebhookUrl);
-  url.pathname = `${url.pathname.replace(/\/$/, "")}/voice`;
-  return url;
-}
 
-/** Provider validator; duplicate form values must not change the signed body. */
-export function verifyTwilioRequest({
-  url,
-  params,
-  authToken,
+export function verifyAgentPhoneRequest({
+  rawBody,
+  timestamp,
+  secret,
   signature,
+  now = new Date(),
 }: {
-  url: string;
-  params: URLSearchParams;
-  authToken: string;
+  rawBody: string;
+  timestamp: string;
+  secret: string;
   signature: string;
+  now?: Date;
 }): boolean {
-  if ([...params.keys()].some((key) => params.getAll(key).length !== 1))
+  if (
+    !secret ||
+    !/^\d{10}$/.test(timestamp) ||
+    !/^sha256=[a-fA-F0-9]{64}$/.test(signature)
+  )
     return false;
-  return validateRequest(authToken, signature, url, Object.fromEntries(params));
+  if (Math.abs(now.getTime() / 1000 - Number(timestamp)) > 300) return false;
+  const expected = createHmac("sha256", secret)
+    .update(`${timestamp}.${rawBody}`)
+    .digest();
+  return timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex"));
 }
 
 export async function authenticateCarrierWebhook(
   request: Request,
   config: CarrierWebhookConfig,
-  callbackUrl: URL,
+  now?: Date,
 ): Promise<
-  | { ok: true; params: URLSearchParams; allocationId: string; signedUrl: URL }
+  | { ok: true; payload: unknown; deliveryId: string }
   | { ok: false; response: Response }
 > {
   const reject = (message: string, status: number) => ({
     ok: false as const,
     response: new Response(message, { status }),
   });
-  if (!config.accountSid || !config.authToken || !config.smsWebhookUrl)
-    return reject("unconfigured", 503);
-  if (
-    !request.headers
-      .get("content-type")
-      ?.startsWith("application/x-www-form-urlencoded")
-  )
+  if (!config.secret || !config.agentId) return reject("unconfigured", 503);
+  if (!request.headers.get("content-type")?.startsWith("application/json"))
     return reject("invalid_content_type", 415);
   if (Number(request.headers.get("content-length")) > WHATSAPP_MAX_BODY_BYTES)
     return reject("body_too_large", 413);
   const raw = await request.text();
   if (Buffer.byteLength(raw) > WHATSAPP_MAX_BODY_BYTES)
     return reject("body_too_large", 413);
-  const incoming = new URL(request.url);
-  const allocationId = z
-    .uuid()
-    .safeParse(incoming.searchParams.get("allocationId"));
-  if (!allocationId.success) return reject("invalid_allocation", 400);
-  callbackUrl.searchParams.set("allocationId", allocationId.data);
-  // The configured public origin, never Host/forwarding headers, is signed.
   if (
-    incoming.pathname !== callbackUrl.pathname ||
-    incoming.search !== callbackUrl.search
-  )
-    return reject("invalid_callback_url", 400);
-  const params = new URLSearchParams(raw);
-  if (
-    !verifyTwilioRequest({
-      url: callbackUrl.href,
-      params,
-      authToken: config.authToken,
-      signature: request.headers.get("x-twilio-signature") ?? "",
-    }) ||
-    params.get("AccountSid") !== config.accountSid
+    !verifyAgentPhoneRequest({
+      rawBody: raw,
+      timestamp: request.headers.get("x-webhook-timestamp") ?? "",
+      signature: request.headers.get("x-webhook-signature") ?? "",
+      secret: config.secret,
+      now,
+    })
   )
     return reject("invalid_signature", 403);
-  return {
-    ok: true,
-    params,
-    allocationId: allocationId.data,
-    signedUrl: callbackUrl,
-  };
-}
-
-export function carrierXml(body = "") {
-  return new Response(`<Response>${body}</Response>`, {
-    headers: { "Content-Type": "text/xml" },
-  });
+  const deliveryId = request.headers.get("x-webhook-id") ?? "";
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(deliveryId))
+    return reject("invalid_delivery", 400);
+  try {
+    return { ok: true, payload: JSON.parse(raw), deliveryId };
+  } catch {
+    return reject("invalid_payload", 400);
+  }
 }

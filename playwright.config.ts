@@ -50,9 +50,9 @@ export default defineConfig({
       WHATSAPP_VERIFY_TOKEN: "e2e-verify-token",
       WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: "196",
       WHATSAPP_TOKEN_ENCRYPTION_KEY: "96".repeat(32),
-      TWILIO_ACCOUNT_SID: `AC${"a".repeat(32)}`,
-      TWILIO_AUTH_TOKEN: "e2e-carrier-secret",
-      TWILIO_SMS_WEBHOOK_URL: `${baseURL}/api/webhooks/twilio`,
+      AGENTPHONE_API_KEY: "e2e-carrier-key",
+      AGENTPHONE_WEBHOOK_SECRET: "e2e-carrier-secret",
+      AGENTPHONE_VERIFICATION_AGENT_ID: "agt_verification",
     },
   },
 });

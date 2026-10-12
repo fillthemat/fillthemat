@@ -17,11 +17,10 @@ import {
 } from "./inbound";
 import { MetaSignupError } from "./meta-signup";
 import {
-  createTwilioNumberProvider,
+  createAgentPhoneNumberProvider,
   numberProviderFromEnv,
 } from "./number-provider";
-import { handleTwilioVerification } from "./verification-webhook";
-import { handleTwilioVoiceVerification } from "./voice-verification-webhook";
+import { handleAgentPhoneVerification } from "./verification-webhook";
 
 loadLocalEnv();
 const db = getDb();
@@ -86,116 +85,93 @@ describe("WhatsApp connection commands", () => {
       await connection.enable(id);
       const start = await connection.startSignup(id);
       const config = {
-        accountSid: `AC${"a".repeat(32)}`,
-        authToken: "voice-secret",
-        smsWebhookUrl: "https://fillthemat.test/api/webhooks/twilio",
+        agentId: "agt_verification",
+        secret: "voice-secret",
       };
-      const url = `${config.smsWebhookUrl}/voice?allocationId=${start.connection.allocationId}`;
-      const callId = `CA${"b".repeat(32)}`;
-      const recordingId = `RE${"c".repeat(32)}`;
-      const transcriptionId = `TR${"d".repeat(32)}`;
-      const deleted: string[] = [];
-      const provider = createTwilioNumberProvider({
-        ...config,
-        fetch: async (input, init) => {
-          if (init?.method === "DELETE") {
-            deleted.push(new URL(String(input)).pathname);
-            return new Response(null, { status: 204 });
-          }
-          expect(String(input)).toContain(`/Calls/${callId}.json`);
+      const url = "https://fillthemat.test/api/webhooks/agentphone";
+      const callId = "call_verification";
+      const provider = createAgentPhoneNumberProvider({
+        apiKey: "test-key",
+        agentId: config.agentId,
+        fetch: async (input) => {
+          if (String(input).includes("/numbers/"))
+            return Response.json({
+              id: "num_verification",
+              phoneNumber: "+12125550191",
+              country: "US",
+              status: "active",
+              externalId: start.connection.allocationId,
+              agentId: config.agentId,
+            });
+          expect(String(input)).toContain(`/calls/${callId}`);
           return Response.json({
-            sid: callId,
-            account_sid: config.accountSid,
-            to: "+12125550191",
-            date_created: "Mon, 12 Oct 2026 10:00:00 +0000",
+            id: callId,
+            agentId: config.agentId,
+            phoneNumberId: "num_verification",
+            toNumber: "+12125550191",
+            direction: "inbound",
+            startedAt: "2026-10-12T10:00:00Z",
           });
         },
       });
-      const request = (
-        target: string,
-        params: Record<string, string>,
-        valid = true,
-      ) => {
-        const body = new URLSearchParams({
-          AccountSid: config.accountSid,
-          ...params,
+      const request = (valid = true, ended = false) => {
+        const body = JSON.stringify({
+          event: ended ? "agent.call_ended" : "agent.message",
+          channel: "voice",
+          agentId: config.agentId,
+          data: {
+            numberId: "num_verification",
+            to: "+12125550191",
+            direction: "inbound",
+            callId,
+            transcript: ended ? [{ role: "user", content: text }] : text,
+          },
         });
-        const signature = createHmac("sha1", config.authToken)
-          .update(
-            target +
-              [...body.entries()]
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([key, value]) => key + value)
-                .join(""),
-          )
-          .digest("base64");
-        return new Request(target, {
+        const timestamp = String(Math.floor(time.getTime() / 1000));
+        const signature = createHmac("sha256", config.secret)
+          .update(`${timestamp}.${body}`)
+          .digest("hex");
+        return new Request(url, {
           method: "POST",
           headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "X-Twilio-Signature": valid ? signature : "fake",
+            "Content-Type": "application/json",
+            "X-Webhook-Signature": valid ? `sha256=${signature}` : "fake",
+            "X-Webhook-Timestamp": timestamp,
+            "X-Webhook-ID": "delivery_voice",
           },
           body,
         });
       };
-      const dependencies = { config, connection, numberProvider: provider };
-      expect(
-        (
-          await handleTwilioVoiceVerification(
-            request(url, { To: "+12125550191", CallSid: callId }, false),
-            dependencies,
-          )
-        ).status,
-      ).toBe(403);
-      const voice = await handleTwilioVoiceVerification(
-        request(url, { To: "+12125550191", CallSid: callId }),
-        dependencies,
-      );
-      const twiml = await voice.text();
-      expect(twiml).toContain("<Record");
-      expect(twiml).toContain(
-        `transcribeCallback="${url}&amp;stage=transcription"`,
-      );
-      const callback = `${url}&stage=transcription`;
-      const transcript = {
-        CallSid: callId,
-        RecordingSid: recordingId,
-        TranscriptionSid: transcriptionId,
-        TranscriptionStatus: "completed",
-        TranscriptionText: text,
+      const dependencies = {
+        config,
+        connection,
+        numberProvider: provider,
+        now: () => time,
       };
       expect(
-        (
-          await handleTwilioVoiceVerification(
-            request(callback, transcript, false),
-            dependencies,
-          )
-        ).status,
+        (await handleAgentPhoneVerification(request(false), dependencies))
+          .status,
       ).toBe(403);
       expect((await connection.read(id)).verificationCode).toBeNull();
-      expect(
-        (
-          await handleTwilioVoiceVerification(
-            request(callback, transcript),
-            dependencies,
-          )
-        ).status,
-      ).toBe(200);
+      const response = await handleAgentPhoneVerification(
+        request(),
+        dependencies,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        text: "",
+        hangup: Boolean(expectedCode),
+      });
       expect((await connection.read(id)).verificationCode).toBe(expectedCode);
-      expect(deleted).toEqual([
-        `/2010-04-01/Accounts/${config.accountSid}/Transcriptions/${transcriptionId}.json`,
-        `/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingId}.json`,
-      ]);
+      await handleAgentPhoneVerification(request(true, true), dependencies);
+      expect((await connection.read(id)).verificationCode).toBe(expectedCode);
       time = new Date("2026-10-12T10:01:00Z");
       await connection.cancelSignup(
         id,
         requireRow(start.connection.attemptId, "attempt"),
       );
       await connection.startSignup(id);
-      await handleTwilioVoiceVerification(
-        request(callback, transcript),
-        dependencies,
-      );
+      await handleAgentPhoneVerification(request(), dependencies);
       expect((await connection.read(id)).verificationCode).toBeNull();
     },
   );
@@ -824,49 +800,53 @@ describe("WhatsApp connection commands", () => {
     await connection.enable(id);
     const started = await connection.startSignup(id);
     const config = {
-      accountSid: `AC${"a".repeat(32)}`,
-      authToken: "webhook-secret",
-      smsWebhookUrl: "https://fillthemat.test/api/webhooks/twilio",
+      agentId: "agt_verification",
+      secret: "webhook-secret",
     };
-    const numberProvider = createTwilioNumberProvider({
-      ...config,
+    const numberProvider = createAgentPhoneNumberProvider({
+      apiKey: "test-key",
+      agentId: config.agentId,
       fetch: async (url) => {
-        expect(String(url)).toContain(`/Messages/SM${"b".repeat(32)}.json`);
+        expect(String(url)).toContain("/numbers/num_verification");
         return Response.json({
-          sid: `SM${"b".repeat(32)}`,
-          account_sid: config.accountSid,
-          date_created: new Date().toUTCString(),
+          id: "num_verification",
+          phoneNumber: "+12125550153",
+          country: "US",
+          status: "active",
+          externalId: started.connection.allocationId,
+          agentId: config.agentId,
         });
       },
     });
-    const url = `${config.smsWebhookUrl}?allocationId=${started.connection.allocationId}`;
-    const body = new URLSearchParams({
-      AccountSid: config.accountSid,
-      To: "+12125550153",
-      MessageSid: `SM${"b".repeat(32)}`,
-      Body: "Your WhatsApp code: 123-456. Do not share it.",
+    const url = "https://fillthemat.test/api/webhooks/agentphone";
+    const body = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: config.agentId,
+      data: {
+        numberId: "num_verification",
+        to: "+12125550153",
+        direction: "inbound",
+        message: "Your WhatsApp code: 123-456. Do not share it.",
+        receivedAt: new Date().toISOString(),
+      },
     });
-    const signed = createHmac("sha1", config.authToken)
-      .update(
-        url +
-          [...body.entries()]
-            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-            .map(([key, value]) => key + value)
-            .join(""),
-      )
-      .digest("base64");
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signed = `sha256=${createHmac("sha256", config.secret).update(`${timestamp}.${body}`).digest("hex")}`;
     const request = (signature: string) =>
       new Request(url, {
         method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "X-Twilio-Signature": signature,
+          "Content-Type": "application/json",
+          "X-Webhook-Signature": signature,
+          "X-Webhook-Timestamp": timestamp,
+          "X-Webhook-ID": "delivery_sms",
         },
         body,
       });
     expect(
       (
-        await handleTwilioVerification(request("fake"), {
+        await handleAgentPhoneVerification(request("fake"), {
           connection,
           config,
           numberProvider,
@@ -876,7 +856,7 @@ describe("WhatsApp connection commands", () => {
     expect((await connection.read(id)).verificationCode).toBeNull();
     expect(
       (
-        await handleTwilioVerification(request(signed), {
+        await handleAgentPhoneVerification(request(signed), {
           connection,
           config,
           numberProvider,
@@ -889,12 +869,74 @@ describe("WhatsApp connection commands", () => {
       requireRow(started.connection.attemptId, "attempt"),
     );
     await connection.startSignup(id);
-    await handleTwilioVerification(request(signed), {
+    await handleAgentPhoneVerification(request(signed), {
       connection,
       config,
       numberProvider,
     });
     expect((await connection.read(id)).verificationCode).toBeNull();
+  });
+  it("does not let a changed unsigned delivery ID replay an older SMS over a newer code", async () => {
+    const id = await school(true);
+    let time = new Date("2026-10-12T10:00:00Z");
+    const connection = createWhatsAppConnection({
+      db,
+      now: () => time,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550194", resourceId: "num_replay" };
+        },
+      },
+    });
+    await connection.enable(id);
+    const started = await connection.startSignup(id);
+    const config = { agentId: "agt_verification", secret: "replay-secret" };
+    const provider = createAgentPhoneNumberProvider({
+      apiKey: "test-key",
+      agentId: config.agentId,
+      fetch: async () =>
+        Response.json({
+          id: "num_replay",
+          phoneNumber: "+12125550194",
+          country: "US",
+          status: "active",
+          externalId: started.connection.allocationId,
+          agentId: config.agentId,
+        }),
+    });
+    const deliver = (code: string, receivedAt: string, deliveryId: string) => {
+      const body = JSON.stringify({
+        event: "agent.message",
+        channel: "sms",
+        agentId: config.agentId,
+        data: {
+          numberId: "num_replay",
+          to: "+12125550194",
+          direction: "inbound",
+          message: `WhatsApp code: ${code}`,
+          receivedAt,
+        },
+      });
+      const timestamp = String(Math.floor(time.getTime() / 1000));
+      return handleAgentPhoneVerification(
+        new Request("https://example.test/api/webhooks/agentphone", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-webhook-timestamp": timestamp,
+            "x-webhook-id": deliveryId,
+            "x-webhook-signature": `sha256=${createHmac("sha256", config.secret).update(`${timestamp}.${body}`).digest("hex")}`,
+          },
+          body,
+        }),
+        { config, connection, numberProvider: provider, now: () => time },
+      );
+    };
+    await deliver("123456", time.toISOString(), "delivery_first");
+    time = new Date("2026-10-12T10:01:00Z");
+    await deliver("654321", time.toISOString(), "delivery_second");
+    await deliver("123456", "2026-10-12T10:00:00.000Z", "delivery_tampered");
+    expect((await connection.read(id)).verificationCode).toBe("654321");
   });
   it("shows a current six-digit carrier code only during signup, rejects old allocations and does not extend replays", async () => {
     const id = await school(true);
@@ -1193,9 +1235,9 @@ describe("WhatsApp connection commands", () => {
   });
   it("reports setup unavailable without carrier credentials and permits a later retry", async () => {
     const id = await school(true);
-    vi.stubEnv("TWILIO_ACCOUNT_SID", "");
-    vi.stubEnv("TWILIO_AUTH_TOKEN", "");
-    vi.stubEnv("TWILIO_SMS_WEBHOOK_URL", "");
+    vi.stubEnv("AGENTPHONE_API_KEY", "");
+    vi.stubEnv("AGENTPHONE_VERIFICATION_AGENT_ID", "");
+    vi.stubEnv("AGENTPHONE_WEBHOOK_SECRET", "");
     try {
       const connection = createWhatsAppConnection({
         db,
@@ -1250,30 +1292,28 @@ describe("WhatsApp connection commands", () => {
     const saved = await connection.read(id);
     const resumed = createWhatsAppConnection({
       db,
-      numberProvider: createTwilioNumberProvider({
-        accountSid: `AC${"a".repeat(32)}`,
-        authToken: "test-token",
-        smsWebhookUrl: "https://example.test/sms",
+      numberProvider: createAgentPhoneNumberProvider({
+        apiKey: "test-token",
+        agentId: "agt_verification",
         fetch: async (url, init) => {
           if (
             init?.method !== "GET" ||
-            !String(url).includes("IncomingPhoneNumbers.json")
+            !String(url).includes(`numbers?externalId=${saved.allocationId}`)
           )
             throw new Error("Must find the prior rental, not buy another");
           return Response.json({
-            incoming_phone_numbers: [
+            data: [
               {
-                sid: `PN${"c".repeat(32)}`,
-                phone_number: "+442079460000",
-                friendly_name: "Unrelated international number",
-              },
-              {
-                sid: `PN${"d".repeat(32)}`,
-                phone_number: "+12125550146",
-                friendly_name: `fillthemat:${saved.allocationId}`,
+                id: "num_prior",
+                phoneNumber: "+12125550146",
+                country: "US",
+                status: "active",
+                externalId: saved.allocationId,
+                agentId: "agt_verification",
               },
             ],
-            next_page_uri: null,
+            hasMore: false,
+            total: 1,
           });
         },
       }),
@@ -1283,34 +1323,34 @@ describe("WhatsApp connection commands", () => {
       connection: {
         state: "popup",
         number: "+12125550146",
-        providerResourceId: `PN${"d".repeat(32)}`,
+        providerResourceId: "num_prior",
         allocationId: saved.allocationId,
       },
     });
   });
-  it("purchases through Twilio's US inventory and records the phone resource, not the school phone", async () => {
+  it("purchases an AgentPhone US number and records the phone resource, not the school phone", async () => {
     const id = await school(true);
     const requests: { url: string; body: string }[] = [];
     const connection = createWhatsAppConnection({
       db,
-      numberProvider: createTwilioNumberProvider({
-        accountSid: `AC${"a".repeat(32)}`,
-        authToken: "test-token",
-        smsWebhookUrl: "https://example.test/api/webhooks/twilio",
+      numberProvider: createAgentPhoneNumberProvider({
+        apiKey: "test-token",
+        agentId: "agt_verification",
         fetch: async (url, init) => {
           requests.push({ url: String(url), body: String(init?.body ?? "") });
           if (init?.method === "POST")
             return Response.json({
-              phone_number: "+12125550145",
-              sid: `PN${"b".repeat(32)}`,
-            });
-          if (String(url).includes("AvailablePhoneNumbers/US/Local"))
-            return Response.json({
-              available_phone_numbers: [{ phone_number: "+12125550145" }],
+              phoneNumber: "+12125550145",
+              id: "num_purchased",
+              country: "US",
+              status: "active",
+              agentId: "agt_verification",
+              externalId: JSON.parse(String(init.body)).externalId,
             });
           return Response.json({
-            incoming_phone_numbers: [],
-            next_page_uri: null,
+            data: [],
+            hasMore: false,
+            total: 0,
           });
         },
       }),
@@ -1320,20 +1360,16 @@ describe("WhatsApp connection commands", () => {
       connection: {
         state: "popup",
         number: "+12125550145",
-        providerResourceId: `PN${"b".repeat(32)}`,
+        providerResourceId: "num_purchased",
       },
     });
-    expect(requests[1]?.url).toContain(
-      "AvailablePhoneNumbers/US/Local.json?SmsEnabled=true&VoiceEnabled=true&PageSize=1",
-    );
-    const body = new URLSearchParams(requests[2]?.body);
-    expect(body.get("PhoneNumber")).toBe("+12125550145");
-    expect(body.get("SmsUrl")).toBe(
-      `https://example.test/api/webhooks/twilio?allocationId=${(await connection.read(id)).allocationId}`,
-    );
-    expect(body.get("FriendlyName")).toBe(
-      `fillthemat:${(await connection.read(id)).allocationId}`,
-    );
+    expect(requests[1]?.url).toBe("https://api.agentphone.ai/v1/numbers");
+    expect(JSON.parse(requests[1]?.body ?? "{}")).toEqual({
+      country: "US",
+      type: "sms",
+      agentId: "agt_verification",
+      externalId: (await connection.read(id)).allocationId,
+    });
   });
   it("refuses a concurrent enable while the first purchase is in progress", async () => {
     const id = await school(true);

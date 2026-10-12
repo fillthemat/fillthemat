@@ -108,16 +108,13 @@ export type EligibilityGap =
   | "public-contact-email";
 
 export type NumberProvider = {
-  discardVerificationRecording?(input: {
-    recordingId: string;
-    transcriptionId: string | null;
-  }): Promise<void>;
+  verificationNumber?(
+    resourceId: string,
+  ): Promise<{ allocationId: string; number: string } | null>;
   verificationCall?(
     callId: string,
-  ): Promise<{ receivedAt: Date; number: string } | null>;
+  ): Promise<{ receivedAt: Date; number: string; resourceId: string } | null>;
   releaseNumber?(input: { resourceId: string }): Promise<void>;
-  /** Carrier-authenticated creation time; webhook signatures have no timestamp. */
-  verificationMessageReceivedAt?(messageId: string): Promise<Date | null>;
   /** A repeated allocation must resolve to the same rental, never another purchase. */
   buyUsNumber(input: {
     schoolId: string;
@@ -632,7 +629,7 @@ export function createWhatsAppConnection({
       .set({
         whatsappConnectionState: "popup",
         whatsappSignupAttemptId: randomUUID(),
-        // Twilio's date_created has second precision.
+        // Carrier event timestamps can have second precision.
         whatsappSignupStartedAt: new Date(
           Math.floor(now().getTime() / 1000) * 1000,
         ),

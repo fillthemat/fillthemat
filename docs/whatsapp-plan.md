@@ -7,7 +7,7 @@ Source of truth: [spec #188](https://github.com/fillthemat/fillthemat/issues/188
 - Fillthemat is a Meta Tech Provider on direct Cloud API, using Embedded Signup v4 with no Solution Partner.
 - Each school owns its WhatsApp Business account (WABA). One Fillthemat app and webhook serve every school; only the app signing secret and webhook verify token stay global.
 - An approved, published school with a school phone and **public contact email** can enable WhatsApp from Settings. The private notification email is not a public contact address.
-- Enable reserves a new US Twilio number. Fillthemat pays its rental; the owner's existing number is untouched. The owner signs into Meta, chooses/creates the school's business, and types the six-digit carrier verification code displayed in Settings into the popup.
+- Enable reserves a new US AgentPhone number. Fillthemat pays its rental; the owner's existing number is untouched. The owner signs into Meta, chooses/creates the school's business, and types the six-digit carrier verification code displayed in Settings into the popup.
 - Completion exchanges the short-lived code server-side for a customer-scoped token, verifies the school's assets, subscribes the app, registers the number, and sets the school's profile. Tokens are encrypted with school-bound AES-256-GCM and never exposed in page data.
 - The owner adds their own payment card in WhatsApp Manager; Meta bills the school directly. **Live requires both registration and a payment method.** No template approval gates Live. Do not promise free replies: verify current US pricing in the pilot (replies became billable October 1, 2026).
 - Cancelled/failed signup keeps the reserved number for resume. Settings shows the checklist, number, OTP, card link, retries, and Live sharing links/QR code. The public school page only advertises WhatsApp while Live.
@@ -32,7 +32,7 @@ Durable work retains the existing [bounded retry policy](decisions/whatsapp-retr
 
 ## Configuration and local development
 
-See [local development](local-development.md) and [the pilot runbook](whatsapp-phase6-kickoff.md). Global configuration is `WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID`, `WHATSAPP_TOKEN_ENCRYPTION_KEY`, and optional API-version/base overrides; Twilio supplies number rental and OTP receipt. `WHATSAPP_SYSTEM_USER_TOKEN` is obsolete and ignored: remove it from deployment environments after cutover.
+See [local development](local-development.md) and [the pilot runbook](whatsapp-phase6-kickoff.md). Global configuration is `WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID`, `WHATSAPP_TOKEN_ENCRYPTION_KEY`, and optional API-version/base overrides; AgentPhone supplies number rental and OTP receipt. `WHATSAPP_SYSTEM_USER_TOKEN` is obsolete and ignored: remove it from deployment environments after cutover.
 
 The local demo is approved but unpublished, has a public contact email, and starts with a normal **Off** connection, no fabricated WABA or phone ID. Re-running setup preserves owner connection progress and only clears the historical unconnected demo mapping. Missing carrier/Meta configuration reports setup unavailable; integration tests inject fake external clients. Publishing does not automatically make WhatsApp Live. No paid vendor account or second database stack is needed for tests.
 

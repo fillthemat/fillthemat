@@ -24,7 +24,8 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
   const password = "local-whatsapp-test-password";
   const accountId = `${Date.now()}196`;
   const phoneId = `${Date.now()}197`;
-  const resourceId = `PN${randomUUID().replaceAll("-", "")}`;
+  const resourceId = `num_${randomUUID().replaceAll("-", "")}`;
+  let allocationId: string | undefined;
   let cardAdded = false;
   let numberRegistered = false;
   let messagingAvailable = true;
@@ -65,13 +66,47 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
       };
     else if (url.pathname.endsWith(`/${accountId}`))
       data = cardAdded ? { primary_funding_id: "school-card" } : {};
-    else if (url.pathname.includes("/AvailablePhoneNumbers/US/Local.json"))
-      data = { available_phone_numbers: [{ phone_number: "+12125550196" }] };
-    else if (url.pathname.endsWith("/IncomingPhoneNumbers.json"))
-      data =
-        request.method === "POST"
-          ? { sid: resourceId, phone_number: "+12125550196" }
-          : { incoming_phone_numbers: [], next_page_uri: null };
+    else if (url.pathname.endsWith("/v1/numbers")) {
+      if (request.method === "POST") {
+        let raw = "";
+        request.on("data", (chunk) => {
+          raw += chunk;
+        });
+        request.on("end", () => {
+          allocationId = JSON.parse(raw).externalId;
+          response.setHeader("Content-Type", "application/json");
+          response.end(
+            JSON.stringify({
+              id: resourceId,
+              phoneNumber: "+12125550196",
+              country: "US",
+              status: "active",
+              agentId: "agt_verification",
+              externalId: allocationId,
+            }),
+          );
+        });
+        return;
+      }
+      data = { data: [], hasMore: false, total: 0 };
+    } else if (url.pathname.endsWith(`/v1/numbers/${resourceId}`))
+      data = {
+        id: resourceId,
+        phoneNumber: "+12125550196",
+        country: "US",
+        status: "active",
+        agentId: "agt_verification",
+        externalId: allocationId,
+      };
+    else if (url.pathname.endsWith("/v1/calls/call_e2e"))
+      data = {
+        id: "call_e2e",
+        agentId: "agt_verification",
+        phoneNumberId: resourceId,
+        toNumber: "+12125550196",
+        direction: "inbound",
+        startedAt: new Date().toISOString(),
+      };
     else {
       response.writeHead(404);
       response.end();
@@ -116,7 +151,7 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
     await page.route("https://connect.facebook.net/en_US/sdk.js", (route) =>
       route.fulfill({
         contentType: "application/javascript",
-        body: `window.FB = { init() {}, login(callback) { callback({authResponse: {code: 'fake-popup-code'}}); window.dispatchEvent(new MessageEvent('message', {origin: 'https://www.facebook.com', data: {type: 'WA_EMBEDDED_SIGNUP', event: 'FINISH', data: {waba_id: '${accountId}', phone_number_id: '${phoneId}'}}})); } };`,
+        body: `window.FB = { init() {}, login(callback) { window.finishMetaSignup = () => { callback({authResponse: {code: 'fake-popup-code'}}); window.dispatchEvent(new MessageEvent('message', {origin: 'https://www.facebook.com', data: {type: 'WA_EMBEDDED_SIGNUP', event: 'FINISH', data: {waba_id: '${accountId}', phone_number_id: '${phoneId}'}}})); }; } };`,
       }),
     );
     await page.goto("/sign-in");
@@ -133,6 +168,43 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
     ).toBeVisible();
     await page.getByRole("button", { name: "Prepare Meta signup" }).click();
     await page.getByRole("button", { name: "Open Meta popup" }).click();
+    const sendVerification = async (channel: "sms" | "voice") => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const body = JSON.stringify({
+        event: "agent.message",
+        channel,
+        agentId: "agt_verification",
+        data: {
+          numberId: resourceId,
+          to: "+12125550196",
+          direction: "inbound",
+          ...(channel === "sms"
+            ? {
+                message: "Your WhatsApp code: 123456",
+                receivedAt: new Date().toISOString(),
+              }
+            : {
+                transcript: "Your WhatsApp code is six five four three two one",
+                callId: "call_e2e",
+              }),
+        },
+      });
+      const response = await page.request.post("/api/webhooks/agentphone", {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Timestamp": timestamp,
+          "X-Webhook-ID": `delivery_${channel}`,
+          "X-Webhook-Signature": `sha256=${createHmac("sha256", "e2e-carrier-secret").update(`${timestamp}.${body}`).digest("hex")}`,
+        },
+        data: body,
+      });
+      expect(response.status()).toBe(200);
+    };
+    await sendVerification("sms");
+    await expect(page.getByText("123456", { exact: true })).toBeVisible();
+    await sendVerification("voice");
+    await expect(page.getByText("654321", { exact: true })).toBeVisible();
+    await page.evaluate("window.finishMetaSignup()");
     await expect(
       page.getByText("Setup succeeded · Needs card", { exact: true }),
     ).toBeVisible();
@@ -333,6 +405,7 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
     ).toBeVisible();
     await page.getByRole("button", { name: "Reconnect with Meta" }).click();
     await page.getByRole("button", { name: "Open Meta popup" }).click();
+    await page.evaluate("window.finishMetaSignup()");
     await expect(
       page.getByText("Setup succeeded · Needs card", { exact: true }),
     ).toBeVisible();

@@ -1,203 +1,147 @@
 import { z } from "zod";
-import { voiceWebhookUrl } from "./carrier-webhook";
 import type { NumberProvider } from "./connection";
 import { whatsAppTestVendorFetch } from "./test-vendor-fetch";
 
 const usNumber = z.string().regex(/^\+1\d{10}$/);
 const rentalSchema = z.object({
-  phone_number: z.string(),
-  sid: z.string().regex(/^PN[0-9a-fA-F]{32}$/),
-  friendly_name: z.string().optional(),
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  phoneNumber: usNumber,
+  country: z.literal("US"),
+  status: z.literal("active"),
+  externalId: z.uuid(),
+  agentId: z.string(),
 });
 
-/** Twilio's carrier API only; WhatsApp sends continue using direct Cloud API. */
-export function createTwilioNumberProvider({
-  accountSid,
-  authToken,
-  smsWebhookUrl,
+/** AgentPhone supplies numbers only; WhatsApp sends use direct Cloud API. */
+export function createAgentPhoneNumberProvider({
+  apiKey,
+  agentId,
   fetch: fetcher = fetch,
 }: {
-  accountSid: string;
-  authToken: string;
-  smsWebhookUrl: string;
+  apiKey: string;
+  agentId: string;
   fetch?: typeof fetch;
 }): NumberProvider {
-  const base = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(accountSid)}`;
+  const base = "https://api.agentphone.ai/v1";
   const headers = {
-    Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
   };
-  async function request(url: string, body?: URLSearchParams) {
-    return fetcher(url, {
+  async function request(path: string, body?: object) {
+    return fetcher(`${base}${path}`, {
       method: body ? "POST" : "GET",
       headers,
-      body,
+      body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(15_000),
     });
   }
   return {
-    async discardVerificationRecording({ recordingId, transcriptionId }) {
-      if (!/^RE[0-9a-fA-F]{32}$/.test(recordingId))
-        throw new Error("Invalid carrier recording");
-      const resources = [`Recordings/${recordingId}`];
-      if (transcriptionId && /^TR[0-9a-fA-F]{32}$/.test(transcriptionId))
-        resources.unshift(`Transcriptions/${transcriptionId}`);
-      for (const resource of resources) {
-        const response = await fetcher(`${base}/${resource}.json`, {
-          method: "DELETE",
-          headers,
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (!response.ok && response.status !== 404)
-          throw new Error("Carrier recording cleanup failed");
-      }
+    async verificationNumber(resourceId) {
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(resourceId)) return null;
+      const response = await request(`/numbers/${resourceId}`);
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error("Carrier number lookup failed");
+      const rental = rentalSchema.safeParse(await response.json());
+      return rental.success &&
+        rental.data.id === resourceId &&
+        rental.data.agentId === agentId
+        ? {
+            allocationId: rental.data.externalId,
+            number: rental.data.phoneNumber,
+          }
+        : null;
     },
     async verificationCall(callId) {
-      if (!/^CA[0-9a-fA-F]{32}$/.test(callId)) return null;
-      const response = await request(`${base}/Calls/${callId}.json`);
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(callId)) return null;
+      const response = await request(`/calls/${callId}`);
+      if (response.status === 404) return null;
       if (!response.ok) throw new Error("Carrier call lookup failed");
       const call = z
         .object({
-          sid: z.string(),
-          account_sid: z.string(),
-          to: usNumber,
-          date_created: z.string(),
+          id: z.string(),
+          agentId: z.string(),
+          phoneNumberId: z.string(),
+          toNumber: usNumber,
+          direction: z.literal("inbound"),
+          startedAt: z.iso.datetime({ offset: true }),
         })
-        .parse(await response.json());
-      const receivedAt = new Date(call.date_created);
-      return call.sid === callId &&
-        call.account_sid === accountSid &&
-        Number.isFinite(receivedAt.getTime())
-        ? { receivedAt, number: call.to }
+        .safeParse(await response.json());
+      return call.success &&
+        call.data.id === callId &&
+        call.data.agentId === agentId
+        ? {
+            receivedAt: new Date(call.data.startedAt),
+            number: call.data.toNumber,
+            resourceId: call.data.phoneNumberId,
+          }
         : null;
     },
     async releaseNumber({ resourceId }) {
-      if (!/^PN[0-9a-fA-F]{32}$/.test(resourceId))
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(resourceId))
         throw new Error("Invalid carrier resource");
-      const response = await fetcher(
-        `${base}/IncomingPhoneNumbers/${resourceId}.json`,
-        {
-          method: "DELETE",
-          headers,
-          signal: AbortSignal.timeout(15_000),
-        },
-      );
-      // A lost DELETE response can be retried without releasing another rental.
+      const response = await fetcher(`${base}/numbers/${resourceId}`, {
+        method: "DELETE",
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      });
       if (!response.ok && response.status !== 404)
         throw new Error("Carrier release failed");
     },
-    async verificationMessageReceivedAt(messageId) {
-      if (!/^SM[0-9a-fA-F]{32}$/.test(messageId)) return null;
-      const response = await request(`${base}/Messages/${messageId}.json`);
-      if (!response.ok) throw new Error("Carrier verification lookup failed");
-      const message = z
-        .object({
-          sid: z.string(),
-          account_sid: z.string(),
-          date_created: z.string(),
-        })
-        .parse(await response.json());
-      const receivedAt = new Date(message.date_created);
-      return message.sid === messageId &&
-        message.account_sid === accountSid &&
-        Number.isFinite(receivedAt.getTime())
-        ? receivedAt
-        : null;
-    },
     async buyUsNumber({ allocationId, excludeNumber }) {
-      const name = `fillthemat:${allocationId}`;
-      // Reconcile a prior purchase before retrying the allocation. Do not
-      // assume a timeout means no rental exists. The module serializes buys.
-      let page: string | null =
-        `${base}/IncomingPhoneNumbers.json?PageSize=1000`;
-      while (page) {
-        const response = await request(page);
-        if (!response.ok) return { ok: false, code: "purchase_failed" };
-        const rentals = z
-          .object({
-            incoming_phone_numbers: z.array(rentalSchema),
-            next_page_uri: z.string().nullable(),
-          })
-          .parse(await response.json());
-        const existing = rentals.incoming_phone_numbers.find(
-          (rental) => rental.friendly_name === name,
-        );
-        if (existing)
-          return {
-            ok: true,
-            number: usNumber.parse(existing.phone_number),
-            resourceId: existing.sid,
-          };
-        page = rentals.next_page_uri
-          ? new URL(rentals.next_page_uri, "https://api.twilio.com").href
-          : null;
-        if (page && !page.startsWith(`${base}/IncomingPhoneNumbers.json?`))
-          throw new Error("Invalid carrier pagination");
-      }
-      const available = await request(
-        `${base}/AvailablePhoneNumbers/US/Local.json?SmsEnabled=true&VoiceEnabled=true&PageSize=${excludeNumber ? 10 : 1}`,
-      );
-      if (!available.ok) return { ok: false, code: "purchase_failed" };
-      const inventory = z
-        .object({
-          available_phone_numbers: z.array(
-            z.object({ phone_number: usNumber }),
-          ),
-        })
-        .parse(await available.json());
-      const number = inventory.available_phone_numbers.find(
-        (entry) => entry.phone_number !== excludeNumber,
-      )?.phone_number;
-      if (!number) return { ok: false, code: "purchase_failed" };
-      const purchased = await request(
-        `${base}/IncomingPhoneNumbers.json`,
-        new URLSearchParams({
-          PhoneNumber: number,
-          FriendlyName: name,
-          SmsUrl: (() => {
-            const url = new URL(smsWebhookUrl);
-            url.searchParams.set("allocationId", allocationId);
-            return url.href;
-          })(),
-          SmsMethod: "POST",
-          VoiceUrl: (() => {
-            const url = voiceWebhookUrl(smsWebhookUrl);
-            url.searchParams.set("allocationId", allocationId);
-            return url.href;
-          })(),
-          VoiceMethod: "POST",
-        }),
-      );
-      // Only a definite rejection is safe to retry automatically. An ambiguous
-      // POST or an invalid success response leaves buying for reconciliation.
+      z.uuid().parse(allocationId);
+      // externalId is unique within the account. Always reconcile before a buy.
+      // An ambiguous POST remains claimed by the connection module for support.
+      const existing = await request(`/numbers?externalId=${allocationId}`);
+      if (!existing.ok) return { ok: false, code: "purchase_failed" };
+      const rentals = z
+        .object({ data: z.array(rentalSchema), hasMore: z.boolean() })
+        .parse(await existing.json());
+      if (rentals.hasMore || rentals.data.length > 1)
+        throw new Error("Carrier allocation is ambiguous");
+      const result = (input: unknown) => {
+        const rental = rentalSchema.parse(input);
+        if (
+          rental.externalId !== allocationId ||
+          rental.agentId !== agentId ||
+          rental.phoneNumber === excludeNumber
+        )
+          throw new Error("Carrier allocation mismatch");
+        return {
+          ok: true as const,
+          number: rental.phoneNumber,
+          resourceId: rental.id,
+        };
+      };
+      if (rentals.data[0]) return result(rentals.data[0]);
+      const purchased = await request("/numbers", {
+        country: "US",
+        type: "sms",
+        agentId,
+        externalId: allocationId,
+      });
       if (purchased.status >= 400 && purchased.status < 500)
         return { ok: false, code: "purchase_failed" };
       if (!purchased.ok) throw new Error("Carrier purchase outcome unknown");
-      const rental = rentalSchema.parse(await purchased.json());
-      return {
-        ok: true,
-        number: usNumber.parse(rental.phone_number),
-        resourceId: rental.sid,
-      };
+      return result(await purchased.json());
     },
   };
 }
 
-/** No credentials means a visible failed setup, never a pretend paid number. */
+/** Missing credentials means a visible failed setup, never a pretend rental. */
 export function numberProviderFromEnv(): NumberProvider {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const smsWebhookUrl = process.env.TWILIO_SMS_WEBHOOK_URL;
-  if (!accountSid || !authToken || !smsWebhookUrl) {
+  const apiKey = process.env.AGENTPHONE_API_KEY;
+  const agentId = process.env.AGENTPHONE_VERIFICATION_AGENT_ID;
+  const webhookSecret = process.env.AGENTPHONE_WEBHOOK_SECRET;
+  if (!apiKey || !agentId || !webhookSecret) {
     return {
       async buyUsNumber() {
         return { ok: false, code: "unconfigured" };
       },
     };
   }
-  return createTwilioNumberProvider({
-    accountSid,
-    authToken,
-    smsWebhookUrl,
+  return createAgentPhoneNumberProvider({
+    apiKey,
+    agentId,
     fetch: whatsAppTestVendorFetch(),
   });
 }

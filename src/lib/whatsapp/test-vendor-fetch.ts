@@ -25,7 +25,7 @@ export function whatsAppTestVendorFetch(): typeof fetch | undefined {
     throw new Error("whatsapp_test_vendor_requires_local_stack");
   return (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    if (!["graph.facebook.com", "api.twilio.com"].includes(url.hostname))
+    if (!["graph.facebook.com", "api.agentphone.ai"].includes(url.hostname))
       throw new Error("unexpected_whatsapp_test_vendor");
     return fetch(new URL(`${url.pathname}${url.search}`, origin), init);
   };
