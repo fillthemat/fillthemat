@@ -1,7 +1,8 @@
 "use client";
 
-import { Turnstile } from "@marsidev/react-turnstile";
-import { useState } from "react";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
+import { useRef, useState } from "react";
+import { submitBooking } from "./booking-submission";
 import { readConversationToken } from "./browser-token";
 import { readLandingSessionToken } from "./landing-session";
 
@@ -33,52 +34,55 @@ export function BookingConfirmationForm({
   const [turnstileToken, setTurnstileToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const bookingKeys = useRef<Record<string, { current: string | null }>>({});
+  const turnstile = useRef<TurnstileInstance | undefined>(undefined);
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
-    try {
-      const keyResponse = await fetch("/api/bookings/key", { method: "POST" });
-      const { idempotencyKey } = (await keyResponse.json()) as {
-        idempotencyKey: string;
-      };
-      const response = await fetch("/api/bookings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          schoolSlug: values.slug,
-          offeringId: values.offeringId,
-          slotId: values.slotId,
-          idempotencyKey,
-          contact: {
-            name: contactName,
-            email: contactEmail,
-            phone: contactPhone,
-          },
-          participant: {
-            name: values.participantName,
-            age: values.participantAge,
-          },
-          turnstileToken,
-          landingSessionToken: readLandingSessionToken(values.slug),
-          conversationResumeToken: readConversationToken(values.slug),
+    // Keep retries of an uncertain outcome idempotent, but allow a different
+    // participant or trial occurrence to start a separate booking intent.
+    const intent = JSON.stringify([
+      values.slug,
+      values.offeringId,
+      values.slotId,
+      values.participantName,
+      values.participantAge,
+    ]);
+    bookingKeys.current[intent] ??= { current: null };
+    const key = bookingKeys.current[intent];
+    await submitBooking({
+      key,
+      setPending,
+      setError,
+      resetVerification: () => {
+        setTurnstileToken("");
+        turnstile.current?.reset();
+      },
+      buildBody: (idempotencyKey) => ({
+        schoolSlug: values.slug,
+        offeringId: values.offeringId,
+        slotId: values.slotId,
+        idempotencyKey,
+        contact: {
+          name: contactName,
+          email: contactEmail,
+          phone: contactPhone,
+        },
+        participant: {
+          name: values.participantName,
+          age: values.participantAge,
+        },
+        turnstileToken,
+        landingSessionToken: readLandingSessionToken(values.slug),
+        conversationResumeToken: readConversationToken(values.slug),
+      }),
+      onBooked: () =>
+        onBooked({
+          offeringName: values.offeringName,
+          whenLabel: values.whenLabel,
         }),
-      });
-      if (!response.ok) {
-        setError(
-          "Could not complete this booking. Try another time or leave a note.",
-        );
-        return;
-      }
-      onBooked({
-        offeringName: values.offeringName,
-        whenLabel: values.whenLabel,
-      });
-    } finally {
-      setPending(false);
-    }
+    });
   }
 
   return (
@@ -117,11 +121,21 @@ export function BookingConfirmationForm({
         className="rounded-md border border-page-300 px-3 py-2"
       />
       {siteKey ? (
-        <Turnstile siteKey={siteKey} onSuccess={setTurnstileToken} />
+        <Turnstile
+          ref={turnstile}
+          siteKey={siteKey}
+          onSuccess={setTurnstileToken}
+          onExpire={() => setTurnstileToken("")}
+          onError={() => setTurnstileToken("")}
+        />
       ) : (
         <p className="text-page-error">Turnstile is not configured.</p>
       )}
-      {error ? <p className="text-page-error">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-page-error">
+          {error}
+        </p>
+      ) : null}
       <button
         type="submit"
         disabled={pending || !turnstileToken}

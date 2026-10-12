@@ -76,6 +76,24 @@ async function insertFunnel(
   });
 }
 
+/** Resolve a committed booking without creating another or consuming quotas. */
+export async function findBookingByIdempotencyKey(
+  schoolId: string,
+  idempotencyKey: string,
+): Promise<Booking | null> {
+  const [booking] = await getDb()
+    .select()
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.schoolId, schoolId),
+        eq(bookings.idempotencyKey, idempotencyKey),
+      ),
+    )
+    .limit(1);
+  return booking ?? null;
+}
+
 export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
   if (!input.school.approvedAt || !input.school.publishedAt) {
     return { ok: false, code: "school_not_public" };
