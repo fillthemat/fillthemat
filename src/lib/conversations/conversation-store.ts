@@ -6,6 +6,7 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
   isNull,
   lt,
   lte,
@@ -27,7 +28,10 @@ import {
   whatsappBookingIntents,
 } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
-import { appendPoppyEvent } from "@/lib/poppy/conversation-events";
+import {
+  closePoppyConversationRow,
+  lockPoppyConversationRow,
+} from "@/lib/poppy/conversation-lifecycle";
 import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 
@@ -176,31 +180,53 @@ async function endMatchingConversations(
   predicate: SQL | undefined,
   reason: ConversationEndReason,
   now: Date,
-  db: ConversationDb,
+  db: Transaction,
 ): Promise<number> {
+  let poppyClosed = 0;
+  const candidates = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(
+        isNull(conversations.endedAt),
+        isNotNull(conversations.poppyClientId),
+        predicate,
+      ),
+    )
+    .orderBy(
+      sql`coalesce(${conversations.poppyParentConversationId}, ${conversations.id})`,
+      sql`${conversations.poppyParentConversationId} is not null`,
+    );
+  for (const candidate of candidates) {
+    const current = await lockPoppyConversationRow(candidate.id, db);
+    if (!current || current.endedAt) continue;
+    // Recheck inactivity after the lock: a new inbound message may have won.
+    const [eligible] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(eq(conversations.id, current.id), predicate));
+    if (eligible)
+      poppyClosed += await closePoppyConversationRow(current, reason, db, now);
+  }
   const ended = await db
     .update(conversations)
     .set({
       endedAt: now,
       endReason: reason,
       updatedAt: now,
-      poppyStatus: sql`case when ${conversations.poppyClientId} is not null then 'closed' else ${conversations.poppyStatus} end`,
     })
-    .where(and(isNull(conversations.endedAt), predicate))
+    .where(
+      and(
+        isNull(conversations.endedAt),
+        isNull(conversations.poppyClientId),
+        predicate,
+      ),
+    )
     .returning({
       id: conversations.id,
       schoolId: conversations.schoolId,
-      poppyClientId: conversations.poppyClientId,
     });
-  if (ended.length === 0) return 0;
-  for (const conversation of ended) {
-    if (conversation.poppyClientId)
-      await appendPoppyEvent(
-        conversation,
-        { type: "state", status: "closed", responder: "agent" },
-        db,
-      );
-  }
+  if (ended.length === 0) return poppyClosed;
   await db
     .update(whatsappBookingIntents)
     .set({ state: "expired", updatedAt: now })
@@ -213,7 +239,7 @@ async function endMatchingConversations(
         eq(whatsappBookingIntents.state, "pending"),
       ),
     );
-  return ended.length;
+  return ended.length + poppyClosed;
 }
 
 /** Terminal and idempotent: keep the record and expire its pending booking intent. */
@@ -325,12 +351,16 @@ export async function claimGeneration(
 /** Stored UI messages, oldest first. SDK validation belongs at the model boundary,
  * not on read-only transcript requests, which may include historic parts. */
 export async function loadTranscript(
-  conversationId: string,
+  conversationId: string | string[],
 ): Promise<UIMessage[]> {
   const rows = await getDb()
     .select()
     .from(messages)
-    .where(eq(messages.conversationId, conversationId))
+    .where(
+      Array.isArray(conversationId)
+        ? inArray(messages.conversationId, conversationId)
+        : eq(messages.conversationId, conversationId),
+    )
     .orderBy(asc(messages.createdAt));
   return rows.map((row) => ({
     id: row.messageId,
