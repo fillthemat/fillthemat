@@ -8,7 +8,7 @@ import { createTestPoppyAgent } from "@/test/poppy-agent";
 import { checkPoppyRequest } from "./protected-request";
 import { safeFetchNetwork } from "./safe-fetch";
 
-loadLocalEnv();
+loadLocalEnv(process.env.INTEGRATION_ENV_FILE);
 const localUrl = new URL(process.env.DATABASE_URL ?? "");
 if (!["localhost", "127.0.0.1", "[::1]"].includes(localUrl.hostname))
   throw new Error("Poppy admission tests require a local database");
