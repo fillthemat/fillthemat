@@ -121,8 +121,8 @@ bun run vercel:deploy:prod
 First production deploy will use `vercel.ts` (`bunVersion: 1.4.x`, `framework: nextjs`, cron).
 
 **Production build order**:
-Vercel runs `bun run build:vercel`: `bun run db:migrate:deploy`, then `bun run db:check`, then `bun run build`. This happens only when `VERCEL_ENV=production`. The migrator reads Vercel's configured `DIRECT_URL`; it needs no local env file or interactive step. Preview, Development, and local `bun run build` never run deploy migrations.
-Concurrent Production builds wait on one Postgres advisory lock before reading the migration journal, so each pending migration runs once.
+Vercel runs `bun run build:vercel`: migration → read-only check → build, only for Production; other builds skip migration. Both `bun run db:migrate:deploy` (Vercel env, no env file) and `bun run db:migrate:prod` (manual, `.env.production.local`) use `scripts/migrate-prod.ts`; it refuses loopback targets and non-Production Vercel runs.
+Set Production `DIRECT_URL` **before merging**: a DDL-capable direct or session-pooler URI (5432), never the transaction pooler (6543), targeting the same database as `DATABASE_URL`. Both migration paths hold one session-level advisory lock, so concurrent runs serialise and pending migrations run once.
 Promoting Preview to Production or redeploying Production re-runs the build; this is harmless when no migrations are pending.
 
 **Failure and retry**:
@@ -136,7 +136,7 @@ Every migration must remain backward-compatible with the currently live code. A 
 `bun run db:check` uses the supplied environment and checks runtime `DATABASE_URL` first, falling back to `DIRECT_URL`. `bun run db:check:prod` loads `.env.production.local`, like the recovery command `bun run db:migrate:prod`. Prebuilt deployments and deployment rollbacks skip automatic migration and checking; an operator must run `bun run db:check:prod` before using them.
 
 **Safe rehearsal**:
-`bun run test:integration scripts/migrate-deploy.integration.test.ts` uses a temporary database on local Supabase. It applies pending migrations, retries a current schema, stops on SQL and check failures, and proves Preview skips migrations. Only the application build is replaced with a marker; no hosted data is touched.
+`bun run test:integration scripts/migrate-prod.integration.test.ts` rehearses the shared migrator in a temporary local database: pending → applied, retry no-op, SQL failure rejected. The CLI's loopback guard stays intact; no hosted data is touched.
 
 ### Booking incident: 2026-10-11
 
