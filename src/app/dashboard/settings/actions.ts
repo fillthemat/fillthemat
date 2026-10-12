@@ -26,6 +26,7 @@ import {
   setOfferingActive,
   updateFaq,
   updateOffering,
+  updateProfile,
 } from "./mutations";
 import {
   agentSchema,
@@ -89,6 +90,7 @@ export async function updateProfileAction(
       formValues(formData, [
         "name",
         "notificationEmail",
+        "publicContactEmail",
         "phone",
         "website",
         "address",
@@ -122,42 +124,13 @@ export async function updateProfileAction(
       });
     }
 
-    const values = parsed.data;
-    const db = getDb();
-    await db
-      .update(schools)
-      .set({
-        name: values.name,
-        slug,
-        timezone,
-        notificationEmail: values.notificationEmail,
-        phone: values.phone,
-        website: values.website,
-        address: values.address,
-        city: values.city,
-        country: values.country,
-        parkingNotes: values.parkingNotes,
-        accessNotes: values.accessNotes,
-        trialGuidance: values.trialGuidance,
-        updatedAt: new Date(),
-      })
-      .where(eq(schools.id, school.id));
-    revalidateOwnerViews(school.slug);
-
-    return successState("School details saved. Your agent uses them now.", {
-      name: values.name,
+    const result = await updateProfile(getDb(), school.id, {
+      ...parsed.data,
       slug,
       timezone,
-      notificationEmail: values.notificationEmail,
-      phone: nullToEmpty(values.phone),
-      website: nullToEmpty(values.website),
-      address: nullToEmpty(values.address),
-      city: nullToEmpty(values.city),
-      country: values.country,
-      parkingNotes: nullToEmpty(values.parkingNotes),
-      accessNotes: nullToEmpty(values.accessNotes),
-      trialGuidance: nullToEmpty(values.trialGuidance),
     });
+    revalidateOwnerViews(school.slug);
+    return result;
   });
 }
 

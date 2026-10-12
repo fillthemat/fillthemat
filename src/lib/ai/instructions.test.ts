@@ -8,6 +8,18 @@ import {
 import { assistantTools } from "./tools";
 
 describe("assistant instructions", () => {
+  it("offers direct human contact alongside a Lead Request without inventing unset details", () => {
+    expect(PLATFORM_INSTRUCTIONS).toContain(
+      "When a prospect asks to speak to a person, give the school's phone and public contact email",
+    );
+    expect(PLATFORM_INSTRUCTIONS).toContain(
+      "Omit either contact detail if unset",
+    );
+    expect(PLATFORM_INSTRUCTIONS).toContain(
+      "Also offer to prepare a Lead Request using request_contact",
+    );
+    expect(PLATFORM_INSTRUCTIONS).toContain("Never share a notification email");
+  });
   it("uses glossary terms in platform instructions and tool descriptions", () => {
     const tools = assistantTools(assistantContext());
     for (const text of [
@@ -56,6 +68,7 @@ describe("assistant instructions", () => {
       city: "Austin",
       address: "1 Main",
       phone: "555",
+      publicContactEmail: null,
       website: "https://example.com",
       parkingNotes: "Lot B",
       accessNotes: "Buzzer",
@@ -100,6 +113,7 @@ welcome_message: Welcome
       city: null,
       address: "",
       phone: "  ",
+      publicContactEmail: "  ",
       website: null,
       parkingNotes: null,
       accessNotes: "\n",

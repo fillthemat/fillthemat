@@ -1,0 +1,1 @@
+ALTER TABLE "app"."schools" ADD COLUMN "public_contact_email" text;

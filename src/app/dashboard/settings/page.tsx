@@ -74,6 +74,7 @@ async function SectionContent({
           slug: school.slug,
           timezone: school.timezone,
           notificationEmail: school.notificationEmail,
+          publicContactEmail: school.publicContactEmail ?? "",
           phone: school.phone ?? "",
           website: school.website ?? "",
           address: school.address ?? "",

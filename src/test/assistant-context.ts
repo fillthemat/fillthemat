@@ -55,6 +55,7 @@ export function assistantContext(): AssistantContext {
       city: "Austin",
       address: null,
       phone: null,
+      publicContactEmail: null,
       website: null,
       parkingNotes: null,
       accessNotes: null,

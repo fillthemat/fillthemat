@@ -25,6 +25,7 @@ const school = {
   city: "Cabarete",
   address: null,
   phone: "[phone]",
+  publicContactEmail: null,
   website: null,
   parkingNotes: "Free parking behind the gym",
   accessNotes: null,
