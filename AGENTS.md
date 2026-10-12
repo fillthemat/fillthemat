@@ -37,6 +37,8 @@ Each worktree shares the machine's one Supabase/Docker stack but owns the Next.j
 
 ## Agent skills
 
+Before deploy checks or production schema diagnosis, read `docs/agents/supabase-mcp.md` for read-only inspection and migration verification.
+
 `skills-lock.json` is the only source of truth for project skills. Do not vendor skill files or commit generated skill directories (`.agents/skills/`, `.pi/skills/`).
 
 At the start of a session:
