@@ -33,6 +33,7 @@ import {
 import type { WhatsAppSendOutcome } from "./client";
 import {
   bookingConfirmationIsStale,
+  onWhatsAppDeliveryConfirmed,
   onWhatsAppDeliveryDead,
 } from "./confirmation-delivery";
 import {
@@ -579,7 +580,7 @@ export async function applyWhatsAppStatuses(
     // Meta echoes this opaque correlation token; it is not a provider dedupe
     // key. Never guess by recipient, or let an older attempt cancel a retry.
     const callback = status.callbackData?.match(
-      /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([1-5])$/i,
+      /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([1-9][0-9]*)$/i,
     );
     // Serialize the current provider attempt with claims and other callbacks.
     // No outbound network calls take place while holding this lock.
@@ -590,7 +591,9 @@ export async function applyWhatsAppStatuses(
         .where(
           or(
             eq(whatsappDeliveries.providerId, status.wamid),
-            callback && status.phoneNumberId
+            callback &&
+              Number(callback[2]) <= MAX_EXECUTIONS &&
+              status.phoneNumberId
               ? and(
                   eq(whatsappDeliveries.id, callback[1]),
                   eq(whatsappDeliveries.attempts, Number(callback[2])),
@@ -702,7 +705,7 @@ export async function applyWhatsAppStatuses(
         !reconcilesUnknown
       )
         return;
-      await tx
+      const [confirmed] = await tx
         .update(whatsappDeliveries)
         .set({
           state: status.status,
@@ -725,7 +728,9 @@ export async function applyWhatsAppStatuses(
             eq(whatsappDeliveries.state, delivery.state),
             eq(whatsappDeliveries.attempts, delivery.attempts),
           ),
-        );
+        )
+        .returning();
+      if (confirmed) await onWhatsAppDeliveryConfirmed(tx, confirmed);
     });
     // Only an actual terminal transition may log or enqueue a notification.
     if (transitioned?.state === "dead")

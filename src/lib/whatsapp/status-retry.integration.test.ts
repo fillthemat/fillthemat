@@ -11,6 +11,7 @@ import {
 } from "vitest";
 import { getDb } from "@/db";
 import { whatsappDeliveries } from "@/db/schema";
+import { MAX_EXECUTIONS } from "@/lib/retry-policy";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
@@ -126,6 +127,31 @@ function status(
 }
 
 describe("WhatsApp accepted-send failure callbacks", () => {
+  it.each([MAX_EXECUTIONS, MAX_EXECUTIONS + 1])(
+    "bounds callback attempt %i by the configured execution budget",
+    async (attempts) => {
+      const id = await enqueue();
+      await db
+        .update(whatsappDeliveries)
+        .set({ state: "failed", attempts, sendOutcome: "unknown" })
+        .where(eq(whatsappDeliveries.id, id));
+      await applyWhatsAppStatuses(
+        [
+          status(`fake:budget/${suffix}`, {
+            status: "delivered",
+            callbackData: `${id}:${attempts}`,
+            phoneNumberId: `callback-${suffix}`,
+          }),
+        ],
+        { now: dependencies.now },
+      );
+      expect(await delivery(id)).toMatchObject({
+        state: attempts <= MAX_EXECUTIONS ? "delivered" : "failed",
+        sendOutcome: attempts <= MAX_EXECUTIONS ? "accepted" : "unknown",
+        attempts,
+      });
+    },
+  );
   it("does not confuse an old attempt, another phone, or an uncorrelated wamid with the unknown send", async () => {
     const id = await enqueue();
     await db
