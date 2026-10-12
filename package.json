@@ -21,6 +21,8 @@
     "check:write": "biome check --write .",
     "lint": "oxlint .",
     "typecheck": "bun run --bun next typegen && tsc --noEmit --project tsconfig.json",
+    "verify:checks": "bun run lint && bun run check && bun run typecheck",
+    "verify": "bun run verify:checks && bun run test",
     "test": "vitest run",
     "verify": "bun run lint && bun run check && bun run typecheck && bun run test",
     "eval:assistant": "bun scripts/assistant-eval.ts",
