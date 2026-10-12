@@ -148,6 +148,13 @@
       "when": 1791816550852,
       "tag": "20261012104910_whatsapp-profile-196",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791817906362,
+      "tag": "20261012111146_whatsapp-cooling-release-197",
+      "breakpoints": true
     }
   ]
 }

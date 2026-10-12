@@ -34,6 +34,21 @@ export function createTwilioNumberProvider({
     });
   }
   return {
+    async releaseNumber({ resourceId }) {
+      if (!/^PN[0-9a-fA-F]{32}$/.test(resourceId))
+        throw new Error("Invalid carrier resource");
+      const response = await fetcher(
+        `${base}/IncomingPhoneNumbers/${resourceId}.json`,
+        {
+          method: "DELETE",
+          headers,
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+      // A lost DELETE response can be retried without releasing another rental.
+      if (!response.ok && response.status !== 404)
+        throw new Error("Carrier release failed");
+    },
     async verificationMessageReceivedAt(messageId) {
       if (!/^SM[0-9a-fA-F]{32}$/.test(messageId)) return null;
       const response = await request(`${base}/Messages/${messageId}.json`);
