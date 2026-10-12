@@ -269,6 +269,7 @@ it("sends queued email before starting potentially slow domain network checks", 
     domainSnapshot: "earlier.example",
     recipient: "owner@local.test",
     providerIdempotencyKey: randomUUID(),
+    nextAttemptAt: new Date(0),
   });
   let sentBeforeFetch = false;
   vi.spyOn(safeFetchNetwork, "request").mockImplementation(async () => {
@@ -290,6 +291,7 @@ it("logs a broken domain check but still rechecks other domains and sends email"
     domainSnapshot: "earlier.example",
     recipient: "owner@local.test",
     providerIdempotencyKey: randomUUID(),
+    nextAttemptAt: new Date(0),
   });
   await sql.unsafe(
     `create function app.test_domain_failure() returns trigger language plpgsql as $$ begin if NEW.school_id = '${schoolId}' then raise exception 'domain storage unavailable'; end if; return NEW; end; $$`,

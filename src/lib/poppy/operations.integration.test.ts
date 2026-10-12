@@ -102,7 +102,22 @@ async function caller(operationsSupported = true) {
   vi.spyOn(safeFetchNetwork, "resolve").mockResolvedValue([
     { address: "93.184.216.34", family: 4 },
   ]);
-  vi.spyOn(safeFetchNetwork, "request").mockImplementation(agent.fetchReply);
+  vi.spyOn(safeFetchNetwork, "request").mockImplementation(async (url) => {
+    const target = `https://app.fillthemat.example/poppy/discovery/${schoolId}/operations.example`;
+    if (["operations.example", "www.operations.example"].includes(url.hostname))
+      return {
+        status: 302,
+        headers: new Headers({ location: target }),
+        body: Buffer.from(""),
+      };
+    if (url.href === target)
+      return {
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        body: Buffer.from("{}"),
+      };
+    return agent.fetchReply(url);
+  });
   const response = await token(await agent.tokenRequest(schoolId), {
     params: Promise.resolve({ schoolId }),
   });
