@@ -77,7 +77,10 @@ afterAll(async () => {
   await admin.end({ timeout: 5 });
 });
 
-function bookingRequest() {
+function bookingRequest(
+  idempotencyKey: string = randomUUID(),
+  participantName = "Participant",
+) {
   return new Request("http://localhost/api/bookings", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -85,13 +88,13 @@ function bookingRequest() {
       schoolSlug: "schema-repro",
       offeringId,
       slotId: encodeSlotId(windowId, new Date("2026-10-12T22:00:00.000Z")),
-      idempotencyKey: randomUUID(),
+      idempotencyKey,
       contact: {
         name: "Contact",
         email: "contact@local.test",
         phone: "16505550123",
       },
-      participant: { name: "Participant", age: 5 },
+      participant: { name: participantName, age: 5 },
       turnstileToken: "verified-token",
     }),
   });
@@ -109,12 +112,26 @@ it("blocks deploying the incident schema, then completes the same booking after 
   const before = checkDeploymentMigrations();
   expect(before.status).toBe(1);
   expect(before.stderr).toContain("0011_youthful_grey_gargoyle");
-  await expect(post(bookingRequest())).rejects.toMatchObject({
-    cause: {
-      code: "42703",
-      message: expect.stringContaining('column "failure_reason"'),
-    },
-  });
+  const logFailure = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const failure = await post(bookingRequest());
+    expect(failure.status).toBe(500);
+    const envelope = await failure.json();
+    expect(envelope).toEqual({
+      error: "internal_error",
+      requestId: expect.any(String),
+    });
+    expect(logFailure).toHaveBeenCalledExactlyOnceWith(expect.any(String));
+    expect(JSON.parse(logFailure.mock.calls[0][0])).toMatchObject({
+      event: "request.failed",
+      requestId: envelope.requestId,
+      error: "internal_error",
+      databaseCode: "42703",
+      diagnostic: { kind: "database", code: "42703" },
+    });
+  } finally {
+    logFailure.mockRestore();
+  }
   expect(
     await fixture`select count(*)::int as count from app.bookings`,
   ).toEqual([{ count: 0 }]);
@@ -136,6 +153,37 @@ it("blocks deploying the incident schema, then completes the same booking after 
   expect(
     await fixture`select count(*)::int as count from app.email_deliveries`,
   ).toEqual([{ count: 2 }]);
+});
+
+it("replays the sixth committed booking even after the email quota is exhausted", async () => {
+  let lastKey = "";
+  let lastBookingId = "";
+  // The preceding incident regression saved the first booking for this email.
+  for (let index = 2; index <= 6; index++) {
+    lastKey = randomUUID();
+    const response = await post(
+      bookingRequest(lastKey, `Participant ${index}`),
+    );
+    expect(response.status).toBe(200);
+    const envelope = await response.json();
+    expect(envelope.idempotent).toBe(false);
+    lastBookingId = envelope.bookingId;
+  }
+  const refusal = await post(bookingRequest(randomUUID(), "Participant 7"));
+  expect(refusal.status).toBe(429);
+  expect((await refusal.json()).error).toBe("rate_limited");
+  const replay = await post(bookingRequest(lastKey, "Participant 6"));
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toMatchObject({
+    bookingId: lastBookingId,
+    idempotent: true,
+  });
+  expect(
+    await fixture`select count(*)::int as count from app.bookings`,
+  ).toEqual([{ count: 6 }]);
+  expect(
+    await fixture`select count(*)::int as count from app.email_deliveries`,
+  ).toEqual([{ count: 12 }]);
 });
 
 it("checks the operator DIRECT_URL when DATABASE_URL is absent", () => {
