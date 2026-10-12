@@ -6,6 +6,7 @@ export const SECTION_IDS = [
   "faqs",
   "agent",
   "branding",
+  "poppy",
 ] as const;
 
 export type SectionId = (typeof SECTION_IDS)[number];
@@ -53,6 +54,11 @@ export const SECTIONS: readonly SectionMeta[] = [
     id: "branding",
     label: "Branding",
     title: "Branding",
+  },
+  {
+    id: "poppy",
+    label: "Poppy",
+    title: "Connect your website for Personal Agents",
   },
 ] as const;
 

@@ -47,6 +47,8 @@ The seed creates an **approved but unpublished** school with slug `/s/demo` (plu
 
 All optional. The app degrades cleanly without them.
 
+For Personal-Agent bookings, also set `POPPY_CANCEL_LINK_SECRET` to a randomly generated secret of at least 32 characters. This signs the contact's single-use cancellation link; missing configuration fails closed rather than creating a booking without its link. Keep the secret stable across deployments and email retries. Rotating it invalidates existing links (contacts can still cancel through the school). `bun run setup` preserves this key but does not generate it.
+
 | Capability | How | Without it |
 | --- | --- | --- |
 | Real email | Set `RESEND_API_KEY` (+ `RESEND_FROM=onboarding@resend.dev` for owner-only test mail) in `.env.local` | Deliveries are recorded and logged instead of sent |

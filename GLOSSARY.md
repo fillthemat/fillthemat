@@ -32,7 +32,7 @@ An AI acting on behalf of a contact, outside the school's control, that may talk
 _Avoid_: Agent, bot, AI client
 
 **Channel**:
-The medium a conversation happens over: web chat or WhatsApp.
+The medium a conversation happens over: web chat, WhatsApp, or Poppy (Personal Agent Protocol).
 
 **Turn**:
 One inbound message accepted into a conversation, together with the reply to it, whether the assistant or a deterministic platform response produced that reply. A message the platform refuses outright is not a turn.

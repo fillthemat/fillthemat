@@ -6,6 +6,7 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
   isNull,
   lt,
   lte,
@@ -27,12 +28,22 @@ import {
   whatsappBookingIntents,
 } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
+import {
+  closePoppyConversationRow,
+  lockPoppyConversationRow,
+} from "@/lib/poppy/conversation-lifecycle";
 import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 
 export type ConversationIdentity =
   | { channel: "web"; resumeToken: string }
-  | { channel: "whatsapp"; waId: string };
+  | { channel: "whatsapp"; waId: string }
+  | {
+      channel: "poppy";
+      clientId: string;
+      userId: string;
+      conversationId: string;
+    };
 
 type ConversationInput = {
   schoolId: string;
@@ -44,6 +55,12 @@ type ConversationInput = {
 type ConversationDb = Pick<Database, "select" | "insert" | "update">;
 
 function identityPredicate(identity: ConversationIdentity) {
+  if (identity.channel === "poppy")
+    return and(
+      eq(conversations.id, identity.conversationId),
+      eq(conversations.poppyClientId, identity.clientId),
+      eq(conversations.poppyUserId, identity.userId),
+    );
   return identity.channel === "web"
     ? eq(conversations.resumeTokenHash, hashToken(identity.resumeToken))
     : eq(conversations.waIdHash, hashWaId(identity.waId));
@@ -82,6 +99,13 @@ export async function findOrCreateConversation({
   identity,
   now = new Date(),
 }: ConversationInput): Promise<FindOrCreateConversationResult> {
+  // Poppy starts explicitly; an ended public id is never recreated/resumed.
+  if (identity.channel === "poppy") {
+    const conversation = await findConversation({ schoolId, identity, now });
+    return conversation
+      ? { ok: true, conversation }
+      : { ok: false, reason: "invalid_conversation" };
+  }
   const expiresAt = addDays(now, CONVERSATION_INACTIVITY_DAYS);
   return getDb().transaction(async (tx) => {
     for (;;) {
@@ -156,14 +180,53 @@ async function endMatchingConversations(
   predicate: SQL | undefined,
   reason: ConversationEndReason,
   now: Date,
-  db: ConversationDb,
+  db: Transaction,
 ): Promise<number> {
+  let poppyClosed = 0;
+  const candidates = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(
+        isNull(conversations.endedAt),
+        isNotNull(conversations.poppyClientId),
+        predicate,
+      ),
+    )
+    .orderBy(
+      sql`coalesce(${conversations.poppyParentConversationId}, ${conversations.id})`,
+      sql`${conversations.poppyParentConversationId} is not null`,
+    );
+  for (const candidate of candidates) {
+    const current = await lockPoppyConversationRow(candidate.id, db);
+    if (!current || current.endedAt) continue;
+    // Recheck inactivity after the lock: a new inbound message may have won.
+    const [eligible] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(eq(conversations.id, current.id), predicate));
+    if (eligible)
+      poppyClosed += await closePoppyConversationRow(current, reason, db, now);
+  }
   const ended = await db
     .update(conversations)
-    .set({ endedAt: now, endReason: reason, updatedAt: now })
-    .where(and(isNull(conversations.endedAt), predicate))
-    .returning({ id: conversations.id });
-  if (ended.length === 0) return 0;
+    .set({
+      endedAt: now,
+      endReason: reason,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        isNull(conversations.endedAt),
+        isNull(conversations.poppyClientId),
+        predicate,
+      ),
+    )
+    .returning({
+      id: conversations.id,
+      schoolId: conversations.schoolId,
+    });
+  if (ended.length === 0) return poppyClosed;
   await db
     .update(whatsappBookingIntents)
     .set({ state: "expired", updatedAt: now })
@@ -176,7 +239,7 @@ async function endMatchingConversations(
         eq(whatsappBookingIntents.state, "pending"),
       ),
     );
-  return ended.length;
+  return ended.length + poppyClosed;
 }
 
 /** Terminal and idempotent: keep the record and expire its pending booking intent. */
@@ -209,7 +272,7 @@ export async function endConversationAtMessageLimit(
 export type GenerationLock = { release: () => Promise<void> };
 
 // Longer than a live function can run, so only abandoned turns are recovered.
-const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
+export const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 
 function generationAvailable(now: Date) {
   return or(
@@ -288,12 +351,16 @@ export async function claimGeneration(
 /** Stored UI messages, oldest first. SDK validation belongs at the model boundary,
  * not on read-only transcript requests, which may include historic parts. */
 export async function loadTranscript(
-  conversationId: string,
+  conversationId: string | string[],
 ): Promise<UIMessage[]> {
   const rows = await getDb()
     .select()
     .from(messages)
-    .where(eq(messages.conversationId, conversationId))
+    .where(
+      Array.isArray(conversationId)
+        ? inArray(messages.conversationId, conversationId)
+        : eq(messages.conversationId, conversationId),
+    )
     .orderBy(asc(messages.createdAt));
   return rows.map((row) => ({
     id: row.messageId,

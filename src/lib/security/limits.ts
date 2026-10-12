@@ -1,5 +1,5 @@
 import { and, eq, gte, sql } from "drizzle-orm";
-import { getDb } from "@/db";
+import { getDb, type TransactionOptions } from "@/db";
 import {
   bookings,
   emailDeliveries,
@@ -13,6 +13,13 @@ export const MAX_CHAT_MESSAGES_PER_CONVERSATION = 30;
 export const MAX_USER_MESSAGE_CHARS = 2000;
 export const MAX_REQUEST_BYTES = 32_768;
 export const MAX_AGENT_STEPS = 8;
+export const MAX_POPPY_NEW_CLIENTS_PER_DAY = 25;
+export const MAX_POPPY_SESSIONS_PER_CLIENT_PER_HOUR = 60;
+export const MAX_POPPY_BOOKINGS_PER_USER_PER_DAY = 3;
+export const MAX_POPPY_BOOKINGS_PER_CLIENT_PER_DAY = 50;
+export const MAX_POPPY_BOOKINGS_PER_SCHOOL_PER_DAY = 20;
+export const MAX_POPPY_CONVERSATIONS_PER_USER_PER_DAY = 10;
+export const MAX_POPPY_PROPOSALS_PER_USER_PER_DAY = 20;
 
 // WhatsApp abuse controls (Phase 5). These mirror the email patterns above but
 // key on the Meta-verified `wa_id` and are intentionally DISTINCT budgets from
@@ -24,8 +31,9 @@ export async function emailBookingQuotaExceeded(
   schoolId: string,
   email: string,
   now = new Date(),
+  options: TransactionOptions = {},
 ): Promise<boolean> {
-  const db = getDb();
+  const db = options.transaction ?? getDb();
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -44,8 +52,9 @@ export async function recipientQuotaExceeded(
   schoolId: string,
   recipient: string,
   now = new Date(),
+  options: TransactionOptions = {},
 ): Promise<boolean> {
-  const db = getDb();
+  const db = options.transaction ?? getDb();
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })

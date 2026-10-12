@@ -1,5 +1,7 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { domainCheckMessage } from "@/lib/poppy/domain-check-messages";
+import { listSchoolDomains } from "@/lib/poppy/domains";
 import { listTimezones } from "@/lib/timezones";
 import { serializeTimestamp } from "./form-utils";
 import { formatTimezone } from "./format";
@@ -9,6 +11,7 @@ import { AgentSection } from "./sections/agent-section";
 import { BrandingSection } from "./sections/branding-section";
 import { FaqsSection } from "./sections/faqs-section";
 import { OfferingsSection } from "./sections/offerings-section";
+import { PoppySection } from "./sections/poppy-section";
 import { PricingSection } from "./sections/pricing-section";
 import { ProfileSection } from "./sections/profile-section";
 import { ScheduleSection } from "./sections/schedule-section";
@@ -83,6 +86,26 @@ async function SectionContent({
           accessNotes: school.accessNotes ?? "",
           trialGuidance: school.trialGuidance ?? "",
         }}
+      />
+    );
+  }
+
+  if (section === "poppy") {
+    const domains = await listSchoolDomains(schoolId);
+    return (
+      <PoppySection
+        domains={domains.map((domain) => ({
+          domain: domain.domain,
+          state: domain.state,
+          mode: domain.mode,
+          sourceUrl: domain.sourceUrl,
+          discoveryUrl: domain.discoveryUrl,
+          downloadUrl: `data:application/json;base64,${Buffer.from(domain.document).toString("base64")}`,
+          lastCheckMessage: domain.lastCheckResult
+            ? domainCheckMessage(domain.lastCheckResult)
+            : null,
+          lastCheckedAt: domain.lastCheckedAt?.toISOString() ?? null,
+        }))}
       />
     );
   }

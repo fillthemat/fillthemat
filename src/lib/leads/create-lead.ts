@@ -12,7 +12,6 @@ import {
   leads,
   type School,
 } from "@/db/schema";
-import type { Channel } from "@/lib/channel";
 import { hashToken, hashWaId, normalizeEmail } from "@/lib/crypto";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
 
@@ -25,12 +24,13 @@ export type CreateLeadContact = {
 type LeadSourceDetails = {
   web: { landingSessionToken: string | undefined };
   whatsapp: { waId: string };
+  poppy: { clientId: string; userId: string };
 };
 
 /** Where a lead came from: its channel, and that channel's details. */
 export type CreateLeadSource = {
-  [C in Channel]: { channel: C } & LeadSourceDetails[C];
-}[Channel];
+  [C in keyof LeadSourceDetails]: { channel: C } & LeadSourceDetails[C];
+}[keyof LeadSourceDetails];
 
 export type CreateLeadInput = {
   school: School;
@@ -43,19 +43,19 @@ export type CreateLeadInput = {
 };
 
 /**
- * Shared lead write path (decision J / Phase 5). Web (`POST /api/leads`) and the
- * WhatsApp worker both call this so the transaction/email/funnel semantics stay
+ * Shared lead write path. Web, WhatsApp and confirmed Poppy Operations call
+ * this so the transaction/email/funnel semantics stay
  * in one place.
  * A caller's transaction can include the lead and its outboxes in a Turn commit.
  *
  * - Contacts are upserted keyed `(school_id, email)` when an email is present
  *   (web semantics unchanged) and `(school_id, phone)` when there is none
  *   (WhatsApp no-email contacts, decision B).
- * - Web resolves the landing session from the client token; WhatsApp synthesizes
- *   a stable pseudo-session keyed by wa id with `utm_source='whatsapp'` so the
- *   `leads.landingSessionId NOT NULL` + funnel analytics intact.
+ * - Web resolves the landing session from the client token; WhatsApp and Poppy
+ *   synthesize stable channel-specific pseudo sessions so the NOT NULL landing
+ *   session link and funnel analytics stay intact.
  * - Owner-lead delivery always stays email (`recipient` = school notification
- *   email); the funnel event records `{ channel: 'whatsapp' }` for WhatsApp.
+ *   email); non-web funnel events record their Channel.
  */
 export async function createLead(
   input: CreateLeadInput,
@@ -123,8 +123,19 @@ export async function createLead(
       }
       landingSessionId = session.id;
     } else {
-      // Synthesize a stable pseudo session keyed by wa id (decision J).
-      const sessionKeyHash = hashWaId(`whatsapp-landing:${input.source.waId}`);
+      // Poppy analytics identity is School/client/User, never Contact email or
+      // Session: renewing or replacing credentials preserves attribution.
+      const sessionKeyHash =
+        input.source.channel === "whatsapp"
+          ? hashWaId(`whatsapp-landing:${input.source.waId}`)
+          : hashToken(
+              JSON.stringify([
+                "poppy-landing",
+                input.school.id,
+                input.source.clientId,
+                input.source.userId,
+              ]),
+            );
       const now = new Date();
       const [existing] = await tx
         .select()
@@ -141,7 +152,7 @@ export async function createLead(
           .update(landingSessions)
           .set({
             lastSeenAt: now,
-            utmSource: "whatsapp",
+            utmSource: input.source.channel,
             updatedAt: now,
           })
           .where(eq(landingSessions.id, existing.id));
@@ -152,10 +163,18 @@ export async function createLead(
           .values({
             schoolId: input.school.id,
             sessionKeyHash,
-            utmSource: "whatsapp",
+            utmSource: input.source.channel,
             firstSeenAt: now,
             lastSeenAt: now,
             isPreview: false,
+          })
+          .onConflictDoUpdate({
+            target: [landingSessions.schoolId, landingSessions.sessionKeyHash],
+            set: {
+              lastSeenAt: now,
+              utmSource: input.source.channel,
+              updatedAt: now,
+            },
           })
           .returning();
         if (!created) throw new Error("landing_session_failed");
@@ -167,6 +186,9 @@ export async function createLead(
       .insert(leads)
       .values({
         schoolId: input.school.id,
+        channel: input.source.channel,
+        poppyClientId:
+          input.source.channel === "poppy" ? input.source.clientId : null,
         landingSessionId,
         contactId: contact.id,
         participantName: input.participantName ?? null,
@@ -193,8 +215,11 @@ export async function createLead(
       leadId: row.id,
       eventType: FUNNEL_EVENTS.leadCaptured,
       metadata:
-        input.source.channel === "whatsapp"
-          ? { channel: "whatsapp", hasOffering: Boolean(input.offeringId) }
+        input.source.channel !== "web"
+          ? {
+              channel: input.source.channel,
+              hasOffering: Boolean(input.offeringId),
+            }
           : { hasOffering: Boolean(input.offeringId) },
     });
     return row;

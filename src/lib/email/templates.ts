@@ -1,5 +1,6 @@
 import { formatInTimeZone } from "date-fns-tz";
 import type { Booking, Lead, School } from "@/db/schema";
+import { poppyAppOrigin } from "@/lib/poppy/urls";
 
 function formatWhen(booking: Booking): string {
   return `${formatInTimeZone(
@@ -24,7 +25,11 @@ function snapshotBlock(booking: Booking): string {
     .join("\n");
 }
 
-export function prospectConfirmationEmail(school: School, booking: Booking) {
+export function prospectConfirmationEmail(
+  school: School,
+  booking: Booking,
+  cancelUrl?: string,
+) {
   const text = `You're booked for a trial class at ${school.name}.
 
 ${snapshotBlock(booking)}
@@ -33,6 +38,7 @@ ${school.phone ? `School phone: ${school.phone}` : ""}
 ${school.notificationEmail ? `School email: ${school.notificationEmail}` : ""}
 
 To cancel or reschedule, contact the school directly using the phone or email above. Do not reply to this message if it is unattended.
+${cancelUrl ? `\nNot you? Cancel this booking:\n${cancelUrl}\nOpening this link does not cancel your booking. You will be asked to confirm.\n` : ""}
 
 Fillthemat`;
 
@@ -142,5 +148,20 @@ Fillthemat`;
   return {
     subject: `New trial lead at ${school.name}`,
     text: text.trim(),
+  };
+}
+
+export function ownerPoppyDomainDroppedEmail(school: School, domain: string) {
+  return {
+    subject: `Poppy domain disconnected: ${domain}`,
+    text: `${domain} was disconnected from ${school.name} after failing 3 consecutive checks of https://${domain}/.well-known/poppy.json.
+
+Personal Agents can no longer find this School through that domain on Fillthemat. Any other connected domains are unchanged.
+
+To reconnect, open Poppy settings, add ${domain} again, and restore the HTTPS redirect or upload the exact JSON copy shown there. Then choose Check now; the domain will be advertised again once the check passes.
+
+${poppyAppOrigin()}/dashboard/settings?section=poppy
+
+Fillthemat`,
   };
 }

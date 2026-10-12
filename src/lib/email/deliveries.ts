@@ -21,6 +21,7 @@ import {
   type School,
   schools,
 } from "@/db/schema";
+import { bookingCancelUrl } from "@/lib/poppy/booking-cancel-token";
 import {
   orderClaimedRows,
   ownedQueueClaim,
@@ -44,6 +45,7 @@ import {
   ownerBookingEmail,
   ownerCancellationEmail,
   ownerLeadEmail,
+  ownerPoppyDomainDroppedEmail,
   ownerWhatsAppConfirmationFailedEmail,
   prospectCancellationEmail,
   prospectConfirmationEmail,
@@ -83,7 +85,11 @@ async function renderDelivery(
     case "prospect_confirmation":
       if (!booking) throw new InternalFailure("missing_booking");
       return {
-        ...prospectConfirmationEmail(school, booking),
+        ...prospectConfirmationEmail(
+          school,
+          booking,
+          booking.channel === "poppy" ? bookingCancelUrl(booking) : undefined,
+        ),
         attachments: [icsAttachment(booking, "PUBLISH", now)],
       };
     case "booking_reminder":
@@ -138,6 +144,13 @@ async function renderDelivery(
         attachments: [],
       };
     }
+    case "owner_poppy_domain_dropped":
+      if (!delivery.domainSnapshot)
+        throw new InternalFailure("malformed_response");
+      return {
+        ...ownerPoppyDomainDroppedEmail(school, delivery.domainSnapshot),
+        attachments: [],
+      };
     default:
       throw new InternalFailure("unknown_email_kind");
   }

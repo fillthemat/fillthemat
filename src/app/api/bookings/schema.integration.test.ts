@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
 import { loadLocalEnv } from "@/test/integration-env";
 
-loadLocalEnv();
+loadLocalEnv(process.env.INTEGRATION_ENV_FILE);
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("Missing local DATABASE_URL");
 const localUrl = new URL(databaseUrl);

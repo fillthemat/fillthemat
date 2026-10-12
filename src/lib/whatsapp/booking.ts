@@ -143,6 +143,7 @@ export async function confirmWhatsAppBooking(
   const participantName =
     (intent.participantName ?? profileName ?? "").trim() || "Guest";
   const result = await bookSlot({
+    channel: "whatsapp",
     school,
     offeringId: intent.offeringId,
     slotId: intent.slotId,

@@ -2,8 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   bookingStatusVariant,
   formatBookingStatus,
+  formatChannel,
   formatEmailState,
 } from "./format";
+
+describe("formatChannel", () => {
+  it("uses owner-facing channel names", () => {
+    expect(formatChannel("web")).toBe("Web");
+    expect(formatChannel("whatsapp")).toBe("WhatsApp");
+  });
+});
 
 describe("formatBookingStatus", () => {
   it("uses owner-facing words", () => {

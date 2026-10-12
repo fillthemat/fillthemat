@@ -14,7 +14,11 @@ import {
 } from "ai";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
 import type { AssistantContext } from "./context";
-import { assistantInstructions } from "./instructions";
+import {
+  assistantInstructions,
+  type PoppyAudience,
+  poppyInstructions,
+} from "./instructions";
 import { defaultLanguageModel } from "./language-model";
 import { platformInstructionsHash } from "./provenance";
 import { assistantTools } from "./tools";
@@ -43,20 +47,32 @@ export type AssistantInput = AssistantContext & {
   messages: UIMessage[];
   /** Defaults to `defaultLanguageModel()`, chosen when the reply is made. */
   model?: LanguageModel;
+  poppy?: PoppyAudience & { operationsSupported?: boolean };
+  /** A channel may bound completed generation to its request lifetime. */
+  abortSignal?: AbortSignal;
 };
 
 async function createAssistant({
   school,
   catalog,
   now,
+  poppy,
   model = defaultLanguageModel(),
 }: Omit<AssistantInput, "messages">) {
-  const tools = assistantTools({ school, catalog, now });
+  const tools = assistantTools({
+    school,
+    catalog,
+    now,
+    poppyOperations: poppy ? (poppy.operationsSupported ?? false) : undefined,
+  });
   const assistant = new ToolLoopAgent({
     model,
     // The builder reads only its own fields, so the rest of a School row
     // never reaches the instructions.
-    instructions: assistantInstructions({ ...school, faqs: catalog.faqs }),
+    instructions: assistantInstructions(
+      { ...school, faqs: catalog.faqs },
+      poppy,
+    ),
     stopWhen: isStepCount(MAX_AGENT_STEPS),
     providerOptions: {
       gateway: {
@@ -68,7 +84,10 @@ async function createAssistant({
   });
   const provenance: ReplyProvenance = {
     modelId: typeof model === "string" ? model : model.modelId,
-    platformInstructionsHash: await platformInstructionsHash(tools),
+    platformInstructionsHash: await platformInstructionsHash(
+      tools,
+      poppy && poppyInstructions(poppy),
+    ),
   };
   return { assistant, provenance };
 }
@@ -82,6 +101,7 @@ export type CompletedReply = {
   text: string;
   bookingIntent: BookingIntent | null;
   leadRequest: LeadRequest | null;
+  operationError?: "extension_required";
   provenance: ReplyProvenance;
 };
 
@@ -91,10 +111,12 @@ export type CompletedReply = {
  */
 export async function completedReply({
   messages,
+  abortSignal,
   ...input
 }: AssistantInput): Promise<CompletedReply> {
   const { assistant, provenance } = await createAssistant(input);
   const result = await assistant.generate({
+    abortSignal,
     messages: await convertToModelMessages(messages, {
       tools: assistant.tools,
     }),
@@ -110,6 +132,14 @@ export async function completedReply({
     text: result.text.trim(),
     bookingIntent: bookingIntentFromResult(lastPrepareBooking?.output),
     leadRequest: leadRequestFromResult(lastContactRequest?.output),
+    ...((lastPrepareBooking?.output &&
+      !lastPrepareBooking.output.ok &&
+      lastPrepareBooking.output.reason === "extension_required") ||
+    (lastContactRequest?.output &&
+      !lastContactRequest.output.ok &&
+      lastContactRequest.output.reason === "extension_required")
+      ? { operationError: "extension_required" as const }
+      : {}),
     provenance,
   };
 }

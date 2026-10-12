@@ -1,22 +1,11 @@
-import { desc, eq } from "drizzle-orm";
-import { formatOwnerDate } from "@/components/dashboard/format";
+import { formatChannel, formatOwnerDate } from "@/components/dashboard/format";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { getDb } from "@/db";
-import { contacts, leads } from "@/db/schema";
 import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { loadLeads } from "./queries";
 
 export default async function LeadsPage() {
   const { school } = await requireOwnedSchool();
-  const db = getDb();
-  const rows = await db
-    .select({
-      lead: leads,
-      contact: contacts,
-    })
-    .from(leads)
-    .innerJoin(contacts, eq(leads.contactId, contacts.id))
-    .where(eq(leads.schoolId, school.id))
-    .orderBy(desc(leads.createdAt));
+  const rows = await loadLeads(school.id);
 
   return (
     <main id="main-content" className="flex flex-col gap-4">
@@ -25,7 +14,7 @@ export default async function LeadsPage() {
         <p className="text-sm text-muted-foreground">No leads yet.</p>
       ) : (
         <ul className="divide-y divide-border border-y border-border">
-          {rows.map(({ lead, contact }) => {
+          {rows.map(({ lead, contact, poppyClientDisplayName }) => {
             const participant = [
               lead.participantName,
               lead.participantAge != null
@@ -43,6 +32,12 @@ export default async function LeadsPage() {
                     {formatOwnerDate(lead.createdAt, school.timezone)}
                   </p>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Channel: {formatChannel(lead.channel)}
+                  {lead.channel === "poppy" && poppyClientDisplayName
+                    ? ` · ${poppyClientDisplayName}`
+                    : null}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   {contact.email ? (
                     <a

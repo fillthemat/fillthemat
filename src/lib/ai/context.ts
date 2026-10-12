@@ -30,4 +30,5 @@ export type AssistantContext = {
   school: AssistantSchool;
   catalog: SchoolCatalog;
   now: Date;
+  poppyOperations?: boolean;
 };

@@ -1,5 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
-import { type Database, getDb } from "@/db";
+import {
+  type Database,
+  getDb,
+  type TransactionOptions,
+  withTransaction,
+} from "@/db";
 import {
   type Booking,
   bookings,
@@ -14,6 +19,7 @@ import {
   trialOfferings,
   trialWindows,
 } from "@/db/schema";
+import type { Channel } from "@/lib/channel";
 import {
   attachConversationContact,
   findConversation,
@@ -21,11 +27,13 @@ import {
 import { hashToken, normalizeEmail, normalizePersonName } from "@/lib/crypto";
 import { bookingIcsUid } from "@/lib/email/ics";
 import { FUNNEL_EVENTS, privacySafeMetadata } from "@/lib/funnel";
+import { issueBookingCancelToken } from "@/lib/poppy/booking-cancel-token";
 import { isAgeEligible, listOpenSlots } from "./occurrences";
 import { parseSlotId } from "./slot-id";
 
 export type BookSlotInput = {
   school: School;
+  channel: Channel;
   offeringId: string;
   slotId: string;
   idempotencyKey: string;
@@ -35,6 +43,19 @@ export type BookSlotInput = {
   conversationResumeToken?: string;
   /** WhatsApp path: resolve the conversation by id directly (no resume token). */
   conversationId?: string;
+  /** Poppy attribution is bound to the Operation's originating Session. */
+  poppy?: { clientId: string; sessionId: string };
+  /** An Operation may book only the exact terms the user approved. */
+  expectedTerms?: {
+    schoolName: string;
+    offeringName: string;
+    start: string;
+    end: string;
+    timezone: string;
+    pricing: string | null;
+    guidance: string | null;
+    location: string;
+  };
   now?: Date;
 };
 
@@ -47,6 +68,7 @@ export type BookSlotResult =
         | "slot_unavailable"
         | "ineligible"
         | "already_booked"
+        | "terms_changed"
         | "school_not_public";
     };
 
@@ -94,7 +116,10 @@ export async function findBookingByIdempotencyKey(
   return booking ?? null;
 }
 
-export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
+export async function bookSlot(
+  input: BookSlotInput,
+  options: TransactionOptions = {},
+): Promise<BookSlotResult> {
   if (!input.school.approvedAt || !input.school.publishedAt) {
     return { ok: false, code: "school_not_public" };
   }
@@ -113,7 +138,10 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
   const normalizedName = normalizePersonName(participantName);
 
   try {
-    const booking = await db.transaction(async (tx) => {
+    // A caller's transaction owns booking + Operation + budgets. A savepoint
+    // rolls back partial booking writes on an expected booking failure.
+    const bookingDb = options.transaction ?? db;
+    const booking = await bookingDb.transaction(async (tx) => {
       const existing = await tx
         .select()
         .from(bookings)
@@ -190,6 +218,33 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
           code: "slot_unavailable",
         });
       }
+
+      const expected = input.expectedTerms;
+      if (
+        expected &&
+        (expected.schoolName !== input.school.name ||
+          expected.offeringName !== offering.name ||
+          expected.start !== slot.startAt.toISOString() ||
+          expected.end !== slot.endAt.toISOString() ||
+          expected.timezone !== input.school.timezone ||
+          expected.pricing !== input.school.pricing ||
+          expected.guidance !==
+            ([
+              input.school.accessNotes,
+              input.school.parkingNotes,
+              offering.attire ?? input.school.trialGuidance,
+              offering.expectations,
+            ]
+              .filter(Boolean)
+              .join("\n") || null) ||
+          expected.location !==
+            [input.school.address, input.school.city]
+              .filter(Boolean)
+              .join(", "))
+      )
+        throw Object.assign(new Error("terms_changed"), {
+          code: "terms_changed",
+        });
 
       const contactValues = {
         schoolId: input.school.id,
@@ -333,7 +388,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
         conversationId = conversation?.id;
       }
       if (conversationId) {
-        conversationId = await attachConversationContact(
+        const attachedId = await attachConversationContact(
           {
             schoolId: input.school.id,
             conversationId,
@@ -342,6 +397,10 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
           },
           tx,
         );
+        // An Operation survives Conversation closure. Keep its originating
+        // retained Conversation link even when there is no active contact to
+        // attach; the School-qualified booking FK still enforces tenancy.
+        if (input.channel !== "poppy") conversationId = attachedId;
       }
 
       const locationParts = [
@@ -359,6 +418,9 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
         .insert(bookings)
         .values({
           schoolId: input.school.id,
+          channel: input.channel,
+          poppyClientId: input.poppy?.clientId,
+          poppySessionId: input.poppy?.sessionId,
           contactId: contact.id,
           participantId: participant.id,
           trialOfferingId: offering.id,
@@ -393,6 +455,8 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
         .where(eq(bookings.id, row.id))
         .returning();
       const saved = updated ?? { ...row, icsUid };
+
+      if (input.channel === "poppy") await issueBookingCancelToken(saved, tx);
 
       // Owner notification always goes by email. The prospect confirmation is
       // emailed only when there is an email; no-email WhatsApp bookings get a
@@ -435,7 +499,14 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
         conversationId,
         bookingId: saved.id,
         eventType: FUNNEL_EVENTS.bookingConfirmed,
-        metadata: { source: conversationId ? "chat" : "direct" },
+        metadata: {
+          source:
+            input.channel === "poppy"
+              ? "poppy"
+              : conversationId
+                ? "chat"
+                : "direct",
+        },
       });
 
       return { row: saved, idempotent: false };
@@ -446,6 +517,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
     const code = (error as { code?: string }).code;
     if (
       code === "ineligible" ||
+      code === "terms_changed" ||
       code === "invalid_slot" ||
       code === "slot_unavailable"
     ) {
@@ -454,7 +526,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
     if (isUniqueViolation(error)) {
       const name = constraintName(error);
       if (name.includes("idempotency")) {
-        const [existing] = await db
+        const [existing] = await (options.transaction ?? db)
           .select()
           .from(bookings)
           .where(
@@ -478,18 +550,19 @@ export type CancelBookingResult =
   | { ok: true; booking: Booking; replay: boolean }
   | { ok: false; code: "not_found" | "not_cancellable" };
 
-export async function cancelBooking({
-  schoolId,
-  bookingId,
-  now = new Date(),
-}: {
-  schoolId: string;
-  bookingId: string;
-  now?: Date;
-}): Promise<CancelBookingResult> {
-  const db = getDb();
-
-  return db.transaction(async (tx) => {
+export async function cancelBooking(
+  {
+    schoolId,
+    bookingId,
+    now = new Date(),
+  }: {
+    schoolId: string;
+    bookingId: string;
+    now?: Date;
+  },
+  options: TransactionOptions = {},
+): Promise<CancelBookingResult> {
+  return withTransaction(async (tx) => {
     const [booking] = await tx
       .select()
       .from(bookings)
@@ -605,5 +678,5 @@ export async function cancelBooking({
     });
 
     return { ok: true, booking: updated, replay: false };
-  });
+  }, options);
 }
