@@ -27,6 +27,7 @@ const school: School = {
   whatsappReleaseAt: null,
   whatsappReleaseClaimedAt: null,
   whatsappDeregisteredAt: null,
+  whatsappHealthUpdatedAt: null,
   whatsappProviderResourceId: null,
   whatsappAllocationId: null,
   phone: "+15125550100",

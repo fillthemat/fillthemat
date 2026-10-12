@@ -358,9 +358,11 @@ export function WhatsAppSignup({
         >
           {current.state === "cancelled"
             ? "Resume Meta signup"
-            : current.state === "popup-failed"
-              ? "Retry Meta signup"
-              : "Prepare Meta signup"}
+            : current.state === "broken-access"
+              ? "Reconnect with Meta"
+              : current.state === "popup-failed"
+                ? "Retry Meta signup"
+                : "Prepare Meta signup"}
         </Button>
       )}
       {message ? (

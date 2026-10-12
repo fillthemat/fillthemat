@@ -67,7 +67,7 @@ export function createTwilioNumberProvider({
         ? receivedAt
         : null;
     },
-    async buyUsNumber({ allocationId }) {
+    async buyUsNumber({ allocationId, excludeNumber }) {
       const name = `fillthemat:${allocationId}`;
       // Reconcile a prior purchase before retrying the allocation. Do not
       // assume a timeout means no rental exists. The module serializes buys.
@@ -98,7 +98,7 @@ export function createTwilioNumberProvider({
           throw new Error("Invalid carrier pagination");
       }
       const available = await request(
-        `${base}/AvailablePhoneNumbers/US/Local.json?SmsEnabled=true&VoiceEnabled=true&PageSize=1`,
+        `${base}/AvailablePhoneNumbers/US/Local.json?SmsEnabled=true&VoiceEnabled=true&PageSize=${excludeNumber ? 10 : 1}`,
       );
       if (!available.ok) return { ok: false, code: "purchase_failed" };
       const inventory = z
@@ -108,7 +108,9 @@ export function createTwilioNumberProvider({
           ),
         })
         .parse(await available.json());
-      const number = inventory.available_phone_numbers[0]?.phone_number;
+      const number = inventory.available_phone_numbers.find(
+        (entry) => entry.phone_number !== excludeNumber,
+      )?.phone_number;
       if (!number) return { ok: false, code: "purchase_failed" };
       const purchased = await request(
         `${base}/IncomingPhoneNumbers.json`,

@@ -32,11 +32,12 @@ export async function sendInboundWhatsAppTypingIndicator(
       id: schools.id,
       whatsappTokenEncrypted: schools.whatsappTokenEncrypted,
       whatsappTokenExpiresAt: schools.whatsappTokenExpiresAt,
+      state: schools.whatsappConnectionState,
     })
     .from(schools)
     .where(eq(schools.whatsappPhoneNumberId, input.phoneNumberId))
     .limit(1);
-  if (!school) return;
+  if (!school || school.state.startsWith("broken-")) return;
   return sendWhatsAppTypingIndicator({
     phoneNumberId: input.phoneNumberId,
     messageId: input.wamid,

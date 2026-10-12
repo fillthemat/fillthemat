@@ -155,6 +155,13 @@
       "when": 1791817906362,
       "tag": "20261012111146_whatsapp-cooling-release-197",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791818102770,
+      "tag": "20261012111502_whatsapp-health-198",
+      "breakpoints": true
     }
   ]
 }

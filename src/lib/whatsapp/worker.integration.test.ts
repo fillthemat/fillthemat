@@ -16,6 +16,7 @@ import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import { sendWhatsAppInteractive, sendWhatsAppText } from "./client";
+import { createWhatsAppConnection } from "./connection";
 import {
   attemptWhatsAppDeliveriesNow,
   enqueueWhatsAppDelivery,
@@ -129,6 +130,75 @@ describe("WhatsApp worker dependencies", () => {
         .where(eq(schools.id, schoolId));
     }
   });
+  it.each([
+    [190, "access"],
+    [102, "access"],
+    [131042, "card"],
+    [131031, "restricted"],
+    [133010, "number"],
+  ] as const)(
+    "marks the connection broken after Meta send error %s, then suppresses replies",
+    async (code, part) => {
+      const connection = createWhatsAppConnection({ db });
+      let sends = 0;
+      const transport = {
+        async sendText() {
+          sends++;
+          return {
+            ok: false as const,
+            kind: "whatsapp_error" as const,
+            code,
+            subcode: null,
+            details: null,
+            status: 400,
+            message: "Meta refused",
+          };
+        },
+        async sendInteractive() {
+          throw new Error("No interactive expected");
+        },
+      };
+      try {
+        for (const attempt of [1, 2]) {
+          const id = await enqueueWhatsAppDelivery(
+            {
+              schoolId,
+              phoneNumberId,
+              recipientWaId: "16505550198",
+              body: "Reply",
+              windowExpiresAt: new Date("2020-01-02T12:00:00Z"),
+              providerIdempotencyKey: `broken/${code}/${attempt}/${suffix}`,
+            },
+            { now },
+          );
+          if (!id) throw new Error("Missing delivery");
+          await attemptWhatsAppDeliveriesNow([id], randomUUID(), {
+            now: () => now,
+            transport,
+          });
+          expect((await connection.read(schoolId)).state).toBe(
+            `broken-${part}`,
+          );
+        }
+        await enqueueInboundJobs([
+          {
+            wamid: `wamid.broken.${code}.${suffix}`,
+            waId: "16505550198",
+            phoneNumberId,
+            text: "Hello",
+            profileName: null,
+          },
+        ]);
+        await runWhatsAppWorkerOnce(randomUUID(), { transport });
+        expect(sends).toBe(1);
+      } finally {
+        await db
+          .update(schools)
+          .set({ whatsappConnectionState: "live" })
+          .where(eq(schools.id, schoolId));
+      }
+    },
+  );
   it("does not send an already queued reply after the school is no longer Live", async () => {
     const id = await enqueueWhatsAppDelivery(
       {

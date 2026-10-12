@@ -23,6 +23,7 @@ import {
   checkWhatsAppReadinessAction,
   enableWhatsAppAction,
 } from "../whatsapp-actions";
+import { WhatsAppBroken } from "./whatsapp-broken";
 import { WhatsAppSharing } from "./whatsapp-sharing";
 import { type EmbeddedSignupConfig, WhatsAppSignup } from "./whatsapp-signup";
 import { releaseDateLabel, WhatsAppSwitchOff } from "./whatsapp-switch-off";
@@ -108,7 +109,9 @@ export function WhatsAppSection({
       "cooling",
       "released",
     ].includes(state);
-  const signedUp = ["needs-card", "live", "cooling"].includes(state);
+  const signedUp =
+    ["needs-card", "live", "cooling"].includes(state) ||
+    state.startsWith("broken-");
   const shareLink = whatsappShareLink(connection);
 
   return (
@@ -224,7 +227,13 @@ export function WhatsAppSection({
         </li>
       </ol>
       <div className="flex flex-col items-start gap-3" aria-live="polite">
-        <Badge variant={state === "failed" ? "warning" : "muted"}>
+        <Badge
+          variant={
+            state === "failed" || state.startsWith("broken-")
+              ? "warning"
+              : "muted"
+          }
+        >
           {labels[state]}
         </Badge>
         {connection.number ? (
@@ -254,6 +263,7 @@ export function WhatsAppSection({
             and repeat Meta signup. Past conversations stay with your school.
           </Callout>
         ) : null}
+        <WhatsAppBroken connection={connection} pending={pending} />
         {state === "buying" ? (
           <p className="text-sm">
             We are buying your number. WhatsApp is not Live yet. If this status
@@ -314,9 +324,13 @@ export function WhatsAppSection({
             {readinessMessage}
           </p>
         ) : null}
-        {["popup", "cancelled", "popup-failed", "registering"].includes(
-          state,
-        ) ? (
+        {[
+          "popup",
+          "cancelled",
+          "popup-failed",
+          "registering",
+          "broken-access",
+        ].includes(state) ? (
           <WhatsAppSignup connection={connection} config={signupConfig} />
         ) : null}
         {state === "failed" ? (

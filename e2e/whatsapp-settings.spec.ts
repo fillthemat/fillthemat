@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
@@ -27,6 +27,7 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
   const resourceId = `PN${randomUUID().replaceAll("-", "")}`;
   let cardAdded = false;
   let numberRegistered = false;
+  let messagingAvailable = true;
   const vendor = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     let data: unknown;
@@ -48,12 +49,18 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
     else if (url.pathname.endsWith("/register")) {
       numberRegistered = true;
       data = { success: true };
-    } else if (url.pathname.endsWith("/subscribed_apps"))
+    } else if (
+      url.pathname.endsWith("/subscribed_apps") ||
+      url.pathname.endsWith("/subscriptions")
+    )
       data = { success: true };
     else if (url.pathname.endsWith(`/${phoneId}`))
       data = {
         status: numberRegistered ? "CONNECTED" : "PENDING",
         verified_name: "WhatsApp E2E School",
+        health_status: {
+          can_send_message: messagingAvailable ? "AVAILABLE" : "BLOCKED",
+        },
       };
     else if (url.pathname.endsWith(`/${accountId}`))
       data = cardAdded ? { primary_funding_id: "school-card" } : {};
@@ -201,6 +208,117 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
     await expect(
       publicPage.getByRole("link", { name: "Chat with us on WhatsApp" }),
     ).toHaveAttribute("href", "https://wa.me/12125550196");
+
+    let eventTime = Math.ceil(Date.now() / 1000) + 1;
+    const accountEvent = async (event: string, extra = {}) => {
+      const payload = JSON.stringify({
+        object: "whatsapp_business_account",
+        entry: [
+          {
+            id: accountId,
+            time: eventTime++,
+            changes: [{ field: "account_update", value: { event, ...extra } }],
+          },
+        ],
+      });
+      const response = await page.request.post("/api/webhooks/whatsapp", {
+        data: payload,
+        headers: {
+          "Content-Type": "application/json",
+          "x-hub-signature-256": `sha256=${createHmac("sha256", "e2e-app-secret").update(payload).digest("hex")}`,
+        },
+      });
+      expect(response.ok()).toBe(true);
+      await page.reload();
+    };
+    messagingAvailable = false;
+    await accountEvent("ACCOUNT_RESTRICTION", {
+      restriction_info: [
+        { restriction_type: "RESTRICTED_CUSTOMER_INITIATED_MESSAGING" },
+      ],
+    });
+    await expect(
+      page.getByText("Broken · Restricted", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Resolve restriction with Meta" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: "WhatsApp QR code" }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Check connection again" }).click();
+    await expect(page.getByText(/WhatsApp is still broken/)).toBeVisible();
+    messagingAvailable = true;
+    await page.getByRole("button", { name: "Check connection again" }).click();
+    await expect(
+      page.getByText("Live · Working", { exact: true }),
+    ).toBeVisible();
+    const failedMessage = `wamid.billing-${suffix}`;
+    await sql`insert into app.whatsapp_deliveries (school_id, recipient_wa_id, phone_number_id, provider_idempotency_key, state, provider_id, sent_at, attempts) select id, '12125550200', ${phoneId}, ${failedMessage}, 'sent', ${failedMessage}, now(), 1 from app.schools where owner_user_id = ${ownerId}`;
+    const statusPayload = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: accountId,
+          changes: [
+            {
+              field: "messages",
+              value: {
+                statuses: [
+                  {
+                    id: failedMessage,
+                    status: "failed",
+                    timestamp: eventTime++,
+                    errors: [{ code: 131042, title: "Payment failed" }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const billingResponse = await page.request.post("/api/webhooks/whatsapp", {
+      data: statusPayload,
+      headers: {
+        "Content-Type": "application/json",
+        "x-hub-signature-256": `sha256=${createHmac("sha256", "e2e-app-secret").update(statusPayload).digest("hex")}`,
+      },
+    });
+    expect(billingResponse.ok()).toBe(true);
+    await page.reload();
+    await expect(
+      page.getByText("Broken · Card", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Fix payment card in WhatsApp Manager" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Check connection again" }).click();
+    await expect(
+      page.getByText("Live · Working", { exact: true }),
+    ).toBeVisible();
+    await accountEvent("PARTNER_APP_UNINSTALLED", {
+      waba_info: { waba_id: accountId, partner_app_id: "196" },
+    });
+    await expect(
+      page.getByText("Broken · Access", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Reconnect with Meta" }).click();
+    await page.getByRole("button", { name: "Open Meta popup" }).click();
+    await expect(
+      page.getByText("Setup succeeded · Needs card", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Check readiness" }).click();
+    await expect(
+      page.getByText("Live · Working", { exact: true }),
+    ).toBeVisible();
+    await accountEvent("ACCOUNT_OFFBOARDED");
+    await expect(
+      page.getByText("Broken · Number", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Start again with a new number" }),
+    ).toBeVisible();
   } finally {
     if (ownerId) {
       await sql`delete from app.users where id = ${ownerId}`;

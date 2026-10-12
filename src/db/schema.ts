@@ -163,6 +163,9 @@ export const schools = appSchema.table(
     whatsappDeregisteredAt: timestamp("whatsapp_deregistered_at", {
       withTimezone: true,
     }),
+    whatsappHealthUpdatedAt: timestamp("whatsapp_health_updated_at", {
+      withTimezone: true,
+    }),
     whatsappProviderResourceId: text("whatsapp_provider_resource_id"),
     whatsappAllocationId: uuid("whatsapp_allocation_id"),
     whatsappSignupAttemptId: uuid("whatsapp_signup_attempt_id"),

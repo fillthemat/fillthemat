@@ -63,6 +63,295 @@ afterAll(async () => {
 });
 
 describe("WhatsApp connection commands", () => {
+  it("reconnects expired access on the same number with a fresh customer token", async () => {
+    const id = await school(true);
+    vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "aa".repeat(32));
+    let time = new Date("2026-10-12T10:00:00Z");
+    let expiry = new Date("2026-10-12T11:00:00Z");
+    const connection = createWhatsAppConnection({
+      db,
+      now: () => time,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550188", resourceId: `PN-${id}` };
+        },
+      },
+      meta: {
+        async exchangeCode() {
+          return { token: "fresh-token", expiresAt: expiry };
+        },
+        async validateNumber() {
+          return true;
+        },
+        async subscribe() {},
+        async register() {},
+        async readReadiness() {
+          return {
+            registered: true,
+            paymentMethod: true,
+            messagingAvailable: true,
+            profileName: "School",
+          };
+        },
+      },
+    });
+    const complete = async () => {
+      const start = await connection.startSignup(id);
+      return connection.completeSignup(id, {
+        attemptId: requireRow(start.connection.attemptId, "attempt"),
+        code: "code",
+        wabaId: "198003",
+        phoneNumberId: "106500000198003",
+      });
+    };
+    try {
+      await connection.enable(id);
+      await complete();
+      await connection.checkReadiness(id);
+      await connection.markBroken(id, "access");
+      time = new Date("2026-10-12T12:00:00Z");
+      expect(await connection.checkReadiness(id)).toMatchObject({
+        ok: false,
+        connection: { state: "broken-access" },
+      });
+      expiry = new Date("2026-12-01T12:00:00Z");
+      expect(await complete()).toMatchObject({
+        ok: true,
+        connection: { state: "needs-card", number: "+12125550188" },
+      });
+      expect(await connection.checkReadiness(id)).toMatchObject({
+        connection: { state: "live" },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("restarts a broken number with a new allocation only after releasing the old carrier rental", async () => {
+    const id = await school(true);
+    vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "bb".repeat(32));
+    const purchases: string[] = [];
+    const released: string[] = [];
+    const connection = createWhatsAppConnection({
+      db,
+      numberProvider: {
+        async releaseNumber({ resourceId }) {
+          released.push(resourceId);
+        },
+        async buyUsNumber({ allocationId }) {
+          purchases.push(allocationId);
+          if (purchases.length === 2) expect(released).toEqual([`PN-${id}`]);
+          return {
+            ok: true,
+            number: purchases.length === 1 ? "+12125550187" : "+12125550186",
+            resourceId: `PN-${id}`,
+          };
+        },
+      },
+      meta: {
+        async exchangeCode() {
+          return { token: "number-token", expiresAt: null };
+        },
+        async validateNumber() {
+          return true;
+        },
+        async subscribe() {},
+        async register() {},
+        async readReadiness() {
+          return {
+            registered: true,
+            paymentMethod: true,
+            profileName: "School",
+          };
+        },
+      },
+    });
+    try {
+      await connection.enable(id);
+      const start = await connection.startSignup(id);
+      await connection.completeSignup(id, {
+        attemptId: requireRow(start.connection.attemptId, "attempt"),
+        code: "code",
+        wabaId: "198004",
+        phoneNumberId: "106500000198004",
+      });
+      await connection.checkReadiness(id);
+      await connection.markBroken(id, "number");
+      expect(await connection.enable(id)).toMatchObject({
+        ok: true,
+        connection: {
+          state: "popup",
+          number: "+12125550186",
+          phoneNumberId: null,
+          wabaId: null,
+        },
+      });
+      expect(purchases[1]).not.toBe(purchases[0]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it.each(["card", "access", "restricted", "number"] as const)(
+    "keeps broken-%s offline until Meta confirms funding and messaging health",
+    async (part) => {
+      const id = await school(true);
+      vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "98".repeat(32));
+      let paymentMethod = true;
+      let messagingAvailable = true;
+      const connection = createWhatsAppConnection({
+        db,
+        numberProvider: {
+          async buyUsNumber() {
+            return { ok: true, number: "+12125550198", resourceId: `PN-${id}` };
+          },
+        },
+        meta: {
+          async exchangeCode() {
+            return { token: "health-token", expiresAt: null };
+          },
+          async validateNumber() {
+            return true;
+          },
+          async subscribe() {},
+          async register() {},
+          async readReadiness() {
+            return {
+              registered: true,
+              paymentMethod,
+              messagingAvailable,
+              profileName: "Connection School",
+            };
+          },
+        },
+      });
+      try {
+        await connection.enable(id);
+        const started = await connection.startSignup(id);
+        await connection.completeSignup(id, {
+          attemptId: requireRow(started.connection.attemptId, "attempt"),
+          code: "code",
+          wabaId: "198001",
+          phoneNumberId: `${Date.now()}${part.length}`,
+        });
+        await connection.checkReadiness(id);
+        expect(await connection.markBroken(id, part)).toMatchObject({
+          connection: { state: `broken-${part}` },
+        });
+        paymentMethod = false;
+        expect(await connection.checkReadiness(id)).toMatchObject({
+          connection: { state: `broken-${part}` },
+        });
+        paymentMethod = true;
+        messagingAvailable = false;
+        expect(await connection.checkReadiness(id)).toMatchObject({
+          connection: { state: `broken-${part}` },
+        });
+        messagingAvailable = true;
+        expect(await connection.checkReadiness(id)).toMatchObject({
+          connection: { state: "live" },
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+  it("handles account restrictions, access removal and offboarding for the matching account, ignoring other apps and stale events after recovery", async () => {
+    const id = await school(true);
+    const other = await school(true);
+    vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "99".repeat(32));
+    let time = new Date("2026-10-12T12:00:00Z");
+    const connection = createWhatsAppConnection({
+      db,
+      now: () => time,
+      numberProvider: {
+        async buyUsNumber() {
+          return { ok: true, number: "+12125550199", resourceId: `PN-${id}` };
+        },
+      },
+      meta: {
+        async exchangeCode() {
+          return { token: "webhook-token", expiresAt: null };
+        },
+        async validateNumber() {
+          return true;
+        },
+        async subscribe() {},
+        async register() {},
+        async readReadiness() {
+          return {
+            registered: true,
+            paymentMethod: true,
+            messagingAvailable: true,
+            profileName: "School",
+          };
+        },
+      },
+    });
+    const payload = (event: string, extra = {}) => ({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: "198002",
+          time: time.getTime() / 1000,
+          changes: [{ field: "account_update", value: { event, ...extra } }],
+        },
+      ],
+    });
+    try {
+      await connection.enable(id);
+      const start = await connection.startSignup(id);
+      await connection.completeSignup(id, {
+        attemptId: requireRow(start.connection.attemptId, "attempt"),
+        code: "code",
+        wabaId: "198002",
+        phoneNumberId: "106500000198002",
+      });
+      await connection.checkReadiness(id);
+      time = new Date("2026-10-12T12:01:00Z");
+      await connection.handleAccountUpdates(
+        payload("PARTNER_APP_UNINSTALLED", {
+          waba_info: { waba_id: "198002", partner_app_id: "other" },
+        }),
+        "198",
+      );
+      expect((await connection.read(id)).state).toBe("live");
+      for (const [event, part, extra] of [
+        [
+          "ACCOUNT_RESTRICTION",
+          "restricted",
+          {
+            restriction_info: [
+              { restriction_type: "RESTRICTED_CUSTOMER_INITIATED_MESSAGING" },
+            ],
+          },
+        ],
+        [
+          "DISABLED_UPDATE",
+          "restricted",
+          { ban_info: { waba_ban_state: "DISABLE" } },
+        ],
+        [
+          "PARTNER_APP_UNINSTALLED",
+          "access",
+          { waba_info: { waba_id: "198002", partner_app_id: "198" } },
+        ],
+        ["ACCOUNT_OFFBOARDED", "number", {}],
+        ["ACCOUNT_DELETED", "number", {}],
+      ] as const) {
+        time = new Date(time.getTime() + 60_000);
+        const callback = payload(event, extra);
+        await connection.handleAccountUpdates(callback, "198");
+        expect((await connection.read(id)).state).toBe(`broken-${part}`);
+        expect((await connection.read(other)).state).toBe("off");
+        time = new Date(time.getTime() + 60_000);
+        await connection.checkReadiness(id);
+        expect((await connection.read(id)).state).toBe("live");
+        await connection.handleAccountUpdates(callback, "198");
+        expect((await connection.read(id)).state).toBe("live");
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it("goes Live only after Meta confirms both registration and a payment method", async () => {
     const id = await school(true);
     vi.stubEnv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "96".repeat(32));

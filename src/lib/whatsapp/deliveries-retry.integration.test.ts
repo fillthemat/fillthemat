@@ -50,7 +50,11 @@ afterEach(async () => {
   now = initialNow;
   await db
     .update(schools)
-    .set({ approvedAt: new Date() })
+    .set({
+      approvedAt: new Date(),
+      whatsappConnectionState: "live",
+      whatsappHealthUpdatedAt: null,
+    })
     .where(eq(schools.id, schoolId));
   vi.restoreAllMocks();
 });
