@@ -3,6 +3,7 @@ import { addDays } from "date-fns";
 import {
   and,
   asc,
+  desc,
   eq,
   gt,
   inArray,
@@ -349,6 +350,23 @@ export async function appendMessage(
   options: TransactionOptions = {},
 ): Promise<string | undefined> {
   const write = async (tx: Transaction) => {
+    // Serialize message appends for this conversation and advance past its
+    // latest timestamp. PostgreSQL's now() is transaction-scoped, so the
+    // default timestamp ties every message appended in one transaction.
+    await tx
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .for("update");
+    const [latestMessage] = await tx
+      .select({ createdAt: messages.createdAt })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    const createdAt = new Date(
+      Math.max(Date.now(), (latestMessage?.createdAt.getTime() ?? 0) + 1),
+    );
     const [row] = await tx
       .insert(messages)
       .values({
@@ -358,6 +376,7 @@ export async function appendMessage(
         role,
         parts,
         completion,
+        createdAt,
       })
       .onConflictDoNothing({
         target: [messages.conversationId, messages.messageId],
