@@ -1,9 +1,13 @@
 import { type InferToolOutput, tool } from "ai";
 import { z } from "zod";
-import { isAgeEligible } from "@/lib/schedule/occurrences";
+import { isAgeEligible, type OpenSlot } from "@/lib/schedule/occurrences";
 import { parseSlotId } from "@/lib/schedule/slot-id";
 import { contactSchema } from "@/lib/validation";
-import type { AssistantContext } from "../context";
+import type {
+  AssistantContext,
+  AssistantSchool,
+  SchoolCatalog,
+} from "../context";
 import { trialAvailability } from "./trial-availability";
 
 export function prepareBooking(ctx: AssistantContext) {
@@ -73,31 +77,13 @@ export function prepareBooking(ctx: AssistantContext) {
         participantName &&
         participantAge != null
           ? {
-              bookingTerms: {
-                school: { id: ctx.school.id, name: ctx.school.name },
-                offering: { id: offering.id, name: offering.name },
-                occurrence: {
-                  slot_id: slot.slotId,
-                  start: slot.startAt.toISOString(),
-                  end: slot.endAt.toISOString(),
-                  time_zone: slot.timezone,
-                },
-                participant: { name: participantName, age: participantAge },
+              bookingTerms: buildBookingTerms(
+                ctx.school,
+                offering,
+                slot,
+                { name: participantName, age: participantAge },
                 contact,
-                pricing: ctx.school.pricing,
-                guidance:
-                  [
-                    ctx.school.accessNotes,
-                    ctx.school.parkingNotes,
-                    offering.attire ?? ctx.school.trialGuidance,
-                    offering.expectations,
-                  ]
-                    .filter(Boolean)
-                    .join("\n") || null,
-                location: [ctx.school.address, ctx.school.city]
-                  .filter(Boolean)
-                  .join(", "),
-              } satisfies BookingTerms,
+              ),
             }
           : {}),
       };
@@ -131,6 +117,39 @@ export type BookingTerms = {
   guidance: string | null;
   location: string;
 };
+
+/** Conversation tools and the booking API issue identical live-catalog terms. */
+export function buildBookingTerms(
+  school: AssistantSchool,
+  offering: SchoolCatalog["offerings"][number],
+  slot: OpenSlot,
+  participant: BookingTerms["participant"],
+  contact: BookingTerms["contact"],
+): BookingTerms {
+  return {
+    school: { id: school.id, name: school.name },
+    offering: { id: offering.id, name: offering.name },
+    occurrence: {
+      slot_id: slot.slotId,
+      start: slot.startAt.toISOString(),
+      end: slot.endAt.toISOString(),
+      time_zone: slot.timezone,
+    },
+    participant,
+    contact,
+    pricing: school.pricing,
+    guidance:
+      [
+        school.accessNotes,
+        school.parkingNotes,
+        offering.attire ?? school.trialGuidance,
+        offering.expectations,
+      ]
+        .filter(Boolean)
+        .join("\n") || null,
+    location: [school.address, school.city].filter(Boolean).join(", "),
+  };
+}
 
 export function bookingIntentFromResult(
   output: PrepareBookingOutput | undefined,
