@@ -94,6 +94,15 @@ test("WhatsApp settings: Enable → Meta signup → card → Live and sharing", 
       vendor.once("error", reject);
       vendor.listen(Number(new URL(baseURL).port) + 1, "127.0.0.1", resolve);
     });
+    const verification = await page.request.get("/api/webhooks/whatsapp", {
+      params: {
+        "hub.mode": "subscribe",
+        "hub.verify_token": "e2e-verify-token",
+        "hub.challenge": "e2e-challenge",
+      },
+    });
+    expect(verification.status()).toBe(200);
+    expect(await verification.text()).toBe("e2e-challenge");
     const { data, error } = await auth.auth.admin.createUser({
       email,
       password,
