@@ -20,6 +20,7 @@ env:
 
 jobs:
   checks:
+    # This job name is a required check; do not change it without updating the Main ruleset.
     name: Lint, format, and typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -28,5 +29,5 @@ jobs:
 
       - uses: ./.github/actions/setup-bun-ci
 
-      - name: Run lint, formatting, and type checks
+      - name: Run migration consistency, lint, formatting, and type checks
         run: bun run verify:checks

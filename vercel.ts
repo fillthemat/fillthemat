@@ -12,11 +12,16 @@ export const config: VercelConfig = {
   git: {
     deploymentEnabled: {
       "gh-pages": false,
+      // Ephemeral merge-queue branches run CI, not quota-consuming Previews.
+      "gh-readonly-queue/**": false,
     },
   },
   // Belt-and-suspenders if a gh-pages deployment is created anyway (exit 0 =
-  // skip). See docs/decisions/vercel-gh-pages-deployments.md.
-  ignoreCommand: '[ "$VERCEL_GIT_COMMIT_REF" = "gh-pages" ]',
+  // skip). See docs/decisions/vercel-gh-pages-deployments.md. Check in the shell
+  // first: the report branch has no package.json or scripts/.
+  // Other branches use the docs-only Preview skip; Production/uncertainty build.
+  ignoreCommand:
+    '[ "$VERCEL_GIT_COMMIT_REF" = "gh-pages" ] || bun run vercel:ignore-build',
   crons: [
     { path: "/api/cron/maintenance", schedule: "0 14 * * *" },
     // Hobby-safe: Vercel's free tier only allows daily cron intervals. The
