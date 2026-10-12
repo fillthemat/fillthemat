@@ -13,6 +13,8 @@ export const MAX_CHAT_MESSAGES_PER_CONVERSATION = 30;
 export const MAX_USER_MESSAGE_CHARS = 2000;
 export const MAX_REQUEST_BYTES = 32_768;
 export const MAX_AGENT_STEPS = 8;
+export const MAX_POPPY_NEW_CLIENTS_PER_DAY = 25;
+export const MAX_POPPY_SESSIONS_PER_CLIENT_PER_HOUR = 60;
 
 // WhatsApp abuse controls (Phase 5). These mirror the email patterns above but
 // key on the Meta-verified `wa_id` and are intentionally DISTINCT budgets from
