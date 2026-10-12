@@ -12,6 +12,8 @@ export const config: VercelConfig = {
   git: {
     deploymentEnabled: {
       "gh-pages": false,
+      // Ephemeral merge-queue branches run CI, not quota-consuming Previews.
+      "gh-readonly-queue/**": false,
     },
   },
   // Belt-and-suspenders if a gh-pages deployment is created anyway (exit 0 =

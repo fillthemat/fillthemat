@@ -13,6 +13,13 @@ const preview = {
 
 afterEach(() => vi.restoreAllMocks());
 
+it("disables merge-queue deployments", () => {
+  expect(config.git?.deploymentEnabled).toHaveProperty(
+    "gh-readonly-queue/**",
+    false,
+  );
+});
+
 it("skips gh-pages without any repository files or Bun available", () => {
   const directory = mkdtempSync(join(tmpdir(), "fillthemat-ignore-build-"));
   try {
