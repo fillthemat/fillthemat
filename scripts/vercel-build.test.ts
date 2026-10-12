@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { scripts } from "../package.json";
 import { config } from "../vercel";
 
-function runBuild(environment: string, gateStatus = 0) {
+function runBuild(environment: string, gateStatus = 0, migrateStatus = 0) {
   expect(config.buildCommand).toBe("bun run build:vercel");
   // Stub only the process boundary: exercise the configured shell command
   // without querying a hosted database or running a Next.js build.
@@ -12,13 +12,14 @@ function runBuild(environment: string, gateStatus = 0) {
     "sh",
     [
       "-c",
-      'bun() { printf "%s\\n" "$*"; if [ "$2" = "db:check" ]; then return "$GATE_STATUS"; fi; }; eval "$BUILD_COMMAND"',
+      'bun() { printf "%s\\n" "$*"; case "$2" in db:migrate:deploy) return "$MIGRATE_STATUS";; db:check) return "$GATE_STATUS";; esac; }; eval "$BUILD_COMMAND"',
     ],
     {
       env: {
         ...process.env,
         VERCEL_ENV: environment,
         GATE_STATUS: String(gateStatus),
+        MIGRATE_STATUS: String(migrateStatus),
         BUILD_COMMAND: scripts["build:vercel"],
       },
       encoding: "utf8",
@@ -43,22 +44,29 @@ it("documents only Bun script entries for deployment and recovery", () => {
   }
 });
 
-it("checks migrations before production builds and stops on gate failure", () => {
+it("migrates, checks, then builds production and stops on either failure", () => {
   const success = runBuild("production");
   expect(success.status).toBe(0);
   expect(success.stdout.trim().split("\n")).toEqual([
+    "run db:migrate:deploy",
     "run db:check",
     "run build",
   ]);
   const failure = runBuild("production", 1);
   expect(failure.status).toBe(1);
-  expect(failure.stdout.trim()).toBe("run db:check");
+  expect(failure.stdout.trim().split("\n")).toEqual([
+    "run db:migrate:deploy",
+    "run db:check",
+  ]);
+  const migrateFailure = runBuild("production", 0, 1);
+  expect(migrateFailure.status).toBe(1);
+  expect(migrateFailure.stdout.trim()).toBe("run db:migrate:deploy");
 });
 
 it.each(["preview", "development", ""])(
   "does not gate %s builds on production migrations",
   (environment) => {
-    const result = runBuild(environment, 1);
+    const result = runBuild(environment, 1, 1);
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("run build");
   },

@@ -2,8 +2,8 @@ import type { VercelConfig } from "@vercel/config/v1";
 
 export const config: VercelConfig = {
   bunVersion: "1.4.x",
-  // Refuse to release production code ahead of its database schema. Hosted migrations
-  // remain an explicit operator action, never a build/runtime write.
+  // Production builds migrate, check schema readiness, then build the app.
+  // Preview builds and the application runtime never apply migrations.
   buildCommand: "bun run build:vercel",
   framework: "nextjs",
   // Playwright HTML reports live on GitHub Pages (`gh-pages`). Vercel must not

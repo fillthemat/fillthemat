@@ -1,22 +1,100 @@
-import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import postgres from "postgres";
 
-const url = process.env.DIRECT_URL;
-if (!url) {
-  throw new Error(
-    "DIRECT_URL is not set. Put the hosted session-pooler URI in .env.production.local.",
-  );
+const migrationLockKey = 156_001;
+
+// The CLI validates the target; the shared routine also supports a local rehearsal.
+export async function migrateProduction(
+  url: string,
+  migrationsFolder = "drizzle",
+) {
+  if (new URL(url).port === "6543")
+    throw Object.assign(
+      new Error("Transaction pooler is unsafe for migrations"),
+      {
+        code: "TRANSACTION_POOLER",
+      },
+    );
+  const client = postgres(url, {
+    prepare: false,
+    max: 1,
+    max_lifetime: 0, // Keep the advisory lock on one session throughout.
+    connect_timeout: 10,
+    onnotice: () => {},
+  });
+  let failure: { error: unknown } | undefined;
+  try {
+    await client`select pg_advisory_lock(${migrationLockKey})`;
+    try {
+      await client`set lock_timeout = '5s'`;
+      await migrate(drizzle(client), { migrationsFolder });
+    } catch (error) {
+      failure = { error };
+    } finally {
+      try {
+        await client`select pg_advisory_unlock(${migrationLockKey})`;
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  } catch (error) {
+    failure ??= { error };
+  } finally {
+    try {
+      await client.end({ timeout: 5 });
+    } catch (error) {
+      failure ??= { error };
+    }
+  }
+  if (failure) throw failure.error;
 }
 
-const host = new URL(url).hostname;
-if (host === "127.0.0.1" || host === "localhost" || host === "::1") {
-  throw new Error(`Refusing prod migrate against ${host}`);
+async function main() {
+  const { DIRECT_URL: url, VERCEL, VERCEL_ENV } = process.env;
+  if ((VERCEL || VERCEL_ENV) && VERCEL_ENV !== "production")
+    throw new Error("Refusing migration outside Vercel Production");
+  if (!url) throw new Error("Missing DIRECT_URL");
+  const host = new URL(url).hostname;
+  if (
+    /^(localhost\.?$|.*\.localhost\.?$|127\.|\[?::1\]?$|\[::ffff:7f)/i.test(
+      host,
+    )
+  )
+    throw new Error("Refusing production migration against loopback");
+  await migrateProduction(url);
+  console.info("Production migrations completed.");
 }
 
-console.info(`drizzle-kit migrate → ${host}`);
+function errorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return;
+  if (
+    "code" in error &&
+    typeof error.code === "string" &&
+    /^[A-Z0-9_]{2,40}$/.test(error.code)
+  )
+    return error.code;
+  // Drizzle wraps SQL failures. Never log the query or raw connection error.
+  if ("cause" in error) return errorCode(error.cause);
+}
 
-const result = spawnSync("bunx", ["drizzle-kit", "migrate"], {
-  stdio: "inherit",
-  env: { ...process.env, DIRECT_URL: url },
-});
-
-process.exit(result.status ?? 1);
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((error: unknown) => {
+    const code = errorCode(error);
+    console.error(
+      JSON.stringify({
+        event: "production.migration.failed",
+        code,
+        error:
+          code === "TRANSACTION_POOLER"
+            ? "Production migration failed. Use a direct or session-pooler URL, not port 6543."
+            : "Production migration failed. Check DIRECT_URL and migrations; connection details are not logged.",
+      }),
+    );
+    process.exitCode = 1;
+  });
+}
