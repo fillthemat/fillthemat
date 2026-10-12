@@ -18,6 +18,7 @@ import * as languageModel from "@/lib/ai/language-model";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
 import type { EmailMessage } from "@/lib/email/dependencies";
 import { runMaintenance } from "@/lib/maintenance";
+import { cancelBooking } from "@/lib/schedule/book-slot";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { createTestPoppyAgent } from "@/test/poppy-agent";
@@ -1277,11 +1278,12 @@ it("a failure committing the effect rolls back and concurrent confirms retry it 
   );
   for (const replay of replays)
     expect(await replay.json()).toMatchObject({ state: "succeeded" });
-  expect(
-    (await loadBookings({ schoolId, filter: "all" })).filter(
-      (booking) => booking.contactEmailSnapshot === contact.email,
-    ),
-  ).toHaveLength(1);
+  const bookings = (await loadBookings({ schoolId, filter: "all" })).filter(
+    (booking) => booking.contactEmailSnapshot === contact.email,
+  );
+  expect(bookings).toHaveLength(1);
+  // Recovery now genuinely fills a seat; release it for subsequent proposals.
+  if (bookings[0]) await cancelBooking({ schoolId, bookingId: bookings[0].id });
 });
 
 it("a delayed proposal belongs to the receipt's Session, not the new Session polling the Conversation", async () => {
