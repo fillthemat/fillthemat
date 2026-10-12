@@ -10,6 +10,7 @@
     "doctor": "bun scripts/doctor-local.ts",
     "vercel": "bunx vercel@63.1.2",
     "logs:prod": "bun --no-env-file scripts/logs-prod.ts",
+    "pr:queue": "bun --no-env-file scripts/pr-queue.ts",
     "db:seed": "bun scripts/seed-local.ts",
     "build": "bun run --bun next build",
     "build:vercel": "if [ \"$VERCEL_ENV\" = \"production\" ]; then bun run db:migrate:deploy && bun run db:check; fi && bun run build",
