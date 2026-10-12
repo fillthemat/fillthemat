@@ -166,8 +166,15 @@
     {
       "idx": 23,
       "version": "7",
-      "when": 1791818459299,
-      "tag": "0023_woozy_klaw",
+      "when": 1791818451500,
+      "tag": "0023_overrated_jean_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791819052675,
+      "tag": "0024_next_ricochet",
       "breakpoints": true
     }
   ]

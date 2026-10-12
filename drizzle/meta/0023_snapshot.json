@@ -1,63 +1,9 @@
 {
-  "id": "cbbd08ca-1f77-45d1-adff-cbefd9ee1135",
+  "id": "89970516-772b-4b65-8f3c-75c3e24bee82",
   "prevId": "d6dedac1-4d90-419e-b792-1c95cfcbc269",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "app.booking_cancel_tokens": {
-      "name": "booking_cancel_tokens",
-      "schema": "app",
-      "columns": {
-        "booking_id": {
-          "name": "booking_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "school_id": {
-          "name": "school_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "booking_cancel_tokens_booking_fk": {
-          "name": "booking_cancel_tokens_booking_fk",
-          "tableFrom": "booking_cancel_tokens",
-          "tableTo": "bookings",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "booking_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
     "app.bookings": {
       "name": "bookings",
       "schema": "app",
@@ -1504,6 +1450,12 @@
           "notNull": true,
           "default": "'web'"
         },
+        "poppy_client_id": {
+          "name": "poppy_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "landing_session_id": {
           "name": "landing_session_id",
           "type": "uuid",
@@ -1564,6 +1516,20 @@
       },
       "indexes": {},
       "foreignKeys": {
+        "leads_poppy_client_id_poppy_clients_client_id_fk": {
+          "name": "leads_poppy_client_id_poppy_clients_client_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "poppy_clients",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "poppy_client_id"
+          ],
+          "columnsTo": [
+            "client_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "leads_school_id_fk": {
           "name": "leads_school_id_fk",
           "tableFrom": "leads",
@@ -2358,6 +2324,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2446,6 +2418,22 @@
           "columnsFrom": [
             "school_id",
             "booking_id"
+          ],
+          "columnsTo": [
+            "school_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "poppy_operations_lead_fk": {
+          "name": "poppy_operations_lead_fk",
+          "tableFrom": "poppy_operations",
+          "tableTo": "leads",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "school_id",
+            "lead_id"
           ],
           "columnsTo": [
             "school_id",

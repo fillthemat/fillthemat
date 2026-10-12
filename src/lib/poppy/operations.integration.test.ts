@@ -4,6 +4,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres from "postgres";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { loadBookings } from "@/app/dashboard/bookings/queries";
+import { loadLeads } from "@/app/dashboard/leads/queries";
 import { GET as discovery } from "@/app/poppy/discovery/[schoolId]/[domain]/route";
 import { POST as close } from "@/app/poppy/schools/[schoolId]/conversations/[conversationId]/close/route";
 import { GET as events } from "@/app/poppy/schools/[schoolId]/conversations/[conversationId]/events/route";
@@ -307,6 +308,449 @@ it("changed exact terms revise the proposal and stale approval returns the curre
 
 const operationParams = (operationId: string) => ({
   params: Promise.resolve({ schoolId, operationId }),
+});
+function requestContact(
+  details: Record<string, unknown> = {},
+  contact: { name: string; email: string | null; phone: string } = {
+    name: "Pat",
+    email: `${randomUUID()}@local.test`,
+    phone: `+1${Date.now()}${Math.floor(Math.random() * 1000)}`,
+  },
+) {
+  vi.spyOn(languageModel, "defaultLanguageModel").mockReturnValue(
+    new MockLanguageModelV4({
+      doGenerate: [
+        {
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: randomUUID(),
+              toolName: "request_contact",
+              input: JSON.stringify({ contact, ...details }),
+            },
+          ],
+          finishReason: { unified: "tool-calls", raw: undefined },
+          usage,
+          warnings: [],
+        },
+        {
+          content: [
+            { type: "text", text: "Please approve the contact request." },
+          ],
+          finishReason: { unified: "stop", raw: undefined },
+          usage,
+          warnings: [],
+        },
+      ],
+    }),
+  );
+  return contact;
+}
+
+it("a request-contact tool call proposes exact lead terms without contacting the School", async () => {
+  const contact = requestContact({
+    participantName: "Sam",
+    participantAge: 10,
+    offeringId,
+    statedNeed: "A weekend trial",
+  });
+  const user = await caller();
+  const { operation } = await propose(user);
+  expect(operation).toMatchObject({
+    revision: 1,
+    state: "proposed",
+    user_approval_required: true,
+    confirmation: null,
+    result: null,
+    terms: {
+      school: { id: schoolId, name: "Operation School" },
+      contact,
+      participant: { name: "Sam", age: 10 },
+      offering: { id: offeringId, name: "Junior Trial" },
+      stated_need: "A weekend trial",
+    },
+  });
+  expect(operation.summary).toContain(
+    "Operation School will contact Pat about a trial",
+  );
+  expect(operation.summary).toContain("not marketing consent");
+  expect(operation.summary).toContain("A weekend trial");
+  expect(
+    (await loadLeads(schoolId)).filter(
+      (row) => row.contact.email === contact.email,
+    ),
+  ).toHaveLength(0);
+});
+
+it("user confirmation of a lead Operation creates exactly one attributed lead and owner notification", async () => {
+  const contact = requestContact({
+    participantName: "Sam",
+    participantAge: 10,
+    offeringId,
+    statedNeed: "A weekend trial",
+  });
+  const user = await caller();
+  const { operation } = await propose(user);
+  const results = await Promise.all(
+    [0, 1, 2].map(async () =>
+      confirm(
+        await user.request(`operations/${operation.operation_id}/confirm`, {
+          revision: 1,
+          approved_by: "user",
+        }),
+        operationParams(operation.operation_id),
+      ),
+    ),
+  );
+  expect(results.every((response) => response.status === 200)).toBe(true);
+  const retry = await confirm(
+    await user.request(`operations/${operation.operation_id}/confirm`, {
+      revision: 1,
+      approved_by: "user",
+    }),
+    operationParams(operation.operation_id),
+  );
+  const final = await retry.json();
+  expect(final).toMatchObject({
+    state: "succeeded",
+    confirmation: { approved_by: "user", revision: 1 },
+    result: {
+      summary: expect.stringContaining("will contact Pat"),
+      data: { lead_id: expect.any(String) },
+    },
+  });
+  const rows = (await loadLeads(schoolId)).filter(
+    (row) => row.contact.email === contact.email,
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    lead: {
+      id: final.result.data.lead_id,
+      channel: "poppy",
+      poppyClientId: user.agent.clientId,
+      participantName: "Sam",
+      participantAge: 10,
+      trialOfferingId: offeringId,
+      statedNeed: "A weekend trial",
+    },
+    poppyClientDisplayName: "Test Personal Agent",
+  });
+  expect(
+    await sql`select kind, recipient from app.email_deliveries where lead_id = ${final.result.data.lead_id}`,
+  ).toEqual([{ kind: "owner_lead", recipient: "owner@local.test" }]);
+  expect(
+    await sql`select utm_source from app.landing_sessions where id = ${rows[0]?.lead.landingSessionId}`,
+  ).toEqual([{ utm_source: "poppy" }]);
+  expect(
+    await sql`select metadata from app.funnel_events where lead_id = ${final.result.data.lead_id}`,
+  ).toEqual([{ metadata: { channel: "poppy", hasOffering: true } }]);
+});
+
+it("request-contact reports extension_required rather than creating a lead for an unsupported client", async () => {
+  const contact = requestContact();
+  const user = await caller(false);
+  const { body, operation } = await propose(user);
+  expect(operation).toBeUndefined();
+  expect(body.events).toContainEqual(
+    expect.objectContaining({
+      type: "message",
+      message: expect.objectContaining({
+        role: "company",
+        text: expect.stringContaining("extension_required"),
+        data: { error: "extension_required", extension: "operations" },
+      }),
+    }),
+  );
+  expect(
+    (await loadLeads(schoolId)).filter(
+      (row) => row.contact.email === contact.email,
+    ),
+  ).toHaveLength(0);
+});
+
+it("cancelled and expired lead proposals are final, explain no contact request was made, and create nothing", async () => {
+  const contact = requestContact();
+  const user = await caller();
+  const { operation } = await propose(user);
+  const response = await cancel(
+    await user.request(`operations/${operation.operation_id}/cancel`, {}),
+    operationParams(operation.operation_id),
+  );
+  const cancelled = await response.json();
+  expect(cancelled).toMatchObject({
+    state: "cancelled",
+    confirmation: null,
+    result: { summary: expect.stringContaining("No contact request was made") },
+  });
+  const replay = await confirm(
+    await user.request(`operations/${operation.operation_id}/confirm`, {
+      revision: 1,
+      approved_by: "user",
+    }),
+    operationParams(operation.operation_id),
+  );
+  expect(await replay.json()).toEqual(cancelled);
+  requestContact({}, contact);
+  const expiring = (await propose(user)).operation;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 31 * 60 * 1000);
+  const renewed = await (
+    await token(
+      await user.agent.tokenRequest(schoolId, {
+        sessionId: user.session.session_id,
+      }),
+      { params: Promise.resolve({ schoolId }) },
+    )
+  ).json();
+  const expired = await confirm(
+    await user.agent.protectedRequest(
+      `https://app.fillthemat.example/poppy/schools/${schoolId}/operations/${expiring.operation_id}/confirm`,
+      renewed.access_token,
+      { method: "POST", body: { revision: 1, approved_by: "user" } },
+    ),
+    operationParams(expiring.operation_id),
+  );
+  expect(await expired.json()).toMatchObject({
+    state: "expired",
+    confirmation: null,
+    result: { summary: expect.stringContaining("No contact request was made") },
+  });
+  expect(
+    (await loadLeads(schoolId)).filter(
+      (row) => row.contact.email === contact.email,
+    ),
+  ).toHaveLength(0);
+});
+
+it("lead revisions require fresh user approval; conversational yes and another Session cannot consent", async () => {
+  const contact = requestContact({ statedNeed: "A weekend trial" });
+  const user = await caller();
+  const { operation, body } = await propose(user);
+  requestContact({ statedNeed: "An evening trial" }, contact);
+  const response = await send(
+    await user.request(
+      `conversations/${body.conversation_id}/messages?wait=2`,
+      { message: { id: randomUUID(), sender: "human", text: "yes" } },
+    ),
+    {
+      params: Promise.resolve({
+        schoolId,
+        conversationId: body.conversation_id,
+      }),
+    },
+  );
+  const revised = (await response.json()).events
+    .filter(
+      (event: { message?: { operation?: unknown } }) =>
+        event.message?.operation,
+    )
+    .at(-1).message.operation;
+  expect(revised).toMatchObject({
+    operation_id: operation.operation_id,
+    revision: 2,
+    state: "proposed",
+    confirmation: null,
+    terms: { stated_need: "An evening trial" },
+  });
+  const stale = await confirm(
+    await user.request(`operations/${operation.operation_id}/confirm`, {
+      revision: 1,
+      approved_by: "user",
+    }),
+    operationParams(operation.operation_id),
+  );
+  expect(stale.status).toBe(409);
+  expect(await stale.json()).toEqual({
+    error: "terms_changed",
+    operation: revised,
+  });
+  const standing = await confirm(
+    await user.request(`operations/${operation.operation_id}/confirm`, {
+      revision: 2,
+      approved_by: "standing_permission",
+    }),
+    operationParams(operation.operation_id),
+  );
+  expect(standing.status).toBe(403);
+  expect(await standing.json()).toEqual({ error: "user_approval_required" });
+  const nextSession = await (
+    await token(await user.agent.tokenRequest(schoolId), {
+      params: Promise.resolve({ schoolId }),
+    })
+  ).json();
+  const foreign = await confirm(
+    await user.agent.protectedRequest(
+      `https://app.fillthemat.example/poppy/schools/${schoolId}/operations/${operation.operation_id}/confirm`,
+      nextSession.access_token,
+      { method: "POST", body: { revision: 2, approved_by: "user" } },
+    ),
+    operationParams(operation.operation_id),
+  );
+  expect(foreign.status).toBe(404);
+  expect(await foreign.json()).toEqual({ error: "operation_not_found" });
+  expect(
+    (await loadLeads(schoolId)).filter(
+      (row) => row.contact.email === contact.email,
+    ),
+  ).toHaveLength(0);
+  const approved = await confirm(
+    await user.request(`operations/${operation.operation_id}/confirm`, {
+      revision: 2,
+      approved_by: "user",
+    }),
+    operationParams(operation.operation_id),
+  );
+  expect(await approved.json()).toMatchObject({
+    state: "succeeded",
+    confirmation: { revision: 2 },
+    terms: { stated_need: "An evening trial" },
+  });
+  expect(
+    (await loadLeads(schoolId)).filter(
+      (row) => row.contact.email === contact.email,
+    ),
+  ).toMatchObject([{ lead: { statedNeed: "An evening trial" } }]);
+});
+
+it("changed lead recipient terms fail instead of silently sending a different request", async () => {
+  const contact = requestContact({ offeringId });
+  const user = await caller();
+  const { operation } = await propose(user);
+  await sql`update app.trial_offerings set name = 'Changed Trial' where id = ${offeringId}`;
+  try {
+    const response = await confirm(
+      await user.request(`operations/${operation.operation_id}/confirm`, {
+        revision: 1,
+        approved_by: "user",
+      }),
+      operationParams(operation.operation_id),
+    );
+    expect(await response.json()).toMatchObject({
+      state: "failed",
+      result: {
+        summary: expect.stringContaining("approved terms have changed"),
+        data: { code: "terms_changed" },
+      },
+    });
+    expect(
+      (await loadLeads(schoolId)).filter(
+        (row) => row.contact.email === contact.email,
+      ),
+    ).toHaveLength(0);
+  } finally {
+    await sql`update app.trial_offerings set name = 'Junior Trial' where id = ${offeringId}`;
+  }
+});
+
+it("minimal phone-only leads keep the same Poppy analytics session across Sessions and Contact changes", async () => {
+  const user = await caller();
+  const sessionIds: string[] = [];
+  for (const index of [0, 1]) {
+    if (index === 1) {
+      const renewed = await (
+        await token(await user.agent.tokenRequest(schoolId), {
+          params: Promise.resolve({ schoolId }),
+        })
+      ).json();
+      Object.assign(user.session, renewed);
+    }
+    const contact = requestContact(
+      {},
+      {
+        name: `Phone Contact ${index}`,
+        email: null,
+        phone: `+1${Date.now()}${index}`,
+      },
+    );
+    const { operation } = await propose(user);
+    expect(operation.terms).toMatchObject({
+      contact,
+      participant: null,
+      offering: null,
+      stated_need: null,
+    });
+    const response = await confirm(
+      await user.request(`operations/${operation.operation_id}/confirm`, {
+        revision: 1,
+        approved_by: "user",
+      }),
+      operationParams(operation.operation_id),
+    );
+    expect(await response.json()).toMatchObject({ state: "succeeded" });
+    const rows = (await loadLeads(schoolId)).filter(
+      (row) => row.contact.phone === contact.phone,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.contact.email).toBeNull();
+    sessionIds.push(rows[0]?.lead.landingSessionId ?? "");
+  }
+  expect(sessionIds[0]).not.toBe("");
+  expect(sessionIds[1]).toBe(sessionIds[0]);
+});
+
+it("a lead effect commit failure rolls back its lead and notification and cannot execute again", async () => {
+  const contact = requestContact();
+  const user = await caller();
+  const { operation } = await propose(user);
+  await sql.unsafe(
+    `create function app.test_lead_final_failure() returns trigger language plpgsql as $$ begin if NEW.state = 'succeeded' and NEW.id = '${operation.operation_id}' then raise exception 'storage unavailable'; end if; return NEW; end; $$`,
+  );
+  await sql`create trigger test_lead_final_failure before update on app.poppy_operations for each row execute function app.test_lead_final_failure()`;
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const before =
+    await sql`select id from app.email_deliveries where school_id = ${schoolId}`;
+  try {
+    const response = await confirm(
+      await user.request(`operations/${operation.operation_id}/confirm`, {
+        revision: 1,
+        approved_by: "user",
+      }),
+      operationParams(operation.operation_id),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "server_error" });
+  } finally {
+    await sql`drop trigger test_lead_final_failure on app.poppy_operations`;
+    await sql`drop function app.test_lead_final_failure()`;
+  }
+  const replay = await confirm(
+    await user.request(`operations/${operation.operation_id}/confirm`, {
+      revision: 1,
+      approved_by: "user",
+    }),
+    operationParams(operation.operation_id),
+  );
+  expect(replay.headers.get("Retry-After")).toBe("1");
+  expect(await replay.json()).toMatchObject({
+    state: "in_progress",
+    confirmation: { approved_by: "user" },
+    result: null,
+  });
+  expect(
+    (await loadLeads(schoolId)).filter(
+      (row) => row.contact.email === contact.email,
+    ),
+  ).toHaveLength(0);
+  expect(
+    await sql`select id from app.email_deliveries where school_id = ${schoolId}`,
+  ).toEqual(before);
+});
+
+it("Poppy request-contact refuses missing Contact details and invented Trial Offerings", async () => {
+  const user = await caller();
+  for (const details of [
+    { contact: undefined },
+    { offeringId: randomUUID() },
+  ]) {
+    const contact = requestContact(details);
+    const { operation } = await propose(user);
+    expect(operation).toBeUndefined();
+    expect(
+      (await loadLeads(schoolId)).filter(
+        (row) => row.contact.email === contact.email,
+      ),
+    ).toHaveLength(0);
+  }
 });
 it("repeated and concurrent confirms book at most once and the owner sees Poppy attribution", async () => {
   const contact = prepare();
