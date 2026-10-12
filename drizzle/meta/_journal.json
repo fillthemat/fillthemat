@@ -125,49 +125,49 @@
       "idx": 17,
       "version": "7",
       "when": 1791775794974,
-      "tag": "20261012041000_whatsapp-connection-194",
+      "tag": "0017_whatsapp-connection-194",
       "breakpoints": true
     },
     {
       "idx": 18,
       "version": "7",
       "when": 1791813552461,
-      "tag": "20261012100000_signup-195",
+      "tag": "0018_signup-195",
       "breakpoints": true
     },
     {
       "idx": 19,
       "version": "7",
       "when": 1791815800108,
-      "tag": "20261012103800_signup-code-age-195",
+      "tag": "0019_signup-code-age-195",
       "breakpoints": true
     },
     {
       "idx": 20,
       "version": "7",
       "when": 1791816550852,
-      "tag": "20261012104910_whatsapp-profile-196",
+      "tag": "0020_whatsapp-profile-196",
       "breakpoints": true
     },
     {
       "idx": 21,
       "version": "7",
       "when": 1791817906362,
-      "tag": "20261012111146_whatsapp-cooling-release-197",
+      "tag": "0021_whatsapp-cooling-release-197",
       "breakpoints": true
     },
     {
       "idx": 22,
       "version": "7",
       "when": 1791818102770,
-      "tag": "20261012111502_whatsapp-health-198",
+      "tag": "0022_whatsapp-health-198",
       "breakpoints": true
     },
     {
       "idx": 23,
       "version": "7",
       "when": 1791819604109,
-      "tag": "20261012154012_whatsapp-release-audit",
+      "tag": "0023_whatsapp-release-audit",
       "breakpoints": true
     }
   ]
