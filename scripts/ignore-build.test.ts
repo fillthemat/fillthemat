@@ -2,14 +2,16 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { config } from "../vercel";
-import { ignoredBuildExitCode, isDocsPath } from "./ignore-build";
+import { isDocsPath, ignoredBuildExitCode as run } from "./ignore-build";
 
 const preview = {
   VERCEL_ENV: "preview",
   VERCEL_GIT_PREVIOUS_SHA: "a".repeat(40),
 };
+
+afterEach(() => vi.restoreAllMocks());
 
 it("skips gh-pages without any repository files or Bun available", () => {
   const directory = mkdtempSync(join(tmpdir(), "fillthemat-ignore-build-"));
@@ -47,9 +49,11 @@ it("defers to the build script for other branches", () => {
 
 it.each([
   ["AGENTS.md", true],
-  ["src/lib/README.md", true],
+  ["src/lib/README.md", false],
+  ["docs/nested/README.md", true],
+  [".agents/skills/tool/README.md", true],
   ["docs/nested/diagram.svg", true],
-  [".agents/skills/tool/script.ts", true],
+  [".agents/skills/tool/script.ts", false],
   ["opencode.json", true],
   ["opencode.jsonc", true],
   [".github/ISSUE_TEMPLATE/bug.yml", true],
@@ -66,49 +70,57 @@ it.each([
   expect(isDocsPath(path)).toBe(expected);
 });
 
+it.each(["ts", "tsx", "js", "mjs"])(
+  "builds for .%s code in docs/agents",
+  (extension) => {
+    for (const directory of ["docs", ".agents"])
+      expect(isDocsPath(`${directory}/nested/code.${extension}`)).toBe(false);
+  },
+);
+
 it("skips only when every changed path is allowlisted", () => {
-  expect(
-    ignoredBuildExitCode(
-      preview,
-      () => "README.md\0docs/file with\nnewline.txt\0",
-    ),
-  ).toBe(0);
-  expect(
-    ignoredBuildExitCode(preview, () => "README.md\0scripts/tool.ts\0"),
-  ).toBe(1);
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  expect(run(preview, () => "README.md\0docs/file with\nnewline.txt\0")).toBe(
+    0,
+  );
+  expect(run(preview, () => "README.md\0scripts/tool.ts\0")).toBe(1);
+  expect(log).toHaveBeenLastCalledWith(
+    'Build: non-docs path: "scripts/tool.ts"',
+  );
   // --no-renames retains both paths when code is moved into docs.
-  expect(
-    ignoredBuildExitCode(preview, () => "src/tool.ts\0docs/tool.ts\0"),
-  ).toBe(1);
+  expect(run(preview, () => "src/tool.ts\0docs/tool.ts\0")).toBe(1);
 });
 
 it.each(["production", "development", undefined])(
   "builds in %s",
   (environment) => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const readDiff = vi.fn(() => "README.md\0");
-    expect(
-      ignoredBuildExitCode({ ...preview, VERCEL_ENV: environment }, readDiff),
-    ).toBe(1);
+    expect(run({ ...preview, VERCEL_ENV: environment }, readDiff)).toBe(1);
     expect(readDiff).not.toHaveBeenCalled();
+    expect(log).toHaveBeenLastCalledWith("Build: non-Preview");
   },
 );
 
-it("builds for missing or invalid bases, git errors, and empty or malformed diffs", () => {
-  for (const base of [undefined, "", "HEAD^", "--help"])
-    expect(
-      ignoredBuildExitCode({ ...preview, VERCEL_GIT_PREVIOUS_SHA: base }),
-    ).toBe(1);
+it("builds for missing bases or git errors without printing env values", () => {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  for (const base of [undefined, ""])
+    expect(run({ ...preview, VERCEL_GIT_PREVIOUS_SHA: base })).toBe(1);
+  expect(log).toHaveBeenLastCalledWith("Build: no base");
   expect(
-    ignoredBuildExitCode(preview, () => {
-      throw new Error("missing shallow-clone base");
+    run(preview, () => {
+      throw new Error(`missing base ${preview.VERCEL_GIT_PREVIOUS_SHA}`);
     }),
   ).toBe(1);
-  for (const diff of ["", "README.md", "README.md\0\0"])
-    expect(ignoredBuildExitCode(preview, () => diff)).toBe(1);
+  expect(log).toHaveBeenLastCalledWith("Build: git error");
   expect(
-    ignoredBuildExitCode({
+    run({
       ...preview,
       VERCEL_GIT_PREVIOUS_SHA: "0".repeat(40),
     }),
   ).toBe(1);
+  expect(log).toHaveBeenLastCalledWith("Build: git error");
+  expect(JSON.stringify(log.mock.calls)).not.toContain(
+    preview.VERCEL_GIT_PREVIOUS_SHA,
+  );
 });

@@ -24,8 +24,10 @@ Playwright HTML reports stay on GitHub Pages
   `bun run vercel:ignore-build`: the report branch has no `package.json` or
   `scripts/`. Other branches defer to the docs-only Preview skip.
 
-The Vercel project Ignored Build Step is the same `ignoreCommand`, set on the
-project so it applies **before** this `vercel.ts` change reaches production.
+The dashboard Ignored Build Step must keep the shell-only check
+`[ "$VERCEL_GIT_COMMIT_REF" = "gh-pages" ]` and must never use the `bun` command.
+Only the dashboard command applies on `gh-pages`: that branch has no `vercel.ts`,
+`package.json`, or `scripts/`. Leave dashboard settings unchanged.
 
 Existing Ready `gh-pages` preview deployments were deleted so the 30-day
 retention window is not still holding accumulated report trees.
