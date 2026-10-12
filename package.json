@@ -16,6 +16,7 @@
     "vercel:env:pull": "bunx vercel env pull",
     "vercel:deploy": "bunx vercel",
     "vercel:deploy:prod": "bunx vercel --prod",
+    "vercel:ignore-build": "bun --no-env-file scripts/ignore-build.ts",
     "start": "bun run --bun next start",
     "check": "biome check .",
     "check:write": "biome check --write .",
