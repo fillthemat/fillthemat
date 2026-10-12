@@ -16,6 +16,28 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const appSchema = pgSchema("app");
+export const whatsappConnectionStateEnum = appSchema.enum(
+  "whatsapp_connection_state",
+  [
+    "off",
+    "buying",
+    "popup",
+    "cancelled",
+    "popup-failed",
+    "failed",
+    "needs-card",
+    "registering",
+    "live",
+    "cooling",
+    "released",
+    "broken-card",
+    "broken-access",
+    "broken-restricted",
+    "broken-number",
+  ],
+);
+export type WhatsAppConnectionState =
+  (typeof whatsappConnectionStateEnum.enumValues)[number];
 export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 
 export const bookingStatusEnum = appSchema.enum("booking_status", [
@@ -115,6 +137,14 @@ export const schools = appSchema.table(
     publicContactEmail: text("public_contact_email"),
     whatsappPhoneNumberId: text("whatsapp_phone_number_id"),
     whatsappWabaId: text("whatsapp_waba_id"),
+    whatsappConnectionState: whatsappConnectionStateEnum(
+      "whatsapp_connection_state",
+    )
+      .notNull()
+      .default("off"),
+    whatsappNumber: text("whatsapp_number"),
+    whatsappProviderResourceId: text("whatsapp_provider_resource_id"),
+    whatsappAllocationId: uuid("whatsapp_allocation_id"),
     phone: text("phone"),
     website: text("website"),
     address: text("address"),
@@ -137,6 +167,9 @@ export const schools = appSchema.table(
     uniqueIndex("schools_whatsapp_phone_number_id_unique")
       .on(t.whatsappPhoneNumberId)
       .where(sql`${t.whatsappPhoneNumberId} IS NOT NULL`),
+    uniqueIndex("schools_whatsapp_provider_resource_id_unique")
+      .on(t.whatsappProviderResourceId)
+      .where(sql`${t.whatsappProviderResourceId} IS NOT NULL`),
     check(
       "schools_slug_format",
       sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(${t.slug}) BETWEEN 3 AND 48`,
