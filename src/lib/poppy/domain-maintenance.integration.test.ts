@@ -55,7 +55,7 @@ beforeAll(async () => {
     const owner = requireRow(owners[index], "owner");
     await sql`insert into auth.users (id) values (${owner})`;
     await sql`insert into app.users (id, email) values (${owner}, ${`${owner}@local.test`})`;
-    await sql`insert into app.schools (id, owner_user_id, slug, name, timezone, approved_at, notification_email) values (${id}, ${owner}, ${`domain-maintenance-${owner}`}, 'Domain Maintenance School', 'America/New_York', now(), 'owner@local.test')`;
+    await sql`insert into app.schools (id, owner_user_id, slug, name, timezone, approved_at, notification_email) values (${id}, ${owner}, ${`domain-maintenance-${owner.slice(0, 8)}`}, 'Domain Maintenance School', 'America/New_York', now(), 'owner@local.test')`;
   }
 }, 60000);
 afterAll(async () => {
