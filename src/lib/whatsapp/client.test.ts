@@ -106,7 +106,8 @@ describe("WhatsApp Graph sends", () => {
       response: () => new Response("not JSON"),
       expected: {
         ok: false,
-        kind: "malformed_response",
+        kind: "unknown",
+        reason: "malformed_response",
         status: 200,
         message: "graph_invalid_json",
       },
@@ -115,7 +116,18 @@ describe("WhatsApp Graph sends", () => {
       response: () => Response.json(null),
       expected: {
         ok: false,
-        kind: "malformed_response",
+        kind: "unknown",
+        reason: "malformed_response",
+        status: 200,
+        message: "graph_missing_message_id",
+      },
+    },
+    {
+      response: () => Response.json({ error: {} }),
+      expected: {
+        ok: false,
+        kind: "unknown",
+        reason: "malformed_response",
         status: 200,
         message: "graph_missing_message_id",
       },
@@ -126,7 +138,8 @@ describe("WhatsApp Graph sends", () => {
       },
       expected: {
         ok: false,
-        kind: "network_error",
+        kind: "unknown",
+        reason: "network_error",
         message: "Connection lost",
       },
     },
@@ -211,12 +224,20 @@ describe("WhatsApp Graph sends", () => {
   it.each(["text", "interactive"])(
     "rejects a %s success without a message id",
     async (type) => {
+      let payload: Record<string, unknown> | undefined;
       const dependencies = {
         token: "test-token",
         localNoop: false,
-        fetch: async () => Response.json({ success: true }),
+        fetch: async (_url: string | URL | Request, init?: RequestInit) => {
+          payload = JSON.parse(String(init?.body));
+          return Response.json({ success: true });
+        },
       };
-      const recipient = { phoneNumberId: "phone", to: "recipient" };
+      const recipient = {
+        phoneNumberId: "phone",
+        to: "recipient",
+        callbackData: "delivery:1",
+      };
       const outcome =
         type === "text"
           ? await sendWhatsAppText(
@@ -233,13 +254,15 @@ describe("WhatsApp Graph sends", () => {
             );
       expect(outcome).toEqual({
         ok: false,
-        kind: "malformed_response",
+        kind: "unknown",
+        reason: "malformed_response",
         status: 200,
         message: "graph_missing_message_id",
       });
+      expect(payload?.biz_opaque_callback_data).toBe("delivery:1");
     },
   );
-  it("reports a non-JSON HTTP error as failure, not acceptance", async () => {
+  it("records an ambiguous non-JSON server response as unknown", async () => {
     const outcome = await sendWhatsAppText(
       { phoneNumberId: "phone", to: "recipient", text: "Hello" },
       {
@@ -250,9 +273,49 @@ describe("WhatsApp Graph sends", () => {
     );
     expect(outcome).toEqual({
       ok: false,
-      kind: "http_error",
+      kind: "unknown",
+      reason: "malformed_response",
       status: 503,
-      message: "graph_http_503",
+      message: "graph_unconfirmed_http_503",
+    });
+  });
+  it.each([429, 503])(
+    "keeps a structured HTTP %s rejection definite",
+    async (status) => {
+      const outcome = await sendWhatsAppText(
+        { phoneNumberId: "phone", to: "recipient", text: "Hello" },
+        {
+          token: "test-token",
+          fetch: async () =>
+            Response.json(
+              { error: { code: 131016, message: "Rejected" } },
+              { status },
+            ),
+        },
+      );
+      expect(outcome).toMatchObject({
+        ok: false,
+        kind: "whatsapp_error",
+        status,
+      });
+    },
+  );
+  it("bounds the send and classifies a timeout as unknown", async () => {
+    const outcome = await sendWhatsAppText(
+      { phoneNumberId: "phone", to: "recipient", text: "Hello" },
+      {
+        token: "test-token",
+        fetch: async (_url, init) => {
+          expect(init?.signal).toBeInstanceOf(AbortSignal);
+          throw new DOMException("Timed out", "TimeoutError");
+        },
+      },
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      kind: "unknown",
+      reason: "network_error",
+      message: "Timed out",
     });
   });
 });

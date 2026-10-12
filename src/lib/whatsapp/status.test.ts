@@ -12,9 +12,11 @@ describe("parseInboundWhatsAppStatuses", () => {
           changes: [
             {
               value: {
+                metadata: { phone_number_id: "phone" },
                 statuses: [
                   {
                     id: "wamid.details",
+                    biz_opaque_callback_data: "delivery:1",
                     status: "failed",
                     timestamp: "1",
                     errors: [
@@ -37,6 +39,8 @@ describe("parseInboundWhatsAppStatuses", () => {
       errorCode: "1",
       errorSubcode: 100,
       errorDetails: "Invalid parameter",
+      callbackData: "delivery:1",
+      phoneNumberId: "phone",
     });
   });
   it("extracts a delivered status", () => {

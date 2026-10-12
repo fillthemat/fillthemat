@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   bookings,
@@ -74,4 +74,30 @@ export async function onWhatsAppDeliveryDead(
       nextAttemptAt: now,
     })
     .onConflictDoNothing({ target: emailDeliveries.providerIdempotencyKey });
+}
+
+/** Cancel only notices no email worker has started; in-flight/sent mail cannot
+ * be recalled safely. The delete and confirmed delivery commit together.
+ */
+export async function onWhatsAppDeliveryConfirmed(
+  tx: DeliveryTransaction,
+  delivery: WhatsAppDelivery,
+): Promise<void> {
+  if (
+    !delivery.bookingId ||
+    !isBookingConfirmation(delivery) ||
+    !["delivered", "read"].includes(delivery.state)
+  )
+    return;
+  await tx
+    .delete(emailDeliveries)
+    .where(
+      and(
+        eq(emailDeliveries.schoolId, delivery.schoolId),
+        eq(emailDeliveries.bookingId, delivery.bookingId),
+        eq(emailDeliveries.kind, "owner_whatsapp_confirmation_failed"),
+        inArray(emailDeliveries.state, ["pending", "failed"]),
+        eq(emailDeliveries.attempts, 0),
+      ),
+    );
 }

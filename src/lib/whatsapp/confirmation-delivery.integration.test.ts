@@ -259,6 +259,95 @@ describe("booking confirmation delivery through the worker", () => {
     await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
     expect(await emails()).toHaveLength(1);
   });
+  it.each(["delivered", "read"] as const)(
+    "cancels an unstarted owner failure email when a late %s callback confirms an exhausted unknown send",
+    async (status) => {
+      now = new Date("2018-01-01T17:00:00Z");
+      const id = await enqueue({ attempts: 4 });
+      await drainDueWhatsAppDeliveries(
+        randomUUID(),
+        25,
+        dependencies(async () => ({
+          ok: false,
+          kind: "unknown",
+          reason: "network_error",
+          message: "Response lost",
+        })),
+      );
+      expect(await stored(id)).toMatchObject({
+        state: "dead",
+        sendOutcome: "unknown",
+      });
+      expect(await emails()).toHaveLength(1);
+      const callback = {
+        wamid: `late-confirmation/${id}`,
+        recipientId: null,
+        timestamp: now.getTime() / 1000,
+        errorCode: null,
+        errorMessage: null,
+        callbackData: `${id}:5`,
+        phoneNumberId: `confirmation-${ownerId}`,
+      };
+      await applyWhatsAppStatuses([{ ...callback, status: "sent" }], {
+        now: () => now,
+      });
+      expect(await emails()).toHaveLength(1);
+      await applyWhatsAppStatuses(
+        [{ ...callback, status, timestamp: now.getTime() / 1000 + 1 }],
+        { now: () => now },
+      );
+      expect(await stored(id)).toMatchObject({
+        state: status,
+        sendOutcome: "accepted",
+      });
+      expect(await emails()).toEqual([]);
+    },
+  );
+  it.each([
+    { state: "claimed", attempts: 0 },
+    { state: "pending", attempts: 1 },
+    { state: "failed", attempts: 1 },
+    { state: "sent", attempts: 1 },
+  ] as const)(
+    "does not recall a $state owner notice after $attempts executions",
+    async ({ state, attempts }) => {
+      now = new Date("2018-01-01T17:00:00Z");
+      const id = await enqueue({ attempts: 4 });
+      await drainDueWhatsAppDeliveries(
+        randomUUID(),
+        25,
+        dependencies(async () => ({
+          ok: false,
+          kind: "unknown",
+          reason: "network_error",
+          message: "Response lost",
+        })),
+      );
+      const [notice] = await emails();
+      await db
+        .update(emailDeliveries)
+        .set({ state, attempts })
+        .where(eq(emailDeliveries.id, notice.id));
+      const before = await emails();
+      await applyWhatsAppStatuses(
+        [
+          {
+            wamid: `late-confirmation/${id}`,
+            status: "delivered",
+            recipientId: null,
+            timestamp: now.getTime() / 1000,
+            errorCode: null,
+            errorMessage: null,
+            callbackData: `${id}:5`,
+            phoneNumberId: `confirmation-${ownerId}`,
+          },
+        ],
+        { now: () => now },
+      );
+      expect(await stored(id)).toMatchObject({ state: "delivered" });
+      expect(await emails()).toEqual(before);
+    },
+  );
   it.each([131026, 131000])(
     "marks a callback after class start stale even for failure %i",
     async (code) => {

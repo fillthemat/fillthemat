@@ -375,15 +375,16 @@ describe("prospect apology after WhatsApp job exhaustion", () => {
         expect(result.jobs).toMatchObject({ claimed: 5, retrying: 4, dead: 1 });
       },
     );
+    const [fallback] = await deliveries();
     expect(sent).toEqual([
       {
         to: payload.waId,
         phoneNumberId,
         token: null,
         text: "Sorry, we're having trouble replying right now. Please message us again in a bit.",
+        callbackData: `${fallback.id}:1`,
       },
     ]);
-    const [fallback] = await deliveries();
     expect(fallback).toMatchObject({
       state: "sent",
       attempts: 1,

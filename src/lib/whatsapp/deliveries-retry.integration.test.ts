@@ -104,6 +104,40 @@ function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
 }
 
 describe("bounded WhatsApp delivery executions through the worker", () => {
+  it("records an unknown send before retrying instead of treating it as a rejection", async () => {
+    const id = await enqueue();
+    const send = vi.fn(
+      async (): Promise<WhatsAppSendOutcome> => ({
+        ok: false,
+        kind: "unknown",
+        reason: "network_error",
+        message: "Response lost",
+      }),
+    );
+    await drainDueWhatsAppDeliveries(randomUUID(), 25, dependencies(send));
+    expect(await delivery(id)).toMatchObject({
+      state: "failed",
+      sendOutcome: "unknown",
+      attempts: 1,
+      failureReason: "network_error",
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    now = (await delivery(id)).nextAttemptAt;
+    await drainDueWhatsAppDeliveries(
+      randomUUID(),
+      25,
+      dependencies(async () => ({
+        ok: true,
+        kind: "accepted",
+        providerId: `fake:retry/${suffix}`,
+      })),
+    );
+    expect(await delivery(id)).toMatchObject({
+      state: "sent",
+      sendOutcome: "accepted",
+      attempts: 2,
+    });
+  });
   it("keeps a recovered fifth execution dead when the old sender finally reports acceptance", async () => {
     const id = await enqueue({ attempts: 4 });
     let entered!: () => void;
@@ -316,6 +350,7 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
       expect(await delivery(id)).toMatchObject({
         state: "dead",
         attempts: 1,
+        sendOutcome: "rejected",
         failureReason: "whatsapp_error",
         failureCode: code,
         terminalCause: "permanent",
@@ -390,6 +425,12 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
       message: "no code",
     },
     { ok: false, kind: "network_error", message: "network" },
+    {
+      ok: false,
+      kind: "unknown",
+      reason: "network_error",
+      message: "response lost",
+    },
     { ok: false, kind: "http_error", status: 503, message: "http" },
     {
       ok: false,
@@ -419,7 +460,15 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
         expect(row).toMatchObject({
           state: execution === 5 ? "dead" : "failed",
           attempts: execution,
-          failureReason: outcome.kind,
+          failureReason:
+            outcome.kind === "unknown" ? outcome.reason : outcome.kind,
+          sendOutcome: [
+            "unknown",
+            "network_error",
+            "malformed_response",
+          ].includes(outcome.kind)
+            ? "unknown"
+            : "rejected",
           terminalCause: execution === 5 ? "attempts_exhausted" : null,
           claimedAt: null,
           claimedBy: null,

@@ -1,6 +1,6 @@
 {
-  "id": "1c72ae9f-d453-4295-84d0-c273687d16d9",
-  "prevId": "2c0a0d1c-5fc3-4aea-847e-de1d4917787e",
+  "id": "2c0a0d1c-5fc3-4aea-847e-de1d4917787e",
+  "prevId": "49f82e8c-b10f-40f9-ae30-a72d63776cd8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1681,12 +1681,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "public_contact_email": {
-          "name": "public_contact_email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "whatsapp_phone_number_id": {
           "name": "whatsapp_phone_number_id",
           "type": "text",
@@ -1696,18 +1690,6 @@
         "whatsapp_waba_id": {
           "name": "whatsapp_waba_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_token_encrypted": {
-          "name": "whatsapp_token_encrypted",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_token_expires_at": {
-          "name": "whatsapp_token_expires_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -1803,6 +1785,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "public_contact_email": {
+          "name": "public_contact_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2669,6 +2657,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "send_outcome": {
+          "name": "send_outcome",
+          "type": "whatsapp_send_outcome",
+          "typeSchema": "app",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -3023,6 +3018,15 @@
         "done",
         "failed",
         "dead"
+      ]
+    },
+    "app.whatsapp_send_outcome": {
+      "name": "whatsapp_send_outcome",
+      "schema": "app",
+      "values": [
+        "accepted",
+        "unknown",
+        "rejected"
       ]
     }
   },

@@ -1,6 +1,6 @@
 {
-  "id": "6f015f8f-a873-4169-8191-b00baae6c14c",
-  "prevId": "098abe94-e35b-4965-accf-c9f4f389c374",
+  "id": "098abe94-e35b-4965-accf-c9f4f389c374",
+  "prevId": "22512141-c500-4a0b-ac45-075a8d0e607a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1731,30 +1731,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "whatsapp_cooling_started_at": {
-          "name": "whatsapp_cooling_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_release_at": {
-          "name": "whatsapp_release_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_release_claimed_at": {
-          "name": "whatsapp_release_claimed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_deregistered_at": {
-          "name": "whatsapp_deregistered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "whatsapp_provider_resource_id": {
           "name": "whatsapp_provider_resource_id",
           "type": "text",
@@ -2778,6 +2754,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "send_outcome": {
+          "name": "send_outcome",
+          "type": "whatsapp_send_outcome",
+          "typeSchema": "app",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -3153,6 +3136,15 @@
         "done",
         "failed",
         "dead"
+      ]
+    },
+    "app.whatsapp_send_outcome": {
+      "name": "whatsapp_send_outcome",
+      "schema": "app",
+      "values": [
+        "accepted",
+        "unknown",
+        "rejected"
       ]
     }
   },

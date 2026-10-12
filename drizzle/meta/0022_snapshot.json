@@ -1,6 +1,6 @@
 {
-  "id": "b35856e7-1fe3-45f0-85ab-924f3dca72d7",
-  "prevId": "6f015f8f-a873-4169-8191-b00baae6c14c",
+  "id": "6f015f8f-a873-4169-8191-b00baae6c14c",
+  "prevId": "098abe94-e35b-4965-accf-c9f4f389c374",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1755,12 +1755,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "whatsapp_health_updated_at": {
-          "name": "whatsapp_health_updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "whatsapp_provider_resource_id": {
           "name": "whatsapp_provider_resource_id",
           "type": "text",
@@ -2784,6 +2778,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "send_outcome": {
+          "name": "send_outcome",
+          "type": "whatsapp_send_outcome",
+          "typeSchema": "app",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -3159,6 +3160,15 @@
         "done",
         "failed",
         "dead"
+      ]
+    },
+    "app.whatsapp_send_outcome": {
+      "name": "whatsapp_send_outcome",
+      "schema": "app",
+      "values": [
+        "accepted",
+        "unknown",
+        "rejected"
       ]
     }
   },

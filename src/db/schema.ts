@@ -677,6 +677,12 @@ export const emailDeliveries = appSchema.table(
   ],
 );
 
+export const whatsappSendOutcomeEnum = appSchema.enum("whatsapp_send_outcome", [
+  "accepted",
+  "unknown",
+  "rejected",
+]);
+
 export const whatsappDeliveries = appSchema.table(
   "whatsapp_deliveries",
   {
@@ -689,6 +695,8 @@ export const whatsappDeliveries = appSchema.table(
     providerIdempotencyKey: text("provider_idempotency_key").notNull(),
     state: whatsappDeliveryStateEnum("state").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
+    // Latest started send, independent of queue state and retry exhaustion.
+    sendOutcome: whatsappSendOutcomeEnum("send_outcome"),
     providerId: text("provider_id"),
     templateName: text("template_name"),
     templateParams: jsonb("template_params").$type<unknown>(),

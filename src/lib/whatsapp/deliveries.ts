@@ -4,9 +4,11 @@ import {
   eq,
   gt,
   inArray,
+  isNull,
   lt,
   lte,
   notInArray,
+  or,
   sql,
 } from "drizzle-orm";
 import { getDb, type TransactionOptions } from "@/db";
@@ -28,8 +30,10 @@ import {
   type RetryFailure,
   whatsappRetryDecision as retryDecision,
 } from "@/lib/retry-policy";
+import type { WhatsAppSendOutcome } from "./client";
 import {
   bookingConfirmationIsStale,
+  onWhatsAppDeliveryConfirmed,
   onWhatsAppDeliveryDead,
 } from "./confirmation-delivery";
 import { createWhatsAppConnection } from "./connection";
@@ -61,7 +65,9 @@ async function failDelivery(
       ? failure.reason === "attempts_exhausted"
         ? (delivery.failureReason ?? failure.reason)
         : failure.reason
-      : failure.kind;
+      : failure.kind === "unknown"
+        ? failure.reason
+        : failure.kind;
   const decision = retryDecision(
     stale
       ? { kind: "internal", reason: "booking_confirmation_stale" }
@@ -82,6 +88,14 @@ async function failDelivery(
       .update(whatsappDeliveries)
       .set({
         state: decision.action === "stop" ? "dead" : "failed",
+        sendOutcome:
+          failure.kind === "internal"
+            ? undefined
+            : ["unknown", "network_error", "malformed_response"].includes(
+                  failure.kind,
+                )
+              ? "unknown"
+              : "rejected",
         nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
         lastError: message.slice(0, 500),
         failureReason: reason,
@@ -155,6 +169,7 @@ export type EnqueueWhatsAppDelivery = {
   schoolId: string;
   recipientWaId: string;
   phoneNumberId: string;
+  /** Platform enqueue uniqueness only; Meta does not deduplicate sends by it. */
   providerIdempotencyKey: string;
   templateName?: string | null;
   templateParams?: unknown;
@@ -367,6 +382,9 @@ export async function sendWhatsAppDelivery(
     .update(whatsappDeliveries)
     .set({
       attempts: sql`${whatsappDeliveries.attempts} + 1`,
+      // A crash after reservation may have reached Meta. Prefer retry/duplicate
+      // risk over loss, and retain this outcome even if the budget is exhausted.
+      sendOutcome: "unknown",
       // Starting a new execution invalidates receipts for the prior send,
       // even if this request fails synchronously and gets no new provider ID.
       providerId: null,
@@ -383,6 +401,7 @@ export async function sendWhatsAppDelivery(
   if (!executing) return "deferred";
   delivery = executing;
 
+  let outcome: WhatsAppSendOutcome;
   try {
     const credential = resolveSchoolSecret(
       {
@@ -412,7 +431,8 @@ export async function sendWhatsAppDelivery(
       return result;
     }
     const token = credential.ok ? credential.secret : null;
-    const outcome =
+    const callbackData = `${delivery.id}:${delivery.attempts}`;
+    outcome =
       plan.type === "interactive"
         ? await dependencies.transport.sendInteractive({
             phoneNumberId: delivery.phoneNumberId,
@@ -420,74 +440,77 @@ export async function sendWhatsAppDelivery(
             to: delivery.recipientWaId,
             body: plan.body,
             buttons: plan.buttons,
+            callbackData,
           })
         : await dependencies.transport.sendText({
             phoneNumberId: delivery.phoneNumberId,
             token,
             to: delivery.recipientWaId,
             text: delivery.body ?? "",
+            callbackData,
           });
-
-    if (!outcome.ok) {
-      const part =
-        outcome.kind === "whatsapp_error"
-          ? brokenPartFromMetaCode(outcome.code)
-          : null;
-      const lastError = `${
-        outcome.kind === "whatsapp_error" && outcome.code != null
-          ? `${outcome.code}: `
-          : ""
-      }${outcome.message}`.slice(0, 500);
-      const result = await failDelivery(
-        delivery,
-        outcome,
-        lastError,
-        dependencies.now(),
-      );
-      // A fenced-out sender must not mutate account health either.
-      if (part && result !== "deferred")
-        await createWhatsAppConnection({ now: dependencies.now }).markBroken(
-          school.id,
-          part,
-          {
-            phoneNumberId: delivery.phoneNumberId,
-            tokenEncrypted: school.whatsappTokenEncrypted,
-          },
-        );
-      return result;
-    }
-
-    const providerId =
-      outcome.kind === "local_noop"
-        ? `local-noop:${delivery.id}`
-        : outcome.providerId;
-    const rows = await db
-      .update(whatsappDeliveries)
-      .set({
-        state: "sent",
-        providerId,
-        statusAt: null,
-        sentAt: dependencies.now(),
-        lastError: null,
-        failureReason: null,
-        failureCode: null,
-        terminalCause: null,
-        claimedAt: null,
-        claimedBy: null,
-        updatedAt: dependencies.now(),
-      })
-      .where(ownedClaim(delivery))
-      .returning({ id: whatsappDeliveries.id });
-    return rows.length ? "sent" : "deferred";
   } catch (error) {
     const message = error instanceof Error ? error.message : "send_failed";
     return failDelivery(
       delivery,
-      { kind: "internal", reason: "send_failed" },
+      { ok: false, kind: "unknown", reason: "network_error", message },
       message,
       dependencies.now(),
     );
   }
+
+  if (!outcome.ok) {
+    const part =
+      outcome.kind === "whatsapp_error"
+        ? brokenPartFromMetaCode(outcome.code)
+        : null;
+    const lastError = `${
+      outcome.kind === "whatsapp_error" && outcome.code != null
+        ? `${outcome.code}: `
+        : ""
+    }${outcome.message}`.slice(0, 500);
+    const result = await failDelivery(
+      delivery,
+      outcome,
+      lastError,
+      dependencies.now(),
+    );
+    // A fenced-out sender must not mutate account health either.
+    if (part && result !== "deferred")
+      await createWhatsAppConnection({ now: dependencies.now }).markBroken(
+        school.id,
+        part,
+        {
+          phoneNumberId: delivery.phoneNumberId,
+          tokenEncrypted: school.whatsappTokenEncrypted,
+        },
+      );
+    return result;
+  }
+
+  const providerId =
+    outcome.kind === "local_noop"
+      ? `local-noop:${delivery.id}`
+      : outcome.providerId;
+  const rows = await db
+    .update(whatsappDeliveries)
+    .set({
+      state: "sent",
+      sendOutcome: "accepted",
+      providerId,
+      statusAt: null,
+      sentAt: dependencies.now(),
+      lastError: null,
+      failureReason: null,
+      failureCode: null,
+      terminalCause: null,
+      claimedAt: null,
+      claimedBy: null,
+      updatedAt: dependencies.now(),
+    })
+    .where(ownedClaim(delivery))
+    .returning({ id: whatsappDeliveries.id });
+  return rows.length ? "sent" : "deferred";
 }
 
 export async function attemptWhatsAppDeliveriesNow(
@@ -608,16 +631,45 @@ export async function applyWhatsAppStatuses(
   const db = getDb();
   const clock = overrides.now ?? (() => new Date());
   for (const status of statuses) {
+    // Meta echoes this opaque correlation token; it is not a provider dedupe
+    // key. Never guess by recipient, or let an older attempt cancel a retry.
+    const callback = status.callbackData?.match(
+      /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([1-9][0-9]*)$/i,
+    );
     // Serialize the current provider attempt with claims and other callbacks.
     // No outbound network calls take place while holding this lock.
     const transitioned = await db.transaction(async (tx) => {
       const [delivery] = await tx
         .select()
         .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.providerId, status.wamid))
+        .where(
+          or(
+            eq(whatsappDeliveries.providerId, status.wamid),
+            callback &&
+              Number(callback[2]) <= MAX_EXECUTIONS &&
+              status.phoneNumberId
+              ? and(
+                  eq(whatsappDeliveries.id, callback[1]),
+                  eq(whatsappDeliveries.attempts, Number(callback[2])),
+                  eq(whatsappDeliveries.phoneNumberId, status.phoneNumberId),
+                  eq(whatsappDeliveries.sendOutcome, "unknown"),
+                  isNull(whatsappDeliveries.providerId),
+                )
+              : undefined,
+          ),
+        )
         .for("update")
         .limit(1);
-      if (!delivery || delivery.state === "dead") return;
+      if (!delivery) return;
+      const reconcilesUnknown = delivery.sendOutcome === "unknown";
+      if (
+        delivery.state === "dead" &&
+        (!reconcilesUnknown || status.status === "failed")
+      )
+        return;
+      const providerMatch = delivery.providerId
+        ? eq(whatsappDeliveries.providerId, status.wamid)
+        : isNull(whatsappDeliveries.providerId);
 
       const now = clock();
       const statusAt =
@@ -635,7 +687,7 @@ export async function applyWhatsAppStatuses(
       if (status.status === "failed") {
         // One failure decision per accepted send, including timestamp-less
         // replays. Positive delivery evidence is never eligible for resending.
-        if (delivery.state !== "sent") return;
+        if (delivery.state !== "sent" && !reconcilesUnknown) return;
         const parsedCode = status.errorCode?.trim()
           ? Number(status.errorCode)
           : Number.NaN;
@@ -660,6 +712,8 @@ export async function applyWhatsAppStatuses(
           .update(whatsappDeliveries)
           .set({
             state: decision.action === "stop" ? "dead" : "failed",
+            sendOutcome: "accepted",
+            providerId: status.wamid,
             nextAttemptAt:
               decision.action === "retry" ? decision.at : undefined,
             statusAt,
@@ -683,7 +737,7 @@ export async function applyWhatsAppStatuses(
           .where(
             and(
               eq(whatsappDeliveries.id, delivery.id),
-              eq(whatsappDeliveries.providerId, status.wamid),
+              providerMatch,
               eq(whatsappDeliveries.state, delivery.state),
               eq(whatsappDeliveries.attempts, delivery.attempts),
             ),
@@ -698,15 +752,20 @@ export async function applyWhatsAppStatuses(
       if (nextRank < currentRank) return;
       // A later sent receipt is not proof a failed send was delivered. Only
       // delivered/read may cancel its scheduled retry for this same attempt.
+      // An unknown send has no rejection evidence, so sent resolves it too.
       if (
         ["pending", "claimed", "failed"].includes(delivery.state) &&
-        status.status === "sent"
+        status.status === "sent" &&
+        !reconcilesUnknown
       )
         return;
-      await tx
+      const [confirmed] = await tx
         .update(whatsappDeliveries)
         .set({
           state: status.status,
+          sendOutcome: "accepted",
+          providerId: status.wamid,
+          sentAt: delivery.sentAt ?? statusAt,
           statusAt,
           lastError: null,
           failureReason: null,
@@ -719,11 +778,13 @@ export async function applyWhatsAppStatuses(
         .where(
           and(
             eq(whatsappDeliveries.id, delivery.id),
-            eq(whatsappDeliveries.providerId, status.wamid),
+            providerMatch,
             eq(whatsappDeliveries.state, delivery.state),
             eq(whatsappDeliveries.attempts, delivery.attempts),
           ),
-        );
+        )
+        .returning();
+      if (confirmed) await onWhatsAppDeliveryConfirmed(tx, confirmed);
     });
     // Only an actual terminal transition may log or enqueue a notification.
     if (transitioned?.failureReason === "whatsapp_error") {

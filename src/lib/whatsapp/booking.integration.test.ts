@@ -392,6 +392,7 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     expect(sendText).toHaveBeenCalledWith({
       phoneNumberId,
       token: null,
+      callbackData: expect.any(String),
       to: waA,
       text: confirmationDelivery.body,
     });

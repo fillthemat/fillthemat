@@ -1,5 +1,5 @@
 {
-  "id": "49f82e8c-b10f-40f9-ae30-a72d63776cd8",
+  "id": "185617fe-0fb2-486e-9f74-b6583b3f5719",
   "prevId": "c9e88132-8b7b-4018-925e-598fb9568510",
   "version": "7",
   "dialect": "postgresql",
@@ -1674,12 +1674,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "public_contact_email": {
-          "name": "public_contact_email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "whatsapp_phone_number_id": {
           "name": "whatsapp_phone_number_id",
           "type": "text",
@@ -2546,6 +2540,13 @@
           "notNull": true,
           "default": 0
         },
+        "send_outcome": {
+          "name": "send_outcome",
+          "type": "whatsapp_send_outcome",
+          "typeSchema": "app",
+          "primaryKey": false,
+          "notNull": false
+        },
         "provider_id": {
           "name": "provider_id",
           "type": "text",
@@ -2996,6 +2997,15 @@
         "done",
         "failed",
         "dead"
+      ]
+    },
+    "app.whatsapp_send_outcome": {
+      "name": "whatsapp_send_outcome",
+      "schema": "app",
+      "values": [
+        "accepted",
+        "unknown",
+        "rejected"
       ]
     }
   },

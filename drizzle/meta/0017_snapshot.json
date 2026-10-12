@@ -1,6 +1,6 @@
 {
-  "id": "d5262e45-ef5b-421f-b57e-b779810df9b0",
-  "prevId": "1c72ae9f-d453-4295-84d0-c273687d16d9",
+  "id": "1c72ae9f-d453-4295-84d0-c273687d16d9",
+  "prevId": "2c0a0d1c-5fc3-4aea-847e-de1d4917787e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1626,32 +1626,6 @@
       "name": "schools",
       "schema": "app",
       "columns": {
-        "whatsapp_connection_state": {
-          "name": "whatsapp_connection_state",
-          "type": "whatsapp_connection_state",
-          "typeSchema": "app",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'off'"
-        },
-        "whatsapp_number": {
-          "name": "whatsapp_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_provider_resource_id": {
-          "name": "whatsapp_provider_resource_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_allocation_id": {
-          "name": "whatsapp_allocation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "id": {
           "name": "id",
           "type": "uuid",
@@ -1844,22 +1818,6 @@
           ],
           "isUnique": true,
           "where": "\"app\".\"schools\".\"whatsapp_phone_number_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "schools_whatsapp_provider_resource_id_unique": {
-          "name": "schools_whatsapp_provider_resource_id_unique",
-          "columns": [
-            {
-              "expression": "whatsapp_provider_resource_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"app\".\"schools\".\"whatsapp_provider_resource_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2711,6 +2669,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "send_outcome": {
+          "name": "send_outcome",
+          "type": "whatsapp_send_outcome",
+          "typeSchema": "app",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -3043,27 +3008,6 @@
         "superseded"
       ]
     },
-    "app.whatsapp_connection_state": {
-      "name": "whatsapp_connection_state",
-      "schema": "app",
-      "values": [
-        "off",
-        "buying",
-        "popup",
-        "cancelled",
-        "popup-failed",
-        "failed",
-        "needs-card",
-        "registering",
-        "live",
-        "cooling",
-        "released",
-        "broken-card",
-        "broken-access",
-        "broken-restricted",
-        "broken-number"
-      ]
-    },
     "app.whatsapp_delivery_state": {
       "name": "whatsapp_delivery_state",
       "schema": "app",
@@ -3086,6 +3030,15 @@
         "done",
         "failed",
         "dead"
+      ]
+    },
+    "app.whatsapp_send_outcome": {
+      "name": "whatsapp_send_outcome",
+      "schema": "app",
+      "values": [
+        "accepted",
+        "unknown",
+        "rejected"
       ]
     }
   },
