@@ -153,6 +153,50 @@ export const schools = appSchema.table(
   ],
 );
 
+export const schoolDomains = appSchema
+  .table(
+    "school_domains",
+    {
+      id: uuid("id").primaryKey().defaultRandom(),
+      schoolId: uuid("school_id")
+        .notNull()
+        .references(() => schools.id, { onDelete: "cascade" }),
+      domain: text("domain").notNull(),
+      mode: text("mode")
+        .$type<"redirect" | "copy">()
+        .notNull()
+        .default("redirect"),
+      state: text("state")
+        .$type<"pending" | "verified" | "failing">()
+        .notNull()
+        .default("pending"),
+      lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+      lastCheckResult: text("last_check_result"),
+      consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+      verifiedAt: timestamp("verified_at", { withTimezone: true }),
+      checkId: uuid("check_id"),
+      checkingUntil: timestamp("checking_until", { withTimezone: true }),
+      ...timestamps,
+    },
+    (t) => [
+      unique("school_domains_school_domain_unique").on(t.schoolId, t.domain),
+      uniqueIndex("school_domains_live_domain_unique")
+        .on(t.domain)
+        .where(sql`${t.state} IN ('verified', 'failing')`),
+      check(
+        "school_domains_state",
+        sql`${t.state} IN ('pending', 'verified', 'failing')`,
+      ),
+      check("school_domains_mode", sql`${t.mode} IN ('redirect', 'copy')`),
+      check("school_domains_failures", sql`${t.consecutiveFailures} >= 0`),
+      check(
+        "school_domains_domain",
+        sql`char_length(${t.domain}) BETWEEN 3 AND 253 AND ${t.domain} = lower(${t.domain}) AND ${t.domain} !~ '^www\\.'`,
+      ),
+    ],
+  )
+  .enableRLS();
+
 export const faqs = appSchema.table(
   "faqs",
   {
@@ -777,6 +821,7 @@ export const cronRuns = appSchema.table("cron_runs", {
 
 export type User = typeof users.$inferSelect;
 export type School = typeof schools.$inferSelect;
+export type SchoolDomain = typeof schoolDomains.$inferSelect;
 export type Faq = typeof faqs.$inferSelect;
 export type TrialOffering = typeof trialOfferings.$inferSelect;
 export type TrialWindow = typeof trialWindows.$inferSelect;
