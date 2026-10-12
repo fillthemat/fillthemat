@@ -166,10 +166,12 @@ function graphPost(
 export function sendWhatsAppText(
   {
     phoneNumberId,
+    token,
     to,
     text,
   }: {
     phoneNumberId: string;
+    token?: string | null;
     to: string;
     text: string;
   },
@@ -184,7 +186,10 @@ export function sendWhatsAppText(
       type: "text",
       text: { body: text },
     },
-    dependencies,
+    {
+      ...dependencies,
+      token: token ?? dependencies?.token,
+    },
   );
 }
 
@@ -197,9 +202,11 @@ export function sendWhatsAppText(
 export function sendWhatsAppTypingIndicator(
   {
     phoneNumberId,
+    token,
     messageId,
   }: {
     phoneNumberId: string;
+    token?: string | null;
     messageId: string;
   },
   dependencies?: WhatsAppGraphDependencies,
@@ -212,7 +219,10 @@ export function sendWhatsAppTypingIndicator(
       message_id: messageId,
       typing_indicator: { type: "text" },
     },
-    dependencies,
+    {
+      ...dependencies,
+      token: token ?? dependencies?.token,
+    },
     false,
   );
 }
@@ -220,12 +230,14 @@ export function sendWhatsAppTypingIndicator(
 export function sendWhatsAppTemplate(
   {
     phoneNumberId,
+    token,
     to,
     templateName,
     languageCode,
     params,
   }: {
     phoneNumberId: string;
+    token?: string | null;
     to: string;
     templateName: string;
     languageCode: string;
@@ -247,7 +259,10 @@ export function sendWhatsAppTemplate(
         components,
       },
     },
-    dependencies,
+    {
+      ...dependencies,
+      token: token ?? dependencies?.token,
+    },
   );
 }
 
@@ -260,11 +275,13 @@ export const WHATSAPP_INTERACTIVE_TITLE_CHAR_LIMIT = 20;
 export function sendWhatsAppInteractive(
   {
     phoneNumberId,
+    token,
     to,
     body,
     buttons,
   }: {
     phoneNumberId: string;
+    token?: string | null;
     to: string;
     body: string;
     buttons: Array<{ id: string; title: string }>;
@@ -295,6 +312,9 @@ export function sendWhatsAppInteractive(
         },
       },
     },
-    dependencies,
+    {
+      ...dependencies,
+      token: token ?? dependencies?.token,
+    },
   );
 }

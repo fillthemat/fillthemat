@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
-import { type School, schools } from "@/db/schema";
+import { type School, schoolDetailsColumns, schools } from "@/db/schema";
 import { requireUser, type VerifiedUser } from "./current-user";
 
 export async function getOwnedSchool(userId: string): Promise<School | null> {
   const db = getDb();
   const [school] = await db
-    .select()
+    .select(schoolDetailsColumns)
     .from(schools)
     .where(eq(schools.ownerUserId, userId))
     .limit(1);

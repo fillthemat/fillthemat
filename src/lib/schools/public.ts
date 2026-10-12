@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import {
   faqs,
   type School,
+  schoolDetailsColumns,
   schools,
   trialOccurrences,
   trialOfferings,
@@ -13,7 +14,7 @@ import { getVerifiedClaims } from "@/lib/auth/current-user";
 export async function getSchoolBySlug(slug: string): Promise<School | null> {
   const db = getDb();
   const [school] = await db
-    .select()
+    .select(schoolDetailsColumns)
     .from(schools)
     .where(eq(schools.slug, slug))
     .limit(1);
@@ -39,7 +40,7 @@ export async function getPublicSchoolBySlug(
 ): Promise<School | null> {
   const db = getDb();
   const [school] = await db
-    .select()
+    .select(schoolDetailsColumns)
     .from(schools)
     .where(
       and(

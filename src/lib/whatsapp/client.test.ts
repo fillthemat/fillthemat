@@ -8,6 +8,73 @@ import {
 } from "./client";
 
 describe("WhatsApp Graph sends", () => {
+  it("uses the school credential rather than a shared Graph token", async () => {
+    let authorization: string | null = null;
+    await sendWhatsAppText(
+      {
+        phoneNumberId: "school-a-phone",
+        to: "recipient",
+        text: "Hello",
+        token: "school-a-token",
+      },
+      {
+        token: "shared-token",
+        fetch: async (_url, init) => {
+          authorization = new Headers(init?.headers).get("authorization");
+          return Response.json({ messages: [{ id: "wamid.accepted" }] });
+        },
+      },
+    );
+    expect(authorization).toBe("Bearer school-a-token");
+  });
+  it.each(["template", "interactive", "typing"])(
+    "uses the school credential for %s calls too",
+    async (type) => {
+      let authorization: string | null = null;
+      const dependencies = {
+        token: "shared-token",
+        fetch: async (_url: string | URL | Request, init?: RequestInit) => {
+          authorization = new Headers(init?.headers).get("authorization");
+          return Response.json({
+            messages: [{ id: "wamid.accepted" }],
+            success: true,
+          });
+        },
+      };
+      const school = {
+        phoneNumberId: "school-a-phone",
+        token: "school-a-token",
+      };
+      if (type === "template") {
+        await sendWhatsAppTemplate(
+          {
+            ...school,
+            to: "recipient",
+            templateName: "confirmation",
+            languageCode: "en_US",
+            params: [],
+          },
+          dependencies,
+        );
+      } else if (type === "interactive") {
+        await sendWhatsAppInteractive(
+          {
+            ...school,
+            to: "recipient",
+            body: "Hello",
+            buttons: [{ id: "yes", title: "Yes" }],
+          },
+          dependencies,
+        );
+      } else {
+        await sendWhatsAppTypingIndicator(
+          { ...school, messageId: "wamid.inbound" },
+          dependencies,
+        );
+      }
+      expect(authorization).toBe("Bearer school-a-token");
+    },
+  );
   it.each([
     {
       response: () => Response.json({ messages: [{ id: "wamid.accepted" }] }),
