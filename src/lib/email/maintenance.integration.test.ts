@@ -44,14 +44,25 @@ describe("maintenance", () => {
     const rows = await db
       .insert(conversations)
       .values([
-        { schoolId, resumeTokenHash: randomUUID(), expiresAt: oldDeadline },
         {
           schoolId,
+          channel: "web",
+          resumeTokenHash: randomUUID(),
+          expiresAt: oldDeadline,
+        },
+        {
+          schoolId,
+          channel: "web",
           resumeTokenHash: randomUUID(),
           expiresAt: oldDeadline,
           generatingAt: new Date(now.getTime() - 11 * 60_000),
         },
-        { schoolId, resumeTokenHash: randomUUID(), expiresAt: addDays(now, 1) },
+        {
+          schoolId,
+          channel: "web",
+          resumeTokenHash: randomUUID(),
+          expiresAt: addDays(now, 1),
+        },
       ])
       .returning();
     const inactive = requireRow(rows[0], "inactive conversation");

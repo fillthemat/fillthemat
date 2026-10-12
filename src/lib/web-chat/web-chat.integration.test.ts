@@ -102,6 +102,7 @@ async function existingConversation({
     .insert(conversations)
     .values({
       schoolId,
+      channel: "web",
       resumeTokenHash: hashToken(resumeToken),
       generatingAt,
       expiresAt,
