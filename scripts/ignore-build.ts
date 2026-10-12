@@ -26,7 +26,6 @@ export function ignoredBuildExitCode(
       { encoding: "utf8", timeout: 5_000, stdio: "pipe" },
     ),
 ): 0 | 1 {
-  // Compare with the last successful branch deployment, not HEAD's parent.
   const base = env.VERCEL_GIT_PREVIOUS_SHA;
   if (env.VERCEL_ENV !== "preview") return decision(1, "non-Preview");
   if (!base || !/^[a-f0-9]{40}$/.test(base)) return decision(1, "no base");
