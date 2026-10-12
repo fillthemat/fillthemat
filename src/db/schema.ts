@@ -539,6 +539,7 @@ export const conversations = appSchema.table(
       () => poppyClients.clientId,
     ),
     poppyUserId: text("poppy_user_id"),
+    poppyParentConversationId: uuid("poppy_parent_conversation_id"),
     poppyContext: jsonb("poppy_context").$type<Record<string, unknown>>(),
     poppyStatus: text("poppy_status").notNull().default("idle"),
     poppyEventSequence: integer("poppy_event_sequence").notNull().default(0),
@@ -550,6 +551,20 @@ export const conversations = appSchema.table(
   },
   (t) => [
     unique("conversations_school_id_id").on(t.schoolId, t.id),
+    index("conversations_poppy_parent").on(
+      t.schoolId,
+      t.poppyParentConversationId,
+    ),
+    uniqueIndex("conversations_poppy_open_child")
+      .on(t.poppyParentConversationId)
+      .where(
+        sql`${t.poppyParentConversationId} IS NOT NULL AND ${t.endedAt} IS NULL`,
+      ),
+    foreignKey({
+      columns: [t.schoolId, t.poppyParentConversationId],
+      foreignColumns: [t.schoolId, t.id],
+      name: "conversations_poppy_parent_fk",
+    }).onDelete("cascade"),
     uniqueIndex("conversations_resume_token_hash")
       .on(t.resumeTokenHash)
       .where(sql`${t.endedAt} IS NULL`),

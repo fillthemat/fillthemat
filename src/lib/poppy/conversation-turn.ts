@@ -13,12 +13,13 @@ import { type CompletedReply, completedReply } from "@/lib/ai/assistant";
 import {
   appendMessage,
   claimGeneration,
-  loadTranscript,
 } from "@/lib/conversations/conversation-store";
 import { loadSchoolCatalog } from "@/lib/schools/public";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 import { startTurnTrace } from "@/lib/tracing/turn-trace";
+import { loadPoppyTranscript } from "./conversation-direct";
 import { appendPoppyEvent, setPoppyState } from "./conversation-events";
+import { lockPoppyConversationRow } from "./conversation-lifecycle";
 import { poppyMessage } from "./conversation-requests";
 import { closePoppyConversationRow } from "./conversations";
 import { proposeBookingOperation, supportsOperations } from "./operations";
@@ -80,7 +81,7 @@ export async function completePoppyTurns(
         });
         try {
           await turn.run(async () => {
-            const history = await loadTranscript(conversationId);
+            const history = await loadPoppyTranscript(conversation);
             let reply: CompletedReply | undefined;
             let completion: "complete" | "error" = "complete";
             try {
@@ -132,11 +133,10 @@ export async function completePoppyTurns(
                 : reply?.text) ??
               "I couldn't complete that reply. Please try a new message.";
             const replyMessageId = await db.transaction(async (tx) => {
-              const [current] = await tx
-                .select()
-                .from(conversations)
-                .where(eq(conversations.id, conversationId))
-                .for("update");
+              const current = await lockPoppyConversationRow(
+                conversationId,
+                tx,
+              );
               if (!current) throw new Error("conversation_missing");
               await appendMessage(
                 {

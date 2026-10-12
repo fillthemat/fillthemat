@@ -1,0 +1,4 @@
+ALTER TABLE "app"."conversations" ADD COLUMN "poppy_parent_conversation_id" uuid;--> statement-breakpoint
+ALTER TABLE "app"."conversations" ADD CONSTRAINT "conversations_poppy_parent_fk" FOREIGN KEY ("school_id","poppy_parent_conversation_id") REFERENCES "app"."conversations"("school_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "conversations_poppy_parent" ON "app"."conversations" USING btree ("school_id","poppy_parent_conversation_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "conversations_poppy_open_child" ON "app"."conversations" USING btree ("poppy_parent_conversation_id") WHERE "app"."conversations"."poppy_parent_conversation_id" IS NOT NULL AND "app"."conversations"."ended_at" IS NULL;

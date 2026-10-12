@@ -1,8 +1,10 @@
 import { after } from "next/server";
 import { z } from "zod";
 import { sleep } from "@/lib/sleep";
+import { handoffPoppyConversation } from "./conversation-handoff";
 import {
   conversationReadOptions,
+  poppyId,
   poppyMessage,
   readPoppyJson,
 } from "./conversation-requests";
@@ -66,16 +68,24 @@ export async function poppyMessageEndpoint(
   if (!authorization.ok) return authorization.response;
   try {
     const parsed = z
-      .object({ message: poppyMessage })
+      .object({
+        message: poppyMessage,
+        parent_conversation_id: poppyId.optional(),
+      })
       .strict()
       .safeParse(await readPoppyJson(request));
     if (!parsed.success) throw new PoppyError("invalid_request");
+    const parentId = parsed.data.parent_conversation_id;
+    if (conversationId && parentId) throw new PoppyError("invalid_request");
+    if (parentId && parsed.data.message.sender !== "human")
+      throw new PoppyError("invalid_request");
     const options = conversationReadOptions(request);
     const accepted = await acceptPoppyMessage(
       authorization.principal,
       parsed.data.message,
       conversationId,
       options.cursor,
+      parentId,
     );
     if (accepted.error) throw new PoppyError(accepted.error, 409);
     const id = accepted.conversationId;
@@ -133,6 +143,28 @@ export async function poppyCloseEndpoint(
     if (!parsed.success) throw new PoppyError("invalid_request");
     return response(
       await closePoppyConversation(authorization.principal, conversationId),
+    );
+  } catch (error) {
+    return poppyErrorResponse(error, true);
+  }
+}
+
+export async function poppyHandoffEndpoint(
+  request: Request,
+  schoolId: string,
+  conversationId: string,
+): Promise<Response> {
+  const authorization = await checkPoppyRequest(request, schoolId);
+  if (!authorization.ok) return authorization.response;
+  try {
+    const parsed = z
+      .object({})
+      .strict()
+      .safeParse(await readPoppyJson(request));
+    if (!parsed.success) throw new PoppyError("invalid_request");
+    return response(
+      await handoffPoppyConversation(authorization.principal, conversationId),
+      202,
     );
   } catch (error) {
     return poppyErrorResponse(error, true);

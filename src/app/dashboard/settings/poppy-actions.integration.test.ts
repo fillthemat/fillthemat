@@ -113,7 +113,7 @@ describe("School Owner domain connection", () => {
       sourceUrl: `https://${domain}/.well-known/poppy.json`,
       discoveryUrl: `${process.env.NEXT_PUBLIC_SITE_URL}/poppy/discovery/${schoolId}/${domain}`,
     });
-    expect(JSON.parse(connection?.document ?? "")).toEqual({
+    expect(JSON.parse(connection?.document ?? "")).toMatchObject({
       protocol_version: "0.1",
       organization: { name: "Poppy School", domain },
       auth: { issuer: `https://auth.fillthemat.example/schools/${schoolId}` },

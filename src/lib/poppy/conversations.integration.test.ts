@@ -5,10 +5,12 @@ import postgres from "postgres";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { POST as close } from "@/app/poppy/schools/[schoolId]/conversations/[conversationId]/close/route";
 import { GET as events } from "@/app/poppy/schools/[schoolId]/conversations/[conversationId]/events/route";
+import { POST as handoff } from "@/app/poppy/schools/[schoolId]/conversations/[conversationId]/handoff/route";
 import { POST as send } from "@/app/poppy/schools/[schoolId]/conversations/[conversationId]/messages/route";
 import { POST as start } from "@/app/poppy/schools/[schoolId]/conversations/route";
 import { POST as token } from "@/app/schools/[schoolId]/token/route";
 import * as languageModel from "@/lib/ai/language-model";
+import { runMaintenance } from "@/lib/email/maintenance";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { createTestPoppyAgent } from "@/test/poppy-agent";
 import { exportedSpans, exportedTraces, leaks } from "@/test/tracing";
@@ -118,6 +120,359 @@ function stubModel() {
 }
 const params = (conversationId: string) => ({
   params: Promise.resolve({ schoolId, conversationId }),
+});
+
+it("handoff honestly reports no human available and adds a Company message without calling the model", async () => {
+  const model = stubModel();
+  const user = await caller();
+  const first = await (
+    await start(
+      await user.request("?wait=2", {
+        message: { id: randomUUID(), sender: "agent", text: "Hello" },
+      }),
+      { params: Promise.resolve({ schoolId }) },
+    )
+  ).json();
+  const result = await handoff(
+    await user.request(`/${first.conversation_id}/handoff`, {}),
+    params(first.conversation_id),
+  );
+  expect(result.status).toBe(202);
+  expect(await result.json()).toEqual({
+    conversation_id: first.conversation_id,
+    status: "idle",
+    responder: "agent",
+  });
+  const page = await (
+    await events(
+      await user.request(
+        `/${first.conversation_id}/events?cursor=${first.cursor}`,
+      ),
+      params(first.conversation_id),
+    )
+  ).json();
+  expect(page.events).toContainEqual(
+    expect.objectContaining({
+      type: "message",
+      message: expect.objectContaining({
+        role: "company",
+        sender: "agent",
+        text: "No one at the School is available through this channel.",
+      }),
+    }),
+  );
+  expect(model.doGenerateCalls).toHaveLength(1);
+});
+
+it("a Direct Conversation blocks the parent, shares Assistant history both ways and records its closure", async () => {
+  const model = stubModel();
+  const user = await caller();
+  const parent = await (
+    await start(
+      await user.request("?wait=2", {
+        message: {
+          id: randomUUID(),
+          sender: "agent",
+          text: "Agent discussed karate on Tuesday",
+        },
+      }),
+      { params: Promise.resolve({ schoolId }) },
+    )
+  ).json();
+  const message = {
+    id: randomUUID(),
+    sender: "human",
+    text: "I personally prefer Thursday",
+  };
+  const body = { parent_conversation_id: parent.conversation_id, message };
+  const result = await start(await user.request("?wait=2", body), {
+    params: Promise.resolve({ schoolId }),
+  });
+  expect(result.status).toBe(201);
+  const child = await result.json();
+  expect(child.conversation_id).not.toBe(parent.conversation_id);
+  expect(JSON.stringify(model.doGenerateCalls[1].prompt)).toContain(
+    "Agent discussed karate on Tuesday",
+  );
+  expect(JSON.stringify(model.doGenerateCalls[1].prompt.at(-1))).toContain(
+    "I personally prefer Thursday",
+  );
+  const retry = await start(await user.request("?wait=2", body), {
+    params: Promise.resolve({ schoolId }),
+  });
+  expect(await retry.json()).toEqual(child);
+  const opened = await (
+    await events(
+      await user.request(
+        `/${parent.conversation_id}/events?cursor=${parent.cursor}`,
+      ),
+      params(parent.conversation_id),
+    )
+  ).json();
+  expect(opened.events).toContainEqual(
+    expect.objectContaining({
+      type: "direct_opened",
+      conversation_id: child.conversation_id,
+    }),
+  );
+  for (const action of [send, handoff]) {
+    const path = action === send ? "messages" : "handoff";
+    const blocked = await action(
+      await user.request(
+        `/${parent.conversation_id}/${path}`,
+        action === send
+          ? {
+              message: {
+                id: randomUUID(),
+                sender: "agent",
+                text: "Parent blocked",
+              },
+            }
+          : {},
+      ),
+      params(parent.conversation_id),
+    );
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toEqual({
+      error: "direct_conversation_open",
+      conversation_id: child.conversation_id,
+    });
+  }
+  await close(
+    await user.request(`/${child.conversation_id}/close`, {}),
+    params(child.conversation_id),
+  );
+  const ended = await (
+    await events(
+      await user.request(`/${parent.conversation_id}/events`),
+      params(parent.conversation_id),
+    )
+  ).json();
+  expect(ended.events).toContainEqual(
+    expect.objectContaining({
+      type: "direct_closed",
+      conversation_id: child.conversation_id,
+    }),
+  );
+  const resumed = await send(
+    await user.request(`/${parent.conversation_id}/messages?wait=2`, {
+      message: { id: randomUUID(), sender: "agent", text: "Back to the agent" },
+    }),
+    params(parent.conversation_id),
+  );
+  expect(resumed.status).toBe(202);
+  expect(JSON.stringify(model.doGenerateCalls[2].prompt)).toContain(
+    "I personally prefer Thursday",
+  );
+  expect(JSON.stringify(model.doGenerateCalls[2].prompt.at(-1))).toContain(
+    "Back to the agent",
+  );
+});
+
+it("closing a parent closes its direct child and records direct_closed exactly once", async () => {
+  stubModel();
+  const user = await caller();
+  const create = async (body: unknown) =>
+    (
+      await start(await user.request("?wait=2", body), {
+        params: Promise.resolve({ schoolId }),
+      })
+    ).json();
+  const parent = await create({
+    message: { id: randomUUID(), sender: "agent", text: "Parent" },
+  });
+  const child = await create({
+    parent_conversation_id: parent.conversation_id,
+    message: { id: randomUUID(), sender: "human", text: "Child" },
+  });
+  const ended = await close(
+    await user.request(`/${parent.conversation_id}/close`, {}),
+    params(parent.conversation_id),
+  );
+  expect(await ended.json()).toMatchObject({
+    status: "closed",
+    responder: "agent",
+  });
+  await close(
+    await user.request(`/${parent.conversation_id}/close`, {}),
+    params(parent.conversation_id),
+  );
+  await close(
+    await user.request(`/${child.conversation_id}/close`, {}),
+    params(child.conversation_id),
+  );
+  const page = await (
+    await events(
+      await user.request(`/${child.conversation_id}/events`),
+      params(child.conversation_id),
+    )
+  ).json();
+  expect(page.status).toBe("closed");
+  expect(page.events).toContainEqual(
+    expect.objectContaining({
+      type: "state",
+      status: "closed",
+      responder: "agent",
+    }),
+  );
+  const parentPage = await (
+    await events(
+      await user.request(`/${parent.conversation_id}/events`),
+      params(parent.conversation_id),
+    )
+  ).json();
+  expect(
+    parentPage.events.filter(
+      (event: { type: string }) => event.type === "direct_closed",
+    ),
+  ).toEqual([
+    expect.objectContaining({ conversation_id: child.conversation_id }),
+  ]);
+});
+
+it("Direct Conversation starts reject unknown, foreign, closed, nested and already occupied parents", async () => {
+  stubModel();
+  const user = await caller();
+  const create = async (parentId?: string, sender = "human") =>
+    start(
+      await user.request("?wait=2", {
+        ...(parentId ? { parent_conversation_id: parentId } : {}),
+        message: { id: randomUUID(), sender, text: "Hello" },
+      }),
+      { params: Promise.resolve({ schoolId }) },
+    );
+  for (const parentId of [randomUUID(), "not-a-uuid"]) {
+    const rejected = await create(parentId);
+    expect(rejected.status).toBe(404);
+    expect(await rejected.json()).toEqual({ error: "conversation_not_found" });
+  }
+  const parent = await (await create()).json();
+  const other = await caller();
+  const foreign = await start(
+    await other.request("", {
+      parent_conversation_id: parent.conversation_id,
+      message: { id: randomUUID(), sender: "human", text: "Foreign owner" },
+    }),
+    { params: Promise.resolve({ schoolId }) },
+  );
+  expect(foreign.status).toBe(404);
+  expect(await foreign.json()).toEqual({ error: "conversation_not_found" });
+  const notHuman = await create(parent.conversation_id, "agent");
+  expect(notHuman.status).toBe(400);
+  const child = await (await create(parent.conversation_id)).json();
+  const nested = await create(child.conversation_id);
+  expect(nested.status).toBe(404);
+  expect(await nested.json()).toEqual({ error: "conversation_not_found" });
+  const occupied = await create(parent.conversation_id);
+  expect(occupied.status).toBe(409);
+  expect(await occupied.json()).toEqual({
+    error: "direct_conversation_open",
+    conversation_id: child.conversation_id,
+  });
+  await close(
+    await user.request(`/${parent.conversation_id}/close`, {}),
+    params(parent.conversation_id),
+  );
+  const ended = await create(parent.conversation_id);
+  expect(ended.status).toBe(409);
+  expect(await ended.json()).toEqual({ error: "conversation_closed" });
+});
+
+it("concurrent direct starts create only one child, and changing the parent under a reused message ID conflicts", async () => {
+  stubModel();
+  const user = await caller();
+  const create = async (body: unknown) =>
+    start(await user.request("", body), {
+      params: Promise.resolve({ schoolId }),
+    });
+  const parent = await (
+    await create({
+      message: { id: randomUUID(), sender: "agent", text: "Parent" },
+    })
+  ).json();
+  await Promise.all(deferred.splice(0));
+  const firstMessage = { id: randomUUID(), sender: "human", text: "Direct" };
+  const incoming = [firstMessage, { ...firstMessage, id: randomUUID() }];
+  const attempts = await Promise.all(
+    incoming.map((message) =>
+      create({ parent_conversation_id: parent.conversation_id, message }),
+    ),
+  );
+  expect(attempts.map((result) => result.status).sort()).toEqual([201, 409]);
+  const bodies = await Promise.all(attempts.map((result) => result.json()));
+  const child = bodies.find((body) => body.status === "working");
+  expect(bodies.find((body) => body.error)).toEqual({
+    error: "direct_conversation_open",
+    conversation_id: child.conversation_id,
+  });
+  const changed = await create({
+    message: incoming[attempts.findIndex((result) => result.status === 201)],
+  });
+  expect(changed.status).toBe(409);
+  expect(await changed.json()).toEqual({ error: "message_id_conflict" });
+});
+
+it("maintenance closing an inactive parent also closes a still-active direct child", async () => {
+  stubModel();
+  const user = await caller();
+  const now = Date.now();
+  const create = async (body: unknown) =>
+    (
+      await start(await user.request("?wait=2", body), {
+        params: Promise.resolve({ schoolId }),
+      })
+    ).json();
+  const parent = await create({
+    message: { id: randomUUID(), sender: "agent", text: "Parent" },
+  });
+  const child = await create({
+    parent_conversation_id: parent.conversation_id,
+    message: { id: randomUUID(), sender: "human", text: "Child" },
+  });
+  await Promise.all(deferred.splice(0));
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(now + 20 * 24 * 60 * 60 * 1000);
+  const fresh = await (
+    await token(await user.agent.tokenRequest(schoolId), {
+      params: Promise.resolve({ schoolId }),
+    })
+  ).json();
+  user.session.access_token = fresh.access_token;
+  await send(
+    await user.request(`/${child.conversation_id}/messages?wait=2`, {
+      message: { id: randomUUID(), sender: "human", text: "Still talking" },
+    }),
+    params(child.conversation_id),
+  );
+  await Promise.all(deferred.splice(0));
+  vi.setSystemTime(now + 31 * 24 * 60 * 60 * 1000);
+  await runMaintenance();
+  const newest = await (
+    await token(await user.agent.tokenRequest(schoolId), {
+      params: Promise.resolve({ schoolId }),
+    })
+  ).json();
+  user.session.access_token = newest.access_token;
+  // Read the child first so a parent read cannot lazily repair maintenance.
+  const page = await (
+    await events(
+      await user.request(`/${child.conversation_id}/events`),
+      params(child.conversation_id),
+    )
+  ).json();
+  expect(page.status).toBe("closed");
+  const parentPage = await (
+    await events(
+      await user.request(`/${parent.conversation_id}/events`),
+      params(parent.conversation_id),
+    )
+  ).json();
+  expect(parentPage.events).toContainEqual(
+    expect.objectContaining({
+      type: "direct_closed",
+      conversation_id: child.conversation_id,
+    }),
+  );
 });
 
 it("authenticated long client and User identities can start and read their Conversation", async () => {

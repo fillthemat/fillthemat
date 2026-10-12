@@ -1,5 +1,5 @@
 {
-  "id": "76e0eea8-289e-44b5-a564-038a843d98a6",
+  "id": "fd116014-85c1-4b50-a1b7-d5aa9960169c",
   "prevId": "ffa4eacd-a7e5-47b9-8ac0-f0f37ea58524",
   "version": "7",
   "dialect": "postgresql",
@@ -40,18 +40,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "poppy_client_id": {
-          "name": "poppy_client_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "poppy_session_id": {
-          "name": "poppy_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "trial_offering_id": {
           "name": "trial_offering_id",
@@ -222,36 +210,6 @@
         }
       },
       "foreignKeys": {
-        "bookings_poppy_client_id_poppy_clients_client_id_fk": {
-          "name": "bookings_poppy_client_id_poppy_clients_client_id_fk",
-          "tableFrom": "bookings",
-          "tableTo": "poppy_clients",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "poppy_client_id"
-          ],
-          "columnsTo": [
-            "client_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "bookings_poppy_session_fk": {
-          "name": "bookings_poppy_session_fk",
-          "tableFrom": "bookings",
-          "tableTo": "poppy_sessions",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "poppy_session_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
         "bookings_school_id_fk": {
           "name": "bookings_school_id_fk",
           "tableFrom": "bookings",
@@ -558,6 +516,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "poppy_parent_conversation_id": {
+          "name": "poppy_parent_conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "poppy_context": {
           "name": "poppy_context",
           "type": "jsonb",
@@ -619,6 +583,43 @@
         }
       },
       "indexes": {
+        "conversations_poppy_parent": {
+          "name": "conversations_poppy_parent",
+          "columns": [
+            {
+              "expression": "school_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "poppy_parent_conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "conversations_poppy_open_child": {
+          "name": "conversations_poppy_open_child",
+          "columns": [
+            {
+              "expression": "poppy_parent_conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"app\".\"conversations\".\"poppy_parent_conversation_id\" IS NOT NULL AND \"app\".\"conversations\".\"ended_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "conversations_resume_token_hash": {
           "name": "conversations_resume_token_hash",
           "columns": [
@@ -671,6 +672,22 @@
             "client_id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "conversations_poppy_parent_fk": {
+          "name": "conversations_poppy_parent_fk",
+          "tableFrom": "conversations",
+          "tableTo": "conversations",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "school_id",
+            "poppy_parent_conversation_id"
+          ],
+          "columnsTo": [
+            "school_id",
+            "id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "conversations_school_id_fk": {
@@ -2086,288 +2103,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
-    },
-    "app.poppy_operation_revisions": {
-      "name": "poppy_operation_revisions",
-      "schema": "app",
-      "columns": {
-        "operation_id": {
-          "name": "operation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "terms": {
-          "name": "terms",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "poppy_operation_revisions_operation_id_poppy_operations_id_fk": {
-          "name": "poppy_operation_revisions_operation_id_poppy_operations_id_fk",
-          "tableFrom": "poppy_operation_revisions",
-          "tableTo": "poppy_operations",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "poppy_operation_revisions_id_revision": {
-          "name": "poppy_operation_revisions_id_revision",
-          "nullsNotDistinct": false,
-          "columns": [
-            "operation_id",
-            "revision"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
-    "app.poppy_operations": {
-      "name": "poppy_operations",
-      "schema": "app",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "school_id": {
-          "name": "school_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "conversation_id": {
-          "name": "conversation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "terms": {
-          "name": "terms",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_approval_required": {
-          "name": "user_approval_required",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "confirmation": {
-          "name": "confirmation",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "result": {
-          "name": "result",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "booking_id": {
-          "name": "booking_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "poppy_operations_session": {
-          "name": "poppy_operations_session",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "poppy_operations_conversation": {
-          "name": "poppy_operations_conversation",
-          "columns": [
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "poppy_operations_session_fk": {
-          "name": "poppy_operations_session_fk",
-          "tableFrom": "poppy_operations",
-          "tableTo": "poppy_sessions",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "session_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "poppy_operations_conversation_fk": {
-          "name": "poppy_operations_conversation_fk",
-          "tableFrom": "poppy_operations",
-          "tableTo": "conversations",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "poppy_operations_booking_fk": {
-          "name": "poppy_operations_booking_fk",
-          "tableFrom": "poppy_operations",
-          "tableTo": "bookings",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "booking_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "poppy_operations_school_id_id": {
-          "name": "poppy_operations_school_id_id",
-          "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "poppy_operations_revision": {
-          "name": "poppy_operations_revision",
-          "value": "\"app\".\"poppy_operations\".\"revision\" > 0"
-        },
-        "poppy_operations_state": {
-          "name": "poppy_operations_state",
-          "value": "\"app\".\"poppy_operations\".\"state\" IN ('proposed', 'in_progress', 'succeeded', 'failed', 'cancelled', 'expired')"
-        },
-        "poppy_operations_kind": {
-          "name": "poppy_operations_kind",
-          "value": "\"app\".\"poppy_operations\".\"kind\" IN ('booking', 'lead')"
-        }
-      },
       "isRLSEnabled": true
     },
     "app.poppy_replays": {
