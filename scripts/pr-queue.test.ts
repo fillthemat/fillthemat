@@ -52,9 +52,9 @@ it("enqueues passing PRs via GraphQL and returns position and state", () => {
 });
 
 it.each([
-  ["fail", 1],
-  ["pending", 8],
-  ["cancel", 1],
+  ["fail", 0],
+  ["pending", 0],
+  ["cancel", 0],
   ["skipping", 0],
 ])("refuses a required check in the %s bucket", (bucket, status) => {
   openPr();
@@ -62,6 +62,19 @@ it.each([
   expect(() => queuePullRequest(["224"])).toThrow(`Unit tests: ${bucket}`);
   expect(gh).toHaveBeenCalledTimes(3);
 });
+
+it.each([
+  ["fail", 1],
+  ["pending", 8],
+])(
+  "supports fallback non-JSON-style exit codes: %s/status %s",
+  (bucket, status) => {
+    openPr();
+    gh.mockReturnValueOnce(reply([{ name: "Unit tests", bucket }], status));
+    expect(() => queuePullRequest(["224"])).toThrow(`Unit tests: ${bucket}`);
+    expect(gh).toHaveBeenCalledTimes(3);
+  },
+);
 
 it("refuses an already queued PR before checking or enqueueing", () => {
   gh.mockReturnValueOnce(
@@ -101,7 +114,7 @@ it("prints every blocking check, not passing checks", () => {
         { name: "Unit tests", bucket: "fail" },
         { name: "Integration tests", bucket: "pending" },
       ],
-      1,
+      0,
     ),
   );
   expect(() => queuePullRequest(["224"])).toThrow(
@@ -139,16 +152,67 @@ it("surfaces GraphQL enqueue errors rather than reporting success", () => {
   openPr();
   gh.mockReturnValueOnce(
     reply([{ name: "Unit tests", bucket: "pass" }]),
-  ).mockReturnValueOnce(
-    reply({ errors: [{ message: "Pull request is already queued" }] }),
-  );
+  ).mockReturnValueOnce({
+    status: 1,
+    stdout: "",
+    stderr: "GraphQL: Pull request is already queued",
+  });
   expect(() => queuePullRequest(["224"])).toThrow("already queued");
 });
 
 it("fails closed when the queue lookup fails", () => {
   gh.mockReturnValueOnce(
     reply({ id: "PR_224", state: "OPEN" }),
-  ).mockReturnValueOnce(reply({ errors: [{ message: "Permission denied" }] }));
+  ).mockReturnValueOnce({
+    status: 1,
+    stdout: "",
+    stderr: "GraphQL: Permission denied",
+  });
   expect(() => queuePullRequest(["224"])).toThrow("Permission denied");
   expect(gh).toHaveBeenCalledTimes(2);
 });
+
+it.each(["no required checks reported", ""])(
+  "preserves diagnostics when required checks return no stdout: %s",
+  (stderr) => {
+    openPr();
+    gh.mockReturnValueOnce({ status: 1, stdout: "", stderr });
+    expect(() => queuePullRequest(["224"])).toThrow(
+      stderr || "gh returned no output.",
+    );
+    expect(gh).toHaveBeenCalledTimes(3);
+  },
+);
+
+it("accepts queue position zero after enqueueing", () => {
+  openPr();
+  gh.mockReturnValueOnce(
+    reply([{ name: "Unit tests", bucket: "pass" }]),
+  ).mockReturnValueOnce(
+    reply({
+      data: {
+        enqueuePullRequest: {
+          mergeQueueEntry: { position: 0, state: "QUEUED" },
+        },
+      },
+    }),
+  );
+  expect(queuePullRequest(["224"])).toEqual({ position: 0, state: "QUEUED" });
+});
+
+it.each([
+  reply({ data: { enqueuePullRequest: { mergeQueueEntry: null } } }),
+  { status: 0, stdout: "not JSON", stderr: "" },
+])(
+  "warns that enqueue was sent if its response cannot be parsed",
+  (response) => {
+    openPr();
+    gh.mockReturnValueOnce(
+      reply([{ name: "Unit tests", bucket: "pass" }]),
+    ).mockReturnValueOnce(response);
+    expect(() => queuePullRequest(["224"])).toThrow(
+      "Enqueue request sent; verify queue state.",
+    );
+    expect(gh).toHaveBeenCalledTimes(4);
+  },
+);

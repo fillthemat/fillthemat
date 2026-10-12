@@ -3,16 +3,12 @@ import { pathToFileURL } from "node:url";
 import { z } from "zod";
 
 const queueEntry = z.object({
-  position: z.number().int().positive(),
+  position: z.number().int().nonnegative(),
   state: z.string().min(1),
 });
 
-function graphql(query: string, id: string) {
-  const output = JSON.parse(
-    runGh(["api", "graphql", "-f", `query=${query}`, "-f", `id=${id}`]).stdout,
-  );
-  if (output.errors?.length) throw new Error(JSON.stringify(output.errors));
-  return output;
+function runGraphql(query: string, id: string) {
+  return runGh(["api", "graphql", "-f", `query=${query}`, "-f", `id=${id}`]);
 }
 
 function runGh(args: string[], allowedStatuses = [0]) {
@@ -20,6 +16,9 @@ function runGh(args: string[], allowedStatuses = [0]) {
   if (result.error) throw result.error;
   if (result.status === null || !allowedStatuses.includes(result.status)) {
     throw new Error(result.stderr.trim() || "gh command failed.");
+  }
+  if (!result.stdout.trim()) {
+    throw new Error(result.stderr.trim() || "gh returned no output.");
   }
   return result;
 }
@@ -46,16 +45,18 @@ export function queuePullRequest(args: string[]) {
       }),
     })
     .parse(
-      graphql(
-        "query($id:ID!){node(id:$id){... on PullRequest{mergeQueueEntry{position state}}}}",
-        pr.id,
+      JSON.parse(
+        runGraphql(
+          "query($id:ID!){node(id:$id){... on PullRequest{mergeQueueEntry{position state}}}}",
+          pr.id,
+        ).stdout,
       ),
     ).data.node.mergeQueueEntry;
   if (current)
     throw new Error(
       `PR #${number} is already queued (position ${current.position}, state ${current.state}).`,
     );
-  // gh uses 1 for failed checks and 8 for pending checks; both still carry JSON.
+  // gh 2.102 --json exits 0 even for pending checks; buckets decide (1/8 are fallbacks).
   const result = runGh(
     ["pr", "checks", number, "--required", "--json", "name,bucket"],
     [0, 1, 8],
@@ -68,6 +69,7 @@ export function queuePullRequest(args: string[]) {
       }),
     )
     .parse(JSON.parse(result.stdout));
+  // Refusing skipping is intentionally fail-closed: only pass is accepted.
   const blocked = checks.filter((check) => check.bucket !== "pass");
   if (blocked.length)
     throw new Error(
@@ -75,18 +77,22 @@ export function queuePullRequest(args: string[]) {
     );
   if (!checks.length || result.status !== 0)
     throw new Error("Cannot confirm all required checks are passing.");
-  return z
-    .object({
-      data: z.object({
-        enqueuePullRequest: z.object({ mergeQueueEntry: queueEntry }),
-      }),
-    })
-    .parse(
-      graphql(
-        "mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{position state}}}",
-        pr.id,
-      ),
-    ).data.enqueuePullRequest.mergeQueueEntry;
+  const enqueued = runGraphql(
+    "mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{position state}}}",
+    pr.id,
+  );
+  try {
+    return z
+      .object({
+        data: z.object({
+          enqueuePullRequest: z.object({ mergeQueueEntry: queueEntry }),
+        }),
+      })
+      .parse(JSON.parse(enqueued.stdout)).data.enqueuePullRequest
+      .mergeQueueEntry;
+  } catch {
+    throw new Error("Enqueue request sent; verify queue state.");
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
