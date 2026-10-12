@@ -31,8 +31,8 @@ Each worktree shares the machine's one Supabase/Docker stack but owns the Next.j
 - If that port is occupied, stop and report the collision; do not silently choose another port.
 - Stop this worktree's Next process with `bun run dev:stop`. Do not `pkill` Next/dev-local by name.
 - Do not stop or recreate Supabase from a child worktree; other agents may be using it.
-- All agent work ends in a GitHub pull request: push the branch and open a PR with a body written using the `pr` skill before cleaning up the worktree.
-- When Main requires the merge queue, use `bun run pr:queue <n>` for passing PRs; do not use `gh pr merge` or `--auto`. GitHub rechecks the combined changes before merging.
+- All agent work ends in a GitHub pull request: push the branch and open a PR with a body written using the `pr` skill before cleaning up the worktree. Exception: push wayfinder research branches (`research/*`) without a PR and never merge them; link findings from the ticket.
+- When the PR is ready to be merged, use `bun run pr:queue <n>` for passing PRs; do not use `gh pr merge` or `--auto`. GitHub rechecks the combined changes before merging.
 - When the worktree is finished: in that tree run `bun run dev:stop`, then from the repo root `git worktree remove .worktrees/<name>`. Do not delete `.git/fillthemat-ports/*` by hand — the next `bun run setup` reuses the port once the directory is gone. Delete the branch separately if you no longer need it (`git branch -d <branch>`).
 
 ## Agent skills
