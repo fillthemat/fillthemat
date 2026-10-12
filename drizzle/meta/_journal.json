@@ -134,6 +134,13 @@
       "when": 1791813376251,
       "tag": "0018_ancient_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791816157062,
+      "tag": "0019_tiny_silvermane",
+      "breakpoints": true
     }
   ]
 }

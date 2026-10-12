@@ -14,7 +14,11 @@ import {
 } from "ai";
 import { MAX_AGENT_STEPS } from "@/lib/security/limits";
 import type { AssistantContext } from "./context";
-import { assistantInstructions } from "./instructions";
+import {
+  assistantInstructions,
+  type PoppyAudience,
+  poppyInstructions,
+} from "./instructions";
 import { defaultLanguageModel } from "./language-model";
 import { platformInstructionsHash } from "./provenance";
 import { assistantTools } from "./tools";
@@ -43,12 +47,16 @@ export type AssistantInput = AssistantContext & {
   messages: UIMessage[];
   /** Defaults to `defaultLanguageModel()`, chosen when the reply is made. */
   model?: LanguageModel;
+  poppy?: PoppyAudience;
+  /** A channel may bound completed generation to its request lifetime. */
+  abortSignal?: AbortSignal;
 };
 
 async function createAssistant({
   school,
   catalog,
   now,
+  poppy,
   model = defaultLanguageModel(),
 }: Omit<AssistantInput, "messages">) {
   const tools = assistantTools({ school, catalog, now });
@@ -56,7 +64,10 @@ async function createAssistant({
     model,
     // The builder reads only its own fields, so the rest of a School row
     // never reaches the instructions.
-    instructions: assistantInstructions({ ...school, faqs: catalog.faqs }),
+    instructions: assistantInstructions(
+      { ...school, faqs: catalog.faqs },
+      poppy,
+    ),
     stopWhen: isStepCount(MAX_AGENT_STEPS),
     providerOptions: {
       gateway: {
@@ -68,7 +79,10 @@ async function createAssistant({
   });
   const provenance: ReplyProvenance = {
     modelId: typeof model === "string" ? model : model.modelId,
-    platformInstructionsHash: await platformInstructionsHash(tools),
+    platformInstructionsHash: await platformInstructionsHash(
+      tools,
+      poppy && poppyInstructions(poppy),
+    ),
   };
   return { assistant, provenance };
 }
@@ -91,10 +105,12 @@ export type CompletedReply = {
  */
 export async function completedReply({
   messages,
+  abortSignal,
   ...input
 }: AssistantInput): Promise<CompletedReply> {
   const { assistant, provenance } = await createAssistant(input);
   const result = await assistant.generate({
+    abortSignal,
     messages: await convertToModelMessages(messages, {
       tools: assistant.tools,
     }),

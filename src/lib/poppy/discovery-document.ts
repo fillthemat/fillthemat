@@ -1,4 +1,4 @@
-import { schoolIssuer } from "./urls";
+import { poppyAppOrigin, schoolIssuer } from "./urls";
 
 /** This is also the downloadable copy: no whitespace/newline reserialization. */
 export function discoveryDocument(
@@ -9,5 +9,13 @@ export function discoveryDocument(
     protocol_version: "0.1",
     organization: { name: school.name, domain },
     auth: { issuer: schoolIssuer(school.id) },
+    agent: {
+      protocols: [
+        {
+          type: "poppy",
+          endpoint: `${poppyAppOrigin()}/poppy/schools/${school.id}/conversations`,
+        },
+      ],
+    },
   });
 }

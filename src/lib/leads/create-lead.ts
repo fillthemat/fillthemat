@@ -12,7 +12,6 @@ import {
   leads,
   type School,
 } from "@/db/schema";
-import type { Channel } from "@/lib/channel";
 import { hashToken, hashWaId, normalizeEmail } from "@/lib/crypto";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
 
@@ -29,8 +28,8 @@ type LeadSourceDetails = {
 
 /** Where a lead came from: its channel, and that channel's details. */
 export type CreateLeadSource = {
-  [C in Channel]: { channel: C } & LeadSourceDetails[C];
-}[Channel];
+  [C in keyof LeadSourceDetails]: { channel: C } & LeadSourceDetails[C];
+}[keyof LeadSourceDetails];
 
 export type CreateLeadInput = {
   school: School;
