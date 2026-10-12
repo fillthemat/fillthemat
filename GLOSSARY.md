@@ -27,6 +27,10 @@ An exchange of messages between a school's assistant and someone interested in a
 The AI that talks with people interested in a trial on a school's behalf. It answers and prepares, but never creates a booking or a lead itself.
 _Avoid_: Agent, booking agent, bot, concierge
 
+**Personal Agent**:
+An AI acting on behalf of a contact, outside the school's control, that may talk to a school's assistant or use its school catalog for them.
+_Avoid_: Agent, bot, AI client
+
 **Channel**:
 The medium a conversation happens over: web chat or WhatsApp.
 
