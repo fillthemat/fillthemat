@@ -3,6 +3,7 @@ export class PoppyError extends Error {
     public readonly code: string,
     public readonly status = 400,
     public readonly retryAfter?: number,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(code);
   }
@@ -19,7 +20,7 @@ export function poppyErrorResponse(
   const code = error instanceof PoppyError ? error.code : "server_error";
   const status = error instanceof PoppyError ? error.status : 503;
   return Response.json(
-    { error: code },
+    { error: code, ...(error instanceof PoppyError ? error.details : {}) },
     {
       status,
       headers: {

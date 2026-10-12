@@ -13,15 +13,22 @@ import { GENERATION_LOCK_TIMEOUT_MS } from "@/lib/conversations/conversation-sto
 import { hashToken, randomToken } from "@/lib/crypto";
 import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
+import { assertNoDirectChild } from "./conversation-direct";
 import {
   appendPoppyEvent,
   conversationState,
   readPoppyEvents,
   setPoppyState,
 } from "./conversation-events";
+import {
+  closePoppyConversationRow,
+  lockPoppyConversationRow,
+} from "./conversation-lifecycle";
 import type { PoppyMessage } from "./conversation-requests";
 import { PoppyError } from "./errors";
 import type { PoppyPrincipal } from "./protected-request";
+
+export { closePoppyConversationRow } from "./conversation-lifecycle";
 
 function owner(principal: PoppyPrincipal) {
   return and(
@@ -41,11 +48,18 @@ export async function ownedPoppyConversation(
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
   )
     throw new PoppyError("conversation_not_found", 404);
-  const [conversation] = await tx
+  const [found] = await tx
     .select()
     .from(conversations)
-    .where(and(owner(principal), eq(conversations.id, id)))
-    .for("update");
+    .where(and(owner(principal), eq(conversations.id, id)));
+  if (!found) throw new PoppyError("conversation_not_found", 404);
+  if (found.poppyParentConversationId)
+    await ownedPoppyConversation(
+      principal,
+      found.poppyParentConversationId,
+      tx,
+    );
+  const conversation = await lockPoppyConversationRow(id, tx);
   if (!conversation) throw new PoppyError("conversation_not_found", 404);
   if (
     !conversation.endedAt &&
@@ -59,22 +73,6 @@ export async function ownedPoppyConversation(
   if (conversation.endedAt && conversation.poppyStatus !== "closed")
     await setPoppyState(conversation, "closed", tx);
   return conversation;
-}
-
-export async function closePoppyConversationRow(
-  conversation: Conversation,
-  reason: "closed" | "inactivity" | "message_limit",
-  tx: Transaction,
-) {
-  if (!conversation.endedAt) {
-    const endedAt = new Date();
-    await tx
-      .update(conversations)
-      .set({ endedAt, endReason: reason })
-      .where(eq(conversations.id, conversation.id));
-    conversation.endedAt = endedAt;
-  }
-  await setPoppyState(conversation, "closed", tx);
 }
 
 export async function getPoppyConversation(
@@ -125,6 +123,7 @@ export async function acceptPoppyMessage(
   message: PoppyMessage,
   conversationId?: string,
   cursor: string | null = null,
+  parentConversationId?: string,
 ) {
   const key = createHash("sha256")
     .update(
@@ -151,6 +150,14 @@ export async function acceptPoppyMessage(
     if (receipt) {
       if (canonical(receipt.message) !== canonical(message))
         throw new PoppyError("message_id_conflict", 409);
+      if (!conversationId) {
+        const [original] = await tx
+          .select({ parentId: conversations.poppyParentConversationId })
+          .from(conversations)
+          .where(eq(conversations.id, receipt.conversationId));
+        if ((original?.parentId ?? null) !== (parentConversationId ?? null))
+          throw new PoppyError("message_id_conflict", 409);
+      }
       await validateCursor(receipt.conversationId, cursor, tx);
       return {
         conversationId: receipt.conversationId,
@@ -160,6 +167,19 @@ export async function acceptPoppyMessage(
       };
     }
     if (conversation?.endedAt) return { error: "conversation_closed" as const };
+    if (conversation) await assertNoDirectChild(conversation, tx);
+    let parent: Conversation | undefined;
+    if (parentConversationId) {
+      parent = await ownedPoppyConversation(
+        principal,
+        parentConversationId,
+        tx,
+      );
+      if (parent.poppyParentConversationId)
+        throw new PoppyError("conversation_not_found", 404);
+      if (parent.endedAt) return { error: "conversation_closed" as const };
+      await assertNoDirectChild(parent, tx);
+    }
     if (cursor) {
       if (!conversation) throw new PoppyError("invalid_cursor");
       await validateCursor(conversation.id, cursor, tx);
@@ -174,11 +194,19 @@ export async function acceptPoppyMessage(
           resumeTokenHash: hashToken(randomToken()),
           poppyClientId: principal.clientId,
           poppyUserId: principal.userId,
+          poppyParentConversationId: parent?.id,
+          poppyContext: parent?.poppyContext,
           expiresAt: addDays(now, CONVERSATION_INACTIVITY_DAYS),
         })
         .returning();
       if (!created) throw new Error("conversation_missing");
       conversation = created;
+      if (parent)
+        await appendPoppyEvent(
+          parent,
+          { type: "direct_opened", conversation_id: created.id },
+          tx,
+        );
     }
     const [saved] = await tx
       .select({ count: count() })
