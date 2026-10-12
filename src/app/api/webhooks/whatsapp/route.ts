@@ -68,17 +68,6 @@ export async function POST(request: Request) {
   const statuses = parseInboundWhatsAppStatuses(payload);
   const messages = parseInboundWhatsAppMessages(payload);
 
-  // Perceived-immediacy lever: mark read + typing indicator in one cheap Graph
-  // call, best-effort so Meta's 200 is never hard-gated on it.
-  await Promise.allSettled(
-    messages.map((message) =>
-      sendWhatsAppTypingIndicator({
-        phoneNumberId: message.phoneNumberId,
-        messageId: message.wamid,
-      }),
-    ),
-  );
-
   try {
     if (statuses.length > 0) await applyWhatsAppStatuses(statuses);
   } catch (error) {
@@ -90,16 +79,34 @@ export async function POST(request: Request) {
     );
   }
 
+  let enqueued = 0;
   try {
-    if (messages.length > 0) await enqueueInboundJobs(messages);
+    if (messages.length > 0) enqueued = await enqueueInboundJobs(messages);
   } catch (error) {
     console.error(
       JSON.stringify({
         event: "whatsapp_webhook_enqueue_failed",
-        error: error instanceof Error ? error.message : String(error),
+        // Database error messages may contain query parameters (contact PII).
+        error: error instanceof Error ? error.name : "unknown",
+        messageCount: messages.length,
+        wamids: messages.map((message) => message.wamid),
       }),
     );
     return Response.json({ error: "enqueue_failed" }, { status: 500 });
+  }
+
+  // Only mark read + show typing after new inbound messages are durable.
+  // A fully deduplicated Meta retry must not repeat these signals.
+  // Best-effort so Meta's 200 is never hard-gated on the Graph call.
+  if (enqueued > 0) {
+    await Promise.allSettled(
+      messages.map((message) =>
+        sendWhatsAppTypingIndicator({
+          phoneNumberId: message.phoneNumberId,
+          messageId: message.wamid,
+        }),
+      ),
+    );
   }
 
   // Wake the worker after the 200 flushes so inbound messages are answered

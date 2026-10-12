@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sendWhatsAppTypingIndicator } from "@/lib/whatsapp/client";
 import { WHATSAPP_STUB_APP_SECRET } from "@/lib/whatsapp/config";
 import { applyWhatsAppStatuses } from "@/lib/whatsapp/deliveries";
 import { enqueueInboundJobs } from "@/lib/whatsapp/jobs";
@@ -54,8 +55,38 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "enqueue_failed" });
+    expect(sendWhatsAppTypingIndicator).not.toHaveBeenCalled();
     expect(after).not.toHaveBeenCalled();
     expect(runWhatsAppWorkerOnce).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat read receipts or typing for an already-enqueued Meta retry", async () => {
+    vi.mocked(enqueueInboundJobs).mockResolvedValueOnce(0);
+
+    const response = await POST(post(inboundPayload()));
+
+    expect(response.status).toBe(200);
+    expect(enqueueInboundJobs).toHaveBeenCalledOnce();
+    expect(sendWhatsAppTypingIndicator).not.toHaveBeenCalled();
+    expect(after).toHaveBeenCalledOnce();
+  });
+
+  it("logs enqueue failures with wamids but without contact PII or message text", async () => {
+    vi.mocked(enqueueInboundJobs).mockRejectedValueOnce(
+      new Error("Failed query params: 16505551234, private enquiry text"),
+    );
+
+    const response = await POST(post(inboundPayload()));
+
+    expect(response.status).toBe(500);
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({
+        event: "whatsapp_webhook_enqueue_failed",
+        error: "Error",
+        messageCount: 1,
+        wamids: ["wamid.inbound"],
+      }),
+    );
   });
 
   it("still returns 200 when a status-only callback fails", async () => {
@@ -72,13 +103,37 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
   });
 
   it("returns 200 after enqueue succeeds without running the assistant inline", async () => {
-    const response = await POST(post(inboundPayload()));
+    const enqueue = Promise.withResolvers<number>();
+    vi.mocked(enqueueInboundJobs).mockReturnValueOnce(enqueue.promise);
+
+    const pendingResponse = POST(post(inboundPayload()));
+    await vi.waitFor(() => expect(enqueueInboundJobs).toHaveBeenCalledOnce());
+    expect(sendWhatsAppTypingIndicator).not.toHaveBeenCalled();
+    enqueue.resolve(1);
+    const response = await pendingResponse;
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(enqueueInboundJobs).toHaveBeenCalledOnce();
+    expect(sendWhatsAppTypingIndicator).toHaveBeenCalledExactlyOnceWith({
+      phoneNumberId: "phone-123",
+      messageId: "wamid.inbound",
+    });
     expect(after).toHaveBeenCalledOnce();
     expect(runWhatsAppWorkerOnce).not.toHaveBeenCalled();
+  });
+
+  it("still acknowledges durable messages when the read/typing Graph call fails", async () => {
+    vi.mocked(sendWhatsAppTypingIndicator).mockRejectedValueOnce(
+      new Error("Graph unavailable"),
+    );
+
+    const response = await POST(post(inboundPayload()));
+
+    expect(response.status).toBe(200);
+    expect(enqueueInboundJobs).toHaveBeenCalledOnce();
+    expect(sendWhatsAppTypingIndicator).toHaveBeenCalledOnce();
+    expect(after).toHaveBeenCalledOnce();
   });
 
   it("enqueues mixed-payload messages even when their status callback fails", async () => {
