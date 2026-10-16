@@ -177,6 +177,7 @@ export const schoolDomains = appSchema
         .default("pending"),
       lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
       lastCheckResult: text("last_check_result"),
+      wwwLastCheckResult: text("www_last_check_result"),
       consecutiveFailures: integer("consecutive_failures").notNull().default(0),
       verifiedAt: timestamp("verified_at", { withTimezone: true }),
       checkId: uuid("check_id"),

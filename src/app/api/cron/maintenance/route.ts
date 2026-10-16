@@ -1,4 +1,4 @@
-import { runMaintenance } from "@/lib/email/maintenance";
+import { runMaintenance } from "@/lib/maintenance";
 import { cronSecretMatches } from "@/lib/request";
 
 export async function GET(request: Request) {

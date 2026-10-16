@@ -1,6 +1,35 @@
+export type PoppyErrorCode =
+  | "not_found"
+  | "invalid_client"
+  | "invalid_request"
+  | "invalid_token"
+  | "invalid_grant"
+  | "invalid_session"
+  | "invalid_dpop_proof"
+  | "unsupported_grant_type"
+  | "rate_limited"
+  | "invalid_cursor"
+  | "conversation_not_found"
+  | "conversation_closed"
+  | "direct_conversation_open"
+  | "message_id_conflict"
+  | "extension_required"
+  | "operation_not_found"
+  | "user_approval_required"
+  | "booking_not_found"
+  | "slot_unavailable"
+  | "ineligible_age";
+
+export function poppyNotFoundResponse() {
+  return new Response(null, {
+    status: 404,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 export class PoppyError extends Error {
   constructor(
-    public readonly code: string,
+    public readonly code: PoppyErrorCode,
     public readonly status = 400,
     public readonly retryAfter?: number,
     public readonly details?: Record<string, unknown>,

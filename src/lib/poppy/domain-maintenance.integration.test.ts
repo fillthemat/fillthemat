@@ -8,7 +8,7 @@ import { GET as discovery } from "@/app/poppy/discovery/[schoolId]/[domain]/rout
 import { getDb } from "@/db";
 import { cronRuns, emailDeliveries } from "@/db/schema";
 import type { EmailMessage } from "@/lib/email/dependencies";
-import { runMaintenance } from "@/lib/email/maintenance";
+import { runMaintenance } from "@/lib/maintenance";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { checkSchoolDomain } from "./domain-check";
 import {
@@ -239,6 +239,79 @@ it("a passing daily check resets consecutive failures before another failure", a
   });
   expect(await advertisedDomains()).toEqual([domain]);
   expect(emails).toEqual([]);
+});
+
+it("manual failures do not count toward dropping a domain and a manual pass resets the cron streak", async () => {
+  await verifiedDomain();
+  failingFetch();
+  await maintenance();
+  for (let i = 0; i < 3; i++) await checkSchoolDomain(schoolId, domain);
+  expect((await listSchoolDomains(schoolId))[0]).toMatchObject({
+    state: "failing",
+    consecutiveFailures: 1,
+    lastCheckResult: "no_redirect",
+  });
+  await maintenance();
+  expect((await listSchoolDomains(schoolId))[0]?.consecutiveFailures).toBe(2);
+  passingFetch();
+  await checkSchoolDomain(schoolId, domain);
+  expect((await listSchoolDomains(schoolId))[0]?.consecutiveFailures).toBe(0);
+  failingFetch();
+  await maintenance();
+  expect((await listSchoolDomains(schoolId))[0]?.consecutiveFailures).toBe(1);
+});
+
+it("sends queued email before starting potentially slow domain network checks", async () => {
+  await verifiedDomain();
+  await db.insert(emailDeliveries).values({
+    schoolId,
+    kind: "owner_poppy_domain_dropped",
+    domainSnapshot: "earlier.example",
+    recipient: "owner@local.test",
+    providerIdempotencyKey: randomUUID(),
+    nextAttemptAt: new Date(0),
+  });
+  let sentBeforeFetch = false;
+  vi.spyOn(safeFetchNetwork, "request").mockImplementation(async () => {
+    sentBeforeFetch = emails.length === 1;
+    return { status: 404, headers: new Headers(), body: Buffer.from("") };
+  });
+  await maintenance();
+  expect(sentBeforeFetch).toBe(true);
+  expect(emails).toHaveLength(1);
+});
+
+it("logs a broken domain check but still rechecks other domains and sends email", async () => {
+  await verifiedDomain();
+  await connectSchoolDomain(schoolB, "another-maintenance.example");
+  await sql`update app.school_domains set state = 'verified' where school_id = ${schoolB}`;
+  await db.insert(emailDeliveries).values({
+    schoolId,
+    kind: "owner_poppy_domain_dropped",
+    domainSnapshot: "earlier.example",
+    recipient: "owner@local.test",
+    providerIdempotencyKey: randomUUID(),
+    nextAttemptAt: new Date(0),
+  });
+  await sql.unsafe(
+    `create function app.test_domain_failure() returns trigger language plpgsql as $$ begin if NEW.school_id = '${schoolId}' then raise exception 'domain storage unavailable'; end if; return NEW; end; $$`,
+  );
+  await sql`create trigger test_domain_failure before update on app.school_domains for each row execute function app.test_domain_failure()`;
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  failingFetch();
+  try {
+    await maintenance();
+    expect(emails).toHaveLength(1);
+    expect((await listSchoolDomains(schoolB))[0]?.lastCheckedAt).toBeInstanceOf(
+      Date,
+    );
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('"event":"poppy_domain_recheck_failed"'),
+    );
+  } finally {
+    await sql`drop trigger test_domain_failure on app.school_domains`;
+    await sql`drop function app.test_domain_failure()`;
+  }
 });
 
 it("retains the domain notification for retry after removal when email delivery fails", async () => {

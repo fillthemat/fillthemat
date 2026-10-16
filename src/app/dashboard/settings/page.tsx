@@ -101,6 +101,10 @@ async function SectionContent({
           sourceUrl: domain.sourceUrl,
           discoveryUrl: domain.discoveryUrl,
           downloadUrl: `data:application/json;base64,${Buffer.from(domain.document).toString("base64")}`,
+          wwwWarning:
+            domain.wwwLastCheckResult && domain.wwwLastCheckResult !== "passed"
+              ? domainCheckMessage(domain.wwwLastCheckResult)
+              : null,
           lastCheckMessage: domain.lastCheckResult
             ? domainCheckMessage(domain.lastCheckResult)
             : null,

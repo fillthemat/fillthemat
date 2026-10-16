@@ -1,9 +1,10 @@
 import { readBookingApiDescription } from "@/lib/poppy/booking-api-description";
+import { poppyNotFoundResponse } from "@/lib/poppy/errors";
 import { isPoppyOrigin } from "@/lib/poppy/urls";
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ schoolId: string }> },
+  { params }: RouteContext<"/poppy/schools/[schoolId]/openapi.json">,
 ) {
   const { schoolId } = await params;
   const document = isPoppyOrigin(request, "app")
@@ -13,8 +14,5 @@ export async function GET(
     ? Response.json(document, {
         headers: { "Cache-Control": "public, max-age=300" },
       })
-    : new Response(null, {
-        status: 404,
-        headers: { "Cache-Control": "no-store" },
-      });
+    : poppyNotFoundResponse();
 }

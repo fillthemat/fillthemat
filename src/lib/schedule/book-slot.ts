@@ -19,6 +19,7 @@ import {
   trialOfferings,
   trialWindows,
 } from "@/db/schema";
+import type { BookingTerms } from "@/lib/ai/tools/prepare-booking";
 import type { Channel } from "@/lib/channel";
 import {
   attachConversationContact,
@@ -28,6 +29,7 @@ import { hashToken, normalizeEmail, normalizePersonName } from "@/lib/crypto";
 import { bookingIcsUid } from "@/lib/email/ics";
 import { FUNNEL_EVENTS, privacySafeMetadata } from "@/lib/funnel";
 import { issueBookingCancelToken } from "@/lib/poppy/booking-cancel-token";
+import { bookingDetails } from "./booking-details";
 import { isAgeEligible, listOpenSlots } from "./occurrences";
 import { parseSlotId } from "./slot-id";
 
@@ -46,16 +48,10 @@ export type BookSlotInput = {
   /** Poppy attribution is bound to the Operation's originating Session. */
   poppy?: { clientId: string; sessionId: string };
   /** An Operation may book only the exact terms the user approved. */
-  expectedTerms?: {
-    schoolName: string;
-    offeringName: string;
-    start: string;
-    end: string;
-    timezone: string;
-    pricing: string | null;
-    guidance: string | null;
-    location: string;
-  };
+  expectedTerms?: Pick<
+    BookingTerms,
+    "school" | "offering" | "occurrence" | "pricing" | "location"
+  >;
   now?: Date;
 };
 
@@ -220,27 +216,18 @@ export async function bookSlot(
       }
 
       const expected = input.expectedTerms;
+      const details = bookingDetails(input.school, offering);
       if (
         expected &&
-        (expected.schoolName !== input.school.name ||
-          expected.offeringName !== offering.name ||
-          expected.start !== slot.startAt.toISOString() ||
-          expected.end !== slot.endAt.toISOString() ||
-          expected.timezone !== input.school.timezone ||
+        (expected.school.id !== input.school.id ||
+          expected.school.name !== input.school.name ||
+          expected.offering.id !== offering.id ||
+          expected.offering.name !== offering.name ||
+          expected.occurrence.start !== slot.startAt.toISOString() ||
+          expected.occurrence.end !== slot.endAt.toISOString() ||
+          expected.occurrence.time_zone !== input.school.timezone ||
           expected.pricing !== input.school.pricing ||
-          expected.guidance !==
-            ([
-              input.school.accessNotes,
-              input.school.parkingNotes,
-              offering.attire ?? input.school.trialGuidance,
-              offering.expectations,
-            ]
-              .filter(Boolean)
-              .join("\n") || null) ||
-          expected.location !==
-            [input.school.address, input.school.city]
-              .filter(Boolean)
-              .join(", "))
+          expected.location !== details.location)
       )
         throw Object.assign(new Error("terms_changed"), {
           code: "terms_changed",

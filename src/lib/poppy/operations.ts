@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, type Transaction, withTransaction } from "@/db";
 import {
@@ -28,6 +28,48 @@ import { PoppyError } from "./errors";
 import type { PoppyPrincipal } from "./protected-request";
 
 export const POPPY_OPERATION_LIFETIME_MS = 30 * 60 * 1000;
+const CONFIRMATION_RECOVERY_MARGIN_MS = 5 * 60 * 1000;
+
+/** Skip locked effects: a live effect owns the row until booking/lead and final
+ * result commit together. Only abandoned, rolled-back effects are retired. */
+export async function failStalePoppyOperations(
+  now = new Date(),
+  options: { transaction?: Transaction; sessionId?: string } = {},
+) {
+  return withTransaction(async (tx) => {
+    const stale = await tx
+      .select()
+      .from(poppyOperations)
+      .where(
+        and(
+          eq(poppyOperations.state, "in_progress"),
+          lt(
+            poppyOperations.expiresAt,
+            new Date(now.getTime() - CONFIRMATION_RECOVERY_MARGIN_MS),
+          ),
+          isNull(poppyOperations.bookingId),
+          isNull(poppyOperations.leadId),
+          options.sessionId
+            ? eq(poppyOperations.sessionId, options.sessionId)
+            : undefined,
+        ),
+      )
+      .for("update", { skipLocked: true });
+    for (const row of stale)
+      await tx
+        .update(poppyOperations)
+        .set({
+          state: "failed",
+          updatedAt: now,
+          result: {
+            summary: `The approved confirmation could not be completed within the recovery window. No ${row.kind === "lead" ? "contact request" : "booking"} was made. Request a new proposal.`,
+            data: { code: "confirmation_timed_out" },
+          },
+        })
+        .where(eq(poppyOperations.id, row.id));
+    return stale.length;
+  }, options);
+}
 
 export function supportsOperations(extensions: Record<string, unknown>) {
   const operations = extensions.operations;
@@ -109,6 +151,10 @@ async function proposeOperation(
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${input.sessionId}, 0))`,
     );
+    await failStalePoppyOperations(now, {
+      transaction: tx,
+      sessionId: input.sessionId,
+    });
     const open = await tx
       .select()
       .from(poppyOperations)
@@ -197,6 +243,9 @@ export async function openBookingOperation(
     contact: BookingTerms["contact"];
   },
 ) {
+  await failStalePoppyOperations(new Date(), {
+    sessionId: principal.sessionId,
+  });
   const rows = await getDb()
     .select()
     .from(poppyOperations)
@@ -295,8 +344,16 @@ export async function confirmOperation(
 ) {
   const claimed = await getDb().transaction(async (tx) => {
     const row = await ownedOperation(principal, id, tx);
-    // Final/in-progress confirms are no-ops, even with a stale revision or
-    // standing permission. Only a proposed action can be authorized anew.
+    // A matching replay retries the durable approval, never authorizes anew.
+    // The effect transaction's row lock serializes this with other re-attempts.
+    if (row.state === "in_progress")
+      return {
+        row,
+        execute:
+          row.confirmation?.revision === input.revision &&
+          input.approved_by === "user",
+      };
+    // Final confirms remain no-ops, including stale/standing-permission requests.
     if (row.state !== "proposed") return { row, execute: false };
     if (row.revision !== input.revision)
       return { row, execute: false, error: "terms_changed" as const };
@@ -321,10 +378,11 @@ export async function confirmOperation(
   if (claimed.error)
     return { error: claimed.error, operation: publicOperation(claimed.row) };
   if (!claimed.execute) return { operation: publicOperation(claimed.row) };
-  // Confirmation is durable before the effect. Unexpected/uncertain failure
-  // leaves in_progress rather than falsely claiming no booking happened.
+  // Confirmation is durable before the effect. Unexpected failures roll back
+  // the entire effect and leave in_progress for a later matching confirm.
   const result = await getDb().transaction(async (tx) => {
     const row = await ownedOperation(principal, id, tx);
+    if (row.state !== "in_progress") return publicOperation(row);
     const [session] = await tx
       .select()
       .from(poppySessions)
@@ -350,7 +408,6 @@ export async function confirmOperation(
         : [];
       if (
         terms.school.id !== school.id ||
-        terms.school.name !== school.name ||
         (terms.offering &&
           (!offering?.active || offering.name !== terms.offering.name))
       ) {
@@ -437,13 +494,10 @@ export async function confirmOperation(
               conversationId: row.conversationId ?? undefined,
               poppy: { clientId: session.clientId, sessionId: session.id },
               expectedTerms: {
-                schoolName: terms.school.name,
-                offeringName: terms.offering.name,
-                start: terms.occurrence.start,
-                end: terms.occurrence.end,
-                timezone: terms.occurrence.time_zone,
+                school: terms.school,
+                offering: terms.offering,
+                occurrence: terms.occurrence,
                 pricing: terms.pricing,
-                guidance: terms.guidance,
                 location: terms.location,
               },
               now,

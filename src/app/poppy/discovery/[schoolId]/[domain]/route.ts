@@ -1,22 +1,15 @@
 import { readDiscovery } from "@/lib/poppy/discovery";
+import { poppyNotFoundResponse } from "@/lib/poppy/errors";
 import { isPoppyOrigin } from "@/lib/poppy/urls";
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ schoolId: string; domain: string }> },
+  { params }: RouteContext<"/poppy/discovery/[schoolId]/[domain]">,
 ) {
-  if (!isPoppyOrigin(request, "app"))
-    return new Response(null, {
-      status: 404,
-      headers: { "Cache-Control": "no-store" },
-    });
+  if (!isPoppyOrigin(request, "app")) return poppyNotFoundResponse();
   const { schoolId, domain } = await params;
   const result = await readDiscovery(schoolId, domain);
-  if (!result)
-    return new Response(null, {
-      status: 404,
-      headers: { "Cache-Control": "no-store" },
-    });
+  if (!result) return poppyNotFoundResponse();
   return new Response(result.document, {
     headers: {
       "Content-Type": "application/json",

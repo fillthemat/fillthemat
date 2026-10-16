@@ -9,9 +9,9 @@ import {
   messages,
   whatsappBookingIntents,
 } from "@/db/schema";
+import { runMaintenance } from "@/lib/maintenance";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
-import { runMaintenance } from "./maintenance";
 
 loadLocalEnv();
 const db = getDb();

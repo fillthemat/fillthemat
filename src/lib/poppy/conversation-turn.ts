@@ -134,7 +134,7 @@ export async function completePoppyTurns(
             }
             let text =
               (reply?.operationError === "extension_required"
-                ? "extension_required: Your Personal Agent must support the Operations extension version 1 to propose and confirm a booking or contact request."
+                ? "Your Personal Agent must support the Operations extension version 1 to propose and confirm a booking or contact request."
                 : reply?.text) ??
               "I couldn't complete that reply. Please try a new message.";
             const replyMessageId = await db.transaction(async (tx) => {

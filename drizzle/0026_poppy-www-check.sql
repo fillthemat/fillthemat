@@ -1,0 +1,1 @@
+ALTER TABLE "app"."school_domains" ADD COLUMN "www_last_check_result" text;
