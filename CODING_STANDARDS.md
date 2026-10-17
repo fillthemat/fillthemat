@@ -33,6 +33,14 @@ Pages and layouts in `src/app` load data and arrange the screen; nearby componen
 Use a control's `variant` for appearance changes; add new variants inside the control instead of restyling each use. Oxlint checks shadcn styling and static classes; see `docs/decisions/lint-policy.md` for the few exceptions.
 _Example_: `src/components/ui/input.tsx`
 
+## Linting, formatting, and typechecks
+
+After making code changes, ensure it's up to standards by running:
+
+- bun lint:fix
+- bun format
+- bun check
+
 ## Everyday style
 
 **Keep changes proportionate**:
@@ -52,6 +60,3 @@ Use `*.test.ts` for unit tests and `*.integration.test.ts` for database-backed t
 
 **Keep failures visible**:
 Return clear codes for expected failures, such as `slot_unavailable`. Rethrow unexpected errors rather than reporting success. Log unexpected errors as one line: `console.error(JSON.stringify({...}))`.
-
-**Let tools handle mechanical style**:
-Run `bun run lint` for Oxlint's import and UI rules, and `bun run check` for Biome's formatting, import order and recommended code checks. Use `bun run check:write` to apply Biome fixes instead of formatting by hand.

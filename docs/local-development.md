@@ -47,28 +47,19 @@ The seed creates an **approved but unpublished** school with slug `/s/demo` (plu
 
 All optional. The app degrades cleanly without them.
 
-| Capability | How | Without it |
-| --- | --- | --- |
-| Real email | Set `RESEND_API_KEY` (+ `RESEND_FROM=onboarding@resend.dev` for owner-only test mail) in `.env.local` | Deliveries are recorded and logged instead of sent |
-| Real assistant model | `bunx vercel env pull` (provides `VERCEL_OIDC_TOKEN`) or `AI_GATEWAY_API_KEY`, and a free-tier-allowed `BOOKING_AGENT_MODEL` | Web chat and WhatsApp run the assistant with a scripted local model: it calls the "list trial offerings" tool, then replies naming the active trial offerings. It never proposes a booking, so book with Book Trial |
-| Continue with Google | Replace the placeholders in `supabase/.env` with a real Web client (callback `http://127.0.0.1:54321/auth/v1/callback`), then re-run `bun run setup` | Email sign-in still works; Google is disabled |
-| Real WhatsApp sends | Set `WHATSAPP_SYSTEM_USER_TOKEN` (and optionally `WHATSAPP_APP_SECRET` / `WHATSAPP_VERIFY_TOKEN`) | Webhook + worker use dev-stub values; outbound send is a no-op log |
-| Langfuse traces of each turn | Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (plus `LANGFUSE_BASE_URL` outside the EU region) for a Langfuse project of your own | Nothing is traced or exported |
+| Capability                   | How                                                                                                                                                  | Without it                                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Real email                   | Set `RESEND_API_KEY` (+ `RESEND_FROM=onboarding@resend.dev` for owner-only test mail) in `.env.local`                                                | Deliveries are recorded and logged instead of sent                                                                                                                                                                  |
+| Real assistant model         | `bunx vercel env pull` (provides `VERCEL_OIDC_TOKEN`) or `AI_GATEWAY_API_KEY`, and a free-tier-allowed `BOOKING_AGENT_MODEL`                         | Web chat and WhatsApp run the assistant with a scripted local model: it calls the "list trial offerings" tool, then replies naming the active trial offerings. It never proposes a booking, so book with Book Trial |
+| Continue with Google         | Replace the placeholders in `supabase/.env` with a real Web client (callback `http://127.0.0.1:54321/auth/v1/callback`), then re-run `bun run setup` | Email sign-in still works; Google is disabled                                                                                                                                                                       |
+| Real WhatsApp sends          | Set `WHATSAPP_SYSTEM_USER_TOKEN` (and optionally `WHATSAPP_APP_SECRET` / `WHATSAPP_VERIFY_TOKEN`)                                                    | Webhook + worker use dev-stub values; outbound send is a no-op log                                                                                                                                                  |
+| Langfuse traces of each turn | Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (plus `LANGFUSE_BASE_URL` outside the EU region) for a Langfuse project of your own              | Nothing is traced or exported                                                                                                                                                                                       |
 
 `bun run build` / `bun run start` also load `.env.production.local`; if that file holds the production Langfuse keys, a local production server traces to production Langfuse.
 
 ## Checks
 
-```bash
-bun run check            # Biome
-bun run typecheck        # build-equivalent types, including tests and scripts
-bun run test             # unit tests
-bun run test:integration # requires the running local stack (bun run setup)
-```
-
-Before opening a PR, run `bun run verify`. It runs migration metadata/consistency and schema-drift checks, lint, Biome, typecheck, and unit tests without a database, stopping at the first failure. CI uses the same scripts for its separate "Lint, format, and typecheck" and "Unit tests" checks. Integration tests and Playwright remain separate (`.github/workflows/test.yml` and `playwright.yml`). Do not run `bun run db:migrate:prod` unless you intend to migrate hosted data (`docs/v1-deploy-current.md`).
-
-`bun run typecheck` generates Next.js route types without building, then checks the same `tsconfig.json` used by `next build`. Keep its full-project includes: integration tests, scripts, and generated route validators must be checked locally too. Type checking is incremental and needs neither Supabase nor a running app. CI runs the same command alongside lint and Biome on pull requests and `main` (`.github/workflows/checks.yml`).
+See CODING_STANDARDS.md, "Linting, formatting, and typechecks".
 
 ## Worktree port contract
 
