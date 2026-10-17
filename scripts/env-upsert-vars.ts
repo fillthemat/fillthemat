@@ -11,6 +11,19 @@ export async function envUpsertVars(): Promise<Record<string, string>> {
   let lines = (await envFile.exists()) ? (await envFile.text()).split("\n") : [];
   const updated: Record<string, string> = {};
 
+  const upsert = (key: string, value: string) => {
+    updated[key] = value;
+    const line = `${key}=${value}`;
+    const index = lines.findIndex((l) => l.startsWith(`${key}=`));
+    if (index >= 0) lines[index] = line;
+    else lines.splice(lines.at(-1) === "" ? -1 : lines.length, 0, line);
+  };
+  const overwriteEnvLocal = () => Bun.write(LOCAL_ENV_FILE, lines.join("\n").replace(/\n?$/, "\n"));
+
+  // Set SUPABASE_EXPERIMENTAL_STACK so that we can use `supabase status --env`
+  upsert("SUPABASE_EXPERIMENTAL_STACK", "1");
+  await overwriteEnvLocal();
+
   // Set Supabase vars
   const SUPABASE_MAPPINGS = [
     ["DB_URL", "DATABASE_URL"],
@@ -31,12 +44,7 @@ export async function envUpsertVars(): Promise<Record<string, string>> {
       console.warn(`Key "${sourceKey}" not found in input, skipping`);
       continue;
     }
-
-    updated[targetKey] = String(value);
-    const line = `${targetKey}=${JSON.stringify(String(value))}`;
-    const index = lines.findIndex((l) => l.startsWith(`${targetKey}=`));
-    if (index >= 0) lines[index] = line;
-    else lines.splice(lines.at(-1) === "" ? -1 : lines.length, 0, line);
+    upsert(targetKey, value);
   }
 
   // Set other vars
@@ -55,13 +63,9 @@ export async function envUpsertVars(): Promise<Record<string, string>> {
   ];
 
   for (const [key, value] of MAPPINGS) {
-    updated[key] = String(value);
-    const line = `${key}=${JSON.stringify(String(value))}`;
-    const index = lines.findIndex((l) => l.startsWith(`${key}=`));
-    if (index >= 0) lines[index] = line;
-    else lines.splice(lines.at(-1) === "" ? -1 : lines.length, 0, line);
+    upsert(key, value);
   }
 
-  await Bun.write(LOCAL_ENV_FILE, lines.join("\n").replace(/\n?$/, "\n"));
+  await overwriteEnvLocal();
   return updated;
 }
