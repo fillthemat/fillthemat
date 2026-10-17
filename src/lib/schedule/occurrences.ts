@@ -40,11 +40,7 @@ function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-function localDateString(
-  now: Date,
-  timezone: string,
-  dayOffset: number,
-): string {
+function localDateString(now: Date, timezone: string, dayOffset: number): string {
   const today = formatInTimeZone(now, timezone, "yyyy-MM-dd");
   const [year, month, day] = today.split("-").map(Number);
   const shifted = addDays(new Date(Date.UTC(year, month - 1, day)), dayOffset);
@@ -56,11 +52,7 @@ function localWeekday(dateStr: string, timezone: string): number {
   return Number(formatInTimeZone(utcNoon, timezone, "i")) % 7;
 }
 
-function wallTimeToUtc(
-  dateStr: string,
-  startMinute: number,
-  timezone: string,
-): Date | null {
+function wallTimeToUtc(dateStr: string, startMinute: number, timezone: string): Date | null {
   const hours = Math.floor(startMinute / 60);
   const minutes = startMinute % 60;
   const wall = `${dateStr}T${pad(hours)}:${pad(minutes)}:00`;
@@ -112,9 +104,7 @@ export function listOpenSlots({
       if (startAt < earliest || startAt > horizonEnd) continue;
 
       const endAt = addMinutes(startAt, window.durationMinutes);
-      const existing = occurrenceByKey.get(
-        `${window.id}|${startAt.toISOString()}`,
-      );
+      const existing = occurrenceByKey.get(`${window.id}|${startAt.toISOString()}`);
       const capacity = existing?.capacity ?? window.capacity;
       const bookedCount = existing?.bookedCount ?? 0;
       if (bookedCount >= capacity) continue;

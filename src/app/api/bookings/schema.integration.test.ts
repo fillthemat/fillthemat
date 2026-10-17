@@ -1,6 +1,6 @@
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres from "postgres";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
@@ -56,9 +56,7 @@ beforeAll(async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
-      expect(url).toBe(
-        "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-      );
+      expect(url).toBe("https://challenges.cloudflare.com/turnstile/v0/siteverify");
       return Response.json({ success: true });
     }),
   );
@@ -77,10 +75,7 @@ afterAll(async () => {
   await admin.end({ timeout: 5 });
 });
 
-function bookingRequest(
-  idempotencyKey: string = randomUUID(),
-  participantName = "Participant",
-) {
+function bookingRequest(idempotencyKey: string = randomUUID(), participantName = "Participant") {
   return new Request("http://localhost/api/bookings", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -132,12 +127,10 @@ it("blocks deploying the incident schema, then completes the same booking after 
   } finally {
     logFailure.mockRestore();
   }
-  expect(
-    await fixture`select count(*)::int as count from app.bookings`,
-  ).toEqual([{ count: 0 }]);
-  expect(
-    await fixture`select count(*)::int as count from app.trial_occurrences`,
-  ).toEqual([{ count: 0 }]);
+  expect(await fixture`select count(*)::int as count from app.bookings`).toEqual([{ count: 0 }]);
+  expect(await fixture`select count(*)::int as count from app.trial_occurrences`).toEqual([
+    { count: 0 },
+  ]);
   await applyMigrations(10, migrations.length);
   const after = checkDeploymentMigrations();
   expect(after.status, after.stderr).toBe(0);
@@ -147,12 +140,10 @@ it("blocks deploying the incident schema, then completes the same booking after 
     status: "booked",
     idempotent: false,
   });
-  expect(
-    await fixture`select count(*)::int as count from app.bookings`,
-  ).toEqual([{ count: 1 }]);
-  expect(
-    await fixture`select count(*)::int as count from app.email_deliveries`,
-  ).toEqual([{ count: 2 }]);
+  expect(await fixture`select count(*)::int as count from app.bookings`).toEqual([{ count: 1 }]);
+  expect(await fixture`select count(*)::int as count from app.email_deliveries`).toEqual([
+    { count: 2 },
+  ]);
 });
 
 it("replays the sixth committed booking even after the email quota is exhausted", async () => {
@@ -161,9 +152,7 @@ it("replays the sixth committed booking even after the email quota is exhausted"
   // The preceding incident regression saved the first booking for this email.
   for (let index = 2; index <= 6; index++) {
     lastKey = randomUUID();
-    const response = await post(
-      bookingRequest(lastKey, `Participant ${index}`),
-    );
+    const response = await post(bookingRequest(lastKey, `Participant ${index}`));
     expect(response.status).toBe(200);
     const envelope = await response.json();
     expect(envelope.idempotent).toBe(false);
@@ -178,12 +167,10 @@ it("replays the sixth committed booking even after the email quota is exhausted"
     bookingId: lastBookingId,
     idempotent: true,
   });
-  expect(
-    await fixture`select count(*)::int as count from app.bookings`,
-  ).toEqual([{ count: 6 }]);
-  expect(
-    await fixture`select count(*)::int as count from app.email_deliveries`,
-  ).toEqual([{ count: 12 }]);
+  expect(await fixture`select count(*)::int as count from app.bookings`).toEqual([{ count: 6 }]);
+  expect(await fixture`select count(*)::int as count from app.email_deliveries`).toEqual([
+    { count: 12 },
+  ]);
 });
 
 it("checks the operator DIRECT_URL when DATABASE_URL is absent", () => {
@@ -196,8 +183,7 @@ it("checks the operator DIRECT_URL when DATABASE_URL is absent", () => {
 
 it("prefers the runtime DATABASE_URL when DIRECT_URL points elsewhere", () => {
   const result = checkDeploymentMigrations({
-    DIRECT_URL:
-      "postgres://private_user:private_password@127.0.0.1:1/private_db",
+    DIRECT_URL: "postgres://private_user:private_password@127.0.0.1:1/private_db",
   });
   expect(result.status, result.stderr).toBe(0);
 });
@@ -208,12 +194,8 @@ it("requires manual repair for an applied migration with a different hash", asyn
   try {
     const result = checkDeploymentMigrations();
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      "applied migration 0000_left_white_tiger hash differs",
-    );
-    expect(result.stderr).toContain(
-      "needs manual repair; db:migrate:prod will not fix this",
-    );
+    expect(result.stderr).toContain("applied migration 0000_left_white_tiger hash differs");
+    expect(result.stderr).toContain("needs manual repair; db:migrate:prod will not fix this");
   } finally {
     await fixture`update drizzle.__drizzle_migrations set hash = ${migration.hash} where created_at = ${migration.folderMillis}`;
   }
@@ -225,12 +207,8 @@ it("requires manual repair for a missing migration older than the latest applied
   try {
     const result = checkDeploymentMigrations();
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      "migration 0000_left_white_tiger out-of-order",
-    );
-    expect(result.stderr).toContain(
-      "needs manual repair; db:migrate:prod will not fix this",
-    );
+    expect(result.stderr).toContain("migration 0000_left_white_tiger out-of-order");
+    expect(result.stderr).toContain("needs manual repair; db:migrate:prod will not fix this");
   } finally {
     await fixture`insert into drizzle.__drizzle_migrations (hash, created_at) values (${migration.hash}, ${migration.folderMillis})`;
   }

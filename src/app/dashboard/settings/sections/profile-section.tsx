@@ -3,13 +3,7 @@
 import { updateProfileAction } from "../actions";
 import { formatTimezone } from "../format";
 import { LIMITS } from "../schemas";
-import {
-  Callout,
-  FieldGroup,
-  SelectField,
-  TextAreaField,
-  TextField,
-} from "../ui/controls";
+import { Callout, FieldGroup, SelectField, TextAreaField, TextField } from "../ui/controls";
 import { SaveBar, useSettingsForm } from "../ui/section-form";
 
 export type ProfileValues = {
@@ -36,21 +30,12 @@ export function ProfileSection({
   published: boolean;
   timezones: string[];
 }) {
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    reset,
-    errorFor,
-  } = useSettingsForm({
-    action: updateProfileAction,
-    initialValues,
-    dirtyKey: "profile:details",
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
+    useSettingsForm({
+      action: updateProfileAction,
+      initialValues,
+      dirtyKey: "profile:details",
+    });
 
   const lockedBadge = published ? "Locked" : undefined;
 
@@ -58,8 +43,7 @@ export function ProfileSection({
     <form ref={formRef} action={formAction} className="flex flex-col gap-6">
       {published ? (
         <Callout tone="locked" title="Published page">
-          Public address and time zone stay locked so shared links and booked
-          classes keep working.
+          Public address and time zone stay locked so shared links and booked classes keep working.
         </Callout>
       ) : null}
 

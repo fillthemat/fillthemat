@@ -15,10 +15,7 @@ export function maskEvalFields(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(maskEvalFields);
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        maskContactFields(key),
-        maskEvalFields(item),
-      ]),
+      Object.entries(value).map(([key, item]) => [maskContactFields(key), maskEvalFields(item)]),
     );
   }
   return maskContactFields(value);

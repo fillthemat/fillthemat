@@ -1,14 +1,7 @@
 import { CHAT_ERRORS, type ChatError } from "@/lib/chat/protocol";
-import {
-  chatRequestSchema,
-  chatTranscriptRequestSchema,
-} from "@/lib/chat/requests";
+import { chatRequestSchema, chatTranscriptRequestSchema } from "@/lib/chat/requests";
 import { requestBodyTooLarge } from "@/lib/security/limits";
-import {
-  loadWebTranscript,
-  startWebTurn,
-  type WebTurnResult,
-} from "@/lib/web-chat/web-chat";
+import { loadWebTranscript, startWebTurn, type WebTurnResult } from "@/lib/web-chat/web-chat";
 
 // Five minutes, safely below the ten-minute abandoned-generation threshold.
 export const maxDuration = 300;
@@ -44,9 +37,7 @@ export async function POST(request: Request) {
     );
     return Response.json(
       {
-        error: invalidMessage
-          ? CHAT_ERRORS.invalidMessage
-          : CHAT_ERRORS.invalid,
+        error: invalidMessage ? CHAT_ERRORS.invalidMessage : CHAT_ERRORS.invalid,
       },
       { status: 400 },
     );
@@ -68,7 +59,6 @@ export async function GET(request: Request) {
     return Response.json({ error: CHAT_ERRORS.invalid }, { status: 400 });
   }
   const result = await loadWebTranscript(parsed.data);
-  if (!result.ok)
-    return Response.json({ error: result.reason }, { status: 404 });
+  if (!result.ok) return Response.json({ error: result.reason }, { status: 404 });
   return Response.json({ messages: result.messages });
 }

@@ -11,16 +11,14 @@ function reply(value: unknown, status = 0, stderr = "") {
 beforeEach(() => gh.mockReset());
 
 function openPr() {
-  gh.mockReturnValueOnce(
-    reply({ id: "PR_224", state: "OPEN" }),
-  ).mockReturnValueOnce(reply({ data: { node: { mergeQueueEntry: null } } }));
+  gh.mockReturnValueOnce(reply({ id: "PR_224", state: "OPEN" })).mockReturnValueOnce(
+    reply({ data: { node: { mergeQueueEntry: null } } }),
+  );
 }
 
 it("enqueues passing PRs via GraphQL and returns position and state", () => {
   openPr();
-  gh.mockReturnValueOnce(
-    reply([{ name: "Unit tests", bucket: "pass" }]),
-  ).mockReturnValueOnce(
+  gh.mockReturnValueOnce(reply([{ name: "Unit tests", bucket: "pass" }])).mockReturnValueOnce(
     reply({
       data: {
         enqueuePullRequest: {
@@ -66,20 +64,15 @@ it.each([
 it.each([
   ["fail", 1],
   ["pending", 8],
-])(
-  "supports fallback non-JSON-style exit codes: %s/status %s",
-  (bucket, status) => {
-    openPr();
-    gh.mockReturnValueOnce(reply([{ name: "Unit tests", bucket }], status));
-    expect(() => queuePullRequest(["224"])).toThrow(`Unit tests: ${bucket}`);
-    expect(gh).toHaveBeenCalledTimes(3);
-  },
-);
+])("supports fallback non-JSON-style exit codes: %s/status %s", (bucket, status) => {
+  openPr();
+  gh.mockReturnValueOnce(reply([{ name: "Unit tests", bucket }], status));
+  expect(() => queuePullRequest(["224"])).toThrow(`Unit tests: ${bucket}`);
+  expect(gh).toHaveBeenCalledTimes(3);
+});
 
 it("refuses an already queued PR before checking or enqueueing", () => {
-  gh.mockReturnValueOnce(
-    reply({ id: "PR_224", state: "OPEN" }),
-  ).mockReturnValueOnce(
+  gh.mockReturnValueOnce(reply({ id: "PR_224", state: "OPEN" })).mockReturnValueOnce(
     reply({
       data: { node: { mergeQueueEntry: { position: 2, state: "QUEUED" } } },
     }),
@@ -88,14 +81,11 @@ it("refuses an already queued PR before checking or enqueueing", () => {
   expect(gh).toHaveBeenCalledTimes(2);
 });
 
-it.each(["CLOSED", "MERGED"])(
-  "refuses a %s PR before checking or enqueueing",
-  (state) => {
-    gh.mockReturnValueOnce(reply({ id: "PR_224", state }));
-    expect(() => queuePullRequest(["224"])).toThrow(state.toLowerCase());
-    expect(gh).toHaveBeenCalledTimes(1);
-  },
-);
+it.each(["CLOSED", "MERGED"])("refuses a %s PR before checking or enqueueing", (state) => {
+  gh.mockReturnValueOnce(reply({ id: "PR_224", state }));
+  expect(() => queuePullRequest(["224"])).toThrow(state.toLowerCase());
+  expect(gh).toHaveBeenCalledTimes(1);
+});
 
 it.each([[], ["0"], ["--admin"], ["224", "--auto"], ["224; echo unsafe"]])(
   "rejects invalid arguments %j without invoking gh",
@@ -135,9 +125,7 @@ it.each([[[]], [[{ name: "Unit tests", bucket: "unknown" }]], [{}]])(
 
 it("does not enqueue when gh cannot read the PR", () => {
   gh.mockReturnValueOnce(reply(null, 1, "Could not resolve pull request"));
-  expect(() => queuePullRequest(["224"])).toThrow(
-    "Could not resolve pull request",
-  );
+  expect(() => queuePullRequest(["224"])).toThrow("Could not resolve pull request");
   expect(gh).toHaveBeenCalledTimes(1);
 });
 
@@ -150,9 +138,7 @@ it("does not enqueue when gh cannot read checks", () => {
 
 it("surfaces GraphQL enqueue errors rather than reporting success", () => {
   openPr();
-  gh.mockReturnValueOnce(
-    reply([{ name: "Unit tests", bucket: "pass" }]),
-  ).mockReturnValueOnce({
+  gh.mockReturnValueOnce(reply([{ name: "Unit tests", bucket: "pass" }])).mockReturnValueOnce({
     status: 1,
     stdout: "",
     stderr: "GraphQL: Pull request is already queued",
@@ -161,9 +147,7 @@ it("surfaces GraphQL enqueue errors rather than reporting success", () => {
 });
 
 it("fails closed when the queue lookup fails", () => {
-  gh.mockReturnValueOnce(
-    reply({ id: "PR_224", state: "OPEN" }),
-  ).mockReturnValueOnce({
+  gh.mockReturnValueOnce(reply({ id: "PR_224", state: "OPEN" })).mockReturnValueOnce({
     status: 1,
     stdout: "",
     stderr: "GraphQL: Permission denied",
@@ -177,18 +161,14 @@ it.each(["no required checks reported", ""])(
   (stderr) => {
     openPr();
     gh.mockReturnValueOnce({ status: 1, stdout: "", stderr });
-    expect(() => queuePullRequest(["224"])).toThrow(
-      stderr || "gh returned no output.",
-    );
+    expect(() => queuePullRequest(["224"])).toThrow(stderr || "gh returned no output.");
     expect(gh).toHaveBeenCalledTimes(3);
   },
 );
 
 it("accepts queue position zero after enqueueing", () => {
   openPr();
-  gh.mockReturnValueOnce(
-    reply([{ name: "Unit tests", bucket: "pass" }]),
-  ).mockReturnValueOnce(
+  gh.mockReturnValueOnce(reply([{ name: "Unit tests", bucket: "pass" }])).mockReturnValueOnce(
     reply({
       data: {
         enqueuePullRequest: {
@@ -203,16 +183,11 @@ it("accepts queue position zero after enqueueing", () => {
 it.each([
   reply({ data: { enqueuePullRequest: { mergeQueueEntry: null } } }),
   { status: 0, stdout: "not JSON", stderr: "" },
-])(
-  "warns that enqueue was sent if its response cannot be parsed",
-  (response) => {
-    openPr();
-    gh.mockReturnValueOnce(
-      reply([{ name: "Unit tests", bucket: "pass" }]),
-    ).mockReturnValueOnce(response);
-    expect(() => queuePullRequest(["224"])).toThrow(
-      "Enqueue request sent; verify queue state.",
-    );
-    expect(gh).toHaveBeenCalledTimes(4);
-  },
-);
+])("warns that enqueue was sent if its response cannot be parsed", (response) => {
+  openPr();
+  gh.mockReturnValueOnce(reply([{ name: "Unit tests", bucket: "pass" }])).mockReturnValueOnce(
+    response,
+  );
+  expect(() => queuePullRequest(["224"])).toThrow("Enqueue request sent; verify queue state.");
+  expect(gh).toHaveBeenCalledTimes(4);
+});

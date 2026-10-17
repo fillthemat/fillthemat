@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { type UIMessage, validateUIMessages } from "ai";
 import { after } from "next/server";
+import { randomUUID } from "node:crypto";
 import { streamedReply } from "@/lib/ai/assistant";
 import { textFromMessage } from "@/lib/chat/messages";
 import {
@@ -11,10 +11,7 @@ import {
   findOrCreateConversation,
   loadTranscript,
 } from "@/lib/conversations/conversation-store";
-import {
-  getSchoolForLandingAccess,
-  loadSchoolCatalog,
-} from "@/lib/schools/public";
+import { getSchoolForLandingAccess, loadSchoolCatalog } from "@/lib/schools/public";
 import { startTurnTrace } from "@/lib/tracing/turn-trace";
 
 type WebConversationInput = {
@@ -84,9 +81,7 @@ export async function startWebTurn({
     if (history.some(({ id }) => id === message.id)) {
       return { ok: false, reason: "duplicate" };
     }
-    if (
-      await endConversationAtMessageLimit(conversation.id, history.length, now)
-    ) {
+    if (await endConversationAtMessageLimit(conversation.id, history.length, now)) {
       return { ok: false, reason: "message_limit" };
     }
 

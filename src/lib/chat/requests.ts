@@ -24,8 +24,7 @@ export const chatRequestSchema = chatTranscriptRequestSchema.extend({
             part !== null &&
             "type" in part &&
             typeof part.type === "string" &&
-            (part.type !== "text" ||
-              ("text" in part && typeof part.text === "string")),
+            (part.type !== "text" || ("text" in part && typeof part.text === "string")),
         ),
       ),
     })

@@ -1,13 +1,7 @@
-import {
-  sendWhatsAppInteractive,
-  sendWhatsAppTemplate,
-  sendWhatsAppText,
-} from "./client";
+import { sendWhatsAppInteractive, sendWhatsAppTemplate, sendWhatsAppText } from "./client";
 
 export type WhatsAppTransport = {
-  sendText: (
-    input: Parameters<typeof sendWhatsAppText>[0],
-  ) => ReturnType<typeof sendWhatsAppText>;
+  sendText: (input: Parameters<typeof sendWhatsAppText>[0]) => ReturnType<typeof sendWhatsAppText>;
   sendTemplate: (
     input: Parameters<typeof sendWhatsAppTemplate>[0],
   ) => ReturnType<typeof sendWhatsAppTemplate>;

@@ -2,7 +2,7 @@ $kind: http-request
 id: 55531b32d54792c31800d722
 name: POST duplicate
 method: POST
-url: '{{baseUrl}}/api/chat'
+url: "{{baseUrl}}/api/chat"
 description: 'Same message.id as a previous POST valid. Expect 409 { error: "duplicate" }.'
 body:
   type: json

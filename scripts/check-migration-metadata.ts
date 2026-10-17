@@ -27,10 +27,7 @@ function readTree(directory: string): string {
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((entry) => {
         const path = join(directory, entry.name);
-        return [
-          entry.name,
-          entry.isDirectory() ? readTree(path) : readFileSync(path, "base64"),
-        ];
+        return [entry.name, entry.isDirectory() ? readTree(path) : readFileSync(path, "base64")];
       }),
   );
 }
@@ -48,11 +45,11 @@ function checkSchemaDrift(directory: string) {
       config,
       `import config from ${JSON.stringify(resolve("drizzle.config.ts"))};\nexport default { ...config, out: ${JSON.stringify(relative(process.cwd(), copy))} };\n`,
     );
-    const result = spawnSync(
-      "bun",
-      ["--no-env-file", "run", "db:generate", `--config=${config}`],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 },
-    );
+    const result = spawnSync("bun", ["--no-env-file", "run", "db:generate", `--config=${config}`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30_000,
+    });
     if (readTree(copy) !== before)
       throw new Error(
         "Schema drift detected: run bun run db:generate and commit SQL, snapshot and journal together. No project files were changed.",
@@ -64,10 +61,7 @@ function checkSchemaDrift(directory: string) {
       throw new Error(
         "Schema drift detected (rename needs an interactive answer): run bun run db:generate.",
       );
-    if (
-      result.status !== 0 ||
-      !result.stdout.includes("No schema changes, nothing to migrate")
-    )
+    if (result.status !== 0 || !result.stdout.includes("No schema changes, nothing to migrate"))
       throw new Error(
         `Schema drift check could not complete: ${result.error?.message ?? output.split("\n").filter(Boolean).slice(-5).join("\n")}`,
       );
@@ -91,21 +85,15 @@ function main() {
     const snapshot = `${prefix}_snapshot.json`;
     sqlFiles.add(sql);
     snapshots.add(snapshot);
-    if (!existsSync(join(directory, sql)))
-      throw new Error(`Missing SQL: ${sql}`);
+    if (!existsSync(join(directory, sql))) throw new Error(`Missing SQL: ${sql}`);
     if (!existsSync(join(directory, "meta", snapshot)))
       throw new Error(`Missing snapshot: meta/${snapshot}`);
   }
   for (const file of readdirSync(directory)) {
-    if (file.endsWith(".sql") && !sqlFiles.has(file))
-      throw new Error(`Orphan SQL: ${file}`);
+    if (file.endsWith(".sql") && !sqlFiles.has(file)) throw new Error(`Orphan SQL: ${file}`);
   }
   for (const file of readdirSync(join(directory, "meta"))) {
-    if (
-      file.endsWith(".json") &&
-      file !== "_journal.json" &&
-      !snapshots.has(file)
-    )
+    if (file.endsWith(".json") && file !== "_journal.json" && !snapshots.has(file))
       throw new Error(`Orphan snapshot: ${file}`);
   }
   checkSchemaDrift(directory);

@@ -40,20 +40,20 @@ bun run dev
 
 ### Friction inventory
 
-| # | Friction | Why it hurts contributors / agents |
-| --- | --- | --- |
-| 1 | **Google OAuth is mandatory** | `src/app/sign-in` only offers Google. Local Auth has `[auth.external.google] enabled = true` and `[auth.email] enable_signup = false`. Needs a Google Cloud web client whose callback is `http://127.0.0.1:54321/auth/v1/callback`. Agents cannot create that. |
-| 2 | **Two (really three) env files** | README says copy to `.env.local`. Founder secrets actually live in gitignored `.env`. Vercel CLI wrote `VERCEL_OIDC_TOKEN` into `.env.local`. Google lives in `supabase/.env`. Easy to follow the docs and still miss keys. |
-| 3 | **Manual Studio approval** | Dashboard copy: “ask founder to approve in Studio”. Public pages, bookings, and email delivery all require `schools.approved_at`. There is no seed and no local approve action. |
-| 4 | **No seed** | `supabase/config.toml` points at `./seed.sql`, but that file does not exist. Empty `app` schema after migrate. |
-| 5 | **Resend throws if unset** | `getResend()` / `getFromAddress()` throw. Booking can succeed while confirmation mail crashes the worker. Founder-alpha `onboarding@resend.dev` only delivers to the Resend owner. |
-| 6 | **Turnstile is required for booking UI** | Site key is read in client components; missing secret makes `verifyTurnstile` return false. Cloudflare **always-pass test keys** exist and are public, but they are not in `.env.example`. |
-| 7 | **AI chat needs Vercel OIDC** | `gateway(BOOKING_AGENT_MODEL)` plus `VERCEL_OIDC_TOKEN`. Default model `anthropic/claude-sonnet-4.6` is not on Gateway free tier (`docs/v1-plan-remaining.md`). Local chat is gated on `vercel login` + `vercel env pull` and a allowed model id. |
-| 8 | **Heavy local Supabase** | `config.toml` enables db, auth, studio, realtime, storage, edge runtime, vector, S3 protocol, local SMTP. Fillthemat only needs **Postgres + Auth** (Studio and Inbucket are nice-to-have). Slow start, high RAM, needs a running Docker Engine. |
-| 9 | **Bootstrap / doctor** | **Phase 1 landed:** `bun run setup` starts Supabase, writes `.env.local` from `supabase status`, fills Turnstile test keys + `CRON_SECRET`, migrates. `bun run doctor` probes Bun, `docker info`, status, and required keys. |
-| 10 | **Docs drift** | README, `docs/v1-plan.md`, and `docs/v1-deploy-current.md` overlap. Local vs hosted steps are mixed. No `CONTRIBUTING.md`. `AGENTS.md` does not mention how to run the app. |
-| 11 | **One Supabase stack per machine** | `project_id = "fillthemat"` and fixed API/DB ports (`54321`–`54324`, `54322` db). Git worktrees share Docker. Each worktree gets its own Next port (`3000 + n*10`) from `bun run setup`; do not start a second Supabase. |
-| 12 | **Tests do not prove the stack** | Unit tests need no Docker. Integration config exists with **zero** `*.integration.test.ts` files. Playwright smoke needs `bun run dev` but not a seeded school. No CI. |
+| #   | Friction                                 | Why it hurts contributors / agents                                                                                                                                                                                                                             |
+| --- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Google OAuth is mandatory**            | `src/app/sign-in` only offers Google. Local Auth has `[auth.external.google] enabled = true` and `[auth.email] enable_signup = false`. Needs a Google Cloud web client whose callback is `http://127.0.0.1:54321/auth/v1/callback`. Agents cannot create that. |
+| 2   | **Two (really three) env files**         | README says copy to `.env.local`. Founder secrets actually live in gitignored `.env`. Vercel CLI wrote `VERCEL_OIDC_TOKEN` into `.env.local`. Google lives in `supabase/.env`. Easy to follow the docs and still miss keys.                                    |
+| 3   | **Manual Studio approval**               | Dashboard copy: “ask founder to approve in Studio”. Public pages, bookings, and email delivery all require `schools.approved_at`. There is no seed and no local approve action.                                                                                |
+| 4   | **No seed**                              | `supabase/config.toml` points at `./seed.sql`, but that file does not exist. Empty `app` schema after migrate.                                                                                                                                                 |
+| 5   | **Resend throws if unset**               | `getResend()` / `getFromAddress()` throw. Booking can succeed while confirmation mail crashes the worker. Founder-alpha `onboarding@resend.dev` only delivers to the Resend owner.                                                                             |
+| 6   | **Turnstile is required for booking UI** | Site key is read in client components; missing secret makes `verifyTurnstile` return false. Cloudflare **always-pass test keys** exist and are public, but they are not in `.env.example`.                                                                     |
+| 7   | **AI chat needs Vercel OIDC**            | `gateway(BOOKING_AGENT_MODEL)` plus `VERCEL_OIDC_TOKEN`. Default model `anthropic/claude-sonnet-4.6` is not on Gateway free tier (`docs/v1-plan-remaining.md`). Local chat is gated on `vercel login` + `vercel env pull` and a allowed model id.              |
+| 8   | **Heavy local Supabase**                 | `config.toml` enables db, auth, studio, realtime, storage, edge runtime, vector, S3 protocol, local SMTP. Fillthemat only needs **Postgres + Auth** (Studio and Inbucket are nice-to-have). Slow start, high RAM, needs a running Docker Engine.               |
+| 9   | **Bootstrap / doctor**                   | **Phase 1 landed:** `bun run setup` starts Supabase, writes `.env.local` from `supabase status`, fills Turnstile test keys + `CRON_SECRET`, migrates. `bun run doctor` probes Bun, `docker info`, status, and required keys.                                   |
+| 10  | **Docs drift**                           | README, `docs/v1-plan.md`, and `docs/v1-deploy-current.md` overlap. Local vs hosted steps are mixed. No `CONTRIBUTING.md`. `AGENTS.md` does not mention how to run the app.                                                                                    |
+| 11  | **One Supabase stack per machine**       | `project_id = "fillthemat"` and fixed API/DB ports (`54321`–`54324`, `54322` db). Git worktrees share Docker. Each worktree gets its own Next port (`3000 + n*10`) from `bun run setup`; do not start a second Supabase.                                       |
+| 12  | **Tests do not prove the stack**         | Unit tests need no Docker. Integration config exists with **zero** `*.integration.test.ts` files. Playwright smoke needs `bun run dev` but not a seeded school. No CI.                                                                                         |
 
 None of this is a reason to abandon local Supabase. The Auth JWTs, `auth.users` FK in `drizzle/0000_*.sql`, and “browser uses Auth only / server uses Drizzle” split are the product’s data model. Replacing that with a fake auth layer would create a second, lying environment.
 
@@ -91,18 +91,18 @@ bunx vercel env pull            # OIDC for real booking chat
 
 ### Target `.env.local` (generated, gitignored)
 
-| Variable | Local default | Required to boot? |
-| --- | --- | --- |
-| `DATABASE_URL` / `DIRECT_URL` | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` | Yes — written by setup |
-| `NEXT_PUBLIC_SUPABASE_URL` | `http://127.0.0.1:54321` | Yes — written by setup |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | from `supabase status -o env` | Yes — written by setup |
-| `NEXT_PUBLIC_SITE_URL` | `http://127.0.0.1:3000` (or `:3010` … `:3090` per worktree) | Yes — written by setup. `bun run dev` parses the port from this URL. |
-| `CRON_SECRET` | generated UUID | Yes (cron route rejects empty) |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare always-pass test keys | Yes for booking forms; safe to commit as defaults in the generator |
-| `RESEND_API_KEY` / `RESEND_FROM` / `RESEND_WEBHOOK_SECRET` | unset | No — local mail adapter logs instead of sending |
-| `BOOKING_AGENT_MODEL` | a free-tier-allowed Gateway id, documented | Only if using real chat |
-| `VERCEL_OIDC_TOKEN` | from `vercel env pull` | Only if using real chat |
-| `ALLOW_SELF_APPROVAL` | `true` in generated local env | Local only |
+| Variable                                                   | Local default                                               | Required to boot?                                                    |
+| ---------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| `DATABASE_URL` / `DIRECT_URL`                              | `postgresql://postgres:postgres@127.0.0.1:54322/postgres`   | Yes — written by setup                                               |
+| `NEXT_PUBLIC_SUPABASE_URL`                                 | `http://127.0.0.1:54321`                                    | Yes — written by setup                                               |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`                     | from `supabase status -o env`                               | Yes — written by setup                                               |
+| `NEXT_PUBLIC_SITE_URL`                                     | `http://127.0.0.1:3000` (or `:3010` … `:3090` per worktree) | Yes — written by setup. `bun run dev` parses the port from this URL. |
+| `CRON_SECRET`                                              | generated UUID                                              | Yes (cron route rejects empty)                                       |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`  | Cloudflare always-pass test keys                            | Yes for booking forms; safe to commit as defaults in the generator   |
+| `RESEND_API_KEY` / `RESEND_FROM` / `RESEND_WEBHOOK_SECRET` | unset                                                       | No — local mail adapter logs instead of sending                      |
+| `BOOKING_AGENT_MODEL`                                      | a free-tier-allowed Gateway id, documented                  | Only if using real chat                                              |
+| `VERCEL_OIDC_TOKEN`                                        | from `vercel env pull`                                      | Only if using real chat                                              |
+| `ALLOW_SELF_APPROVAL`                                      | `true` in generated local env                               | Local only                                                           |
 
 Unify on **`.env.local`**. Stop documenting `.env` for app secrets. Keep `supabase/.env` only for optional Google client credentials. Keep `.env.production.local` for `bun run db:migrate:prod` (already the hosted migrate path).
 
@@ -197,13 +197,13 @@ No code change required if keys are present.
 
 ### 7. Docs and agent entrypoints
 
-| File | Role after this work |
-| --- | --- |
-| `README.md` | Product one-liner + 4-line quickstart + link here. Hosted deploy stays in `docs/v1-deploy-current.md`. |
-| `AGENTS.md` | Keep the Next.js generated block and skills-lock rules. Add: read this file before running or changing local setup. |
-| `docs/local-development.md` | This file: target state, current workaround, non-goals. |
-| `docs/v1-plan.md` | Architecture source of truth; do not duplicate setup commands. |
-| Skill | **Not** a vendored skill. Setup is repo-specific and must stay in-tree so `skills-lock.json` remains third-party-only. |
+| File                        | Role after this work                                                                                                   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `README.md`                 | Product one-liner + 4-line quickstart + link here. Hosted deploy stays in `docs/v1-deploy-current.md`.                 |
+| `AGENTS.md`                 | Keep the Next.js generated block and skills-lock rules. Add: read this file before running or changing local setup.    |
+| `docs/local-development.md` | This file: target state, current workaround, non-goals.                                                                |
+| `docs/v1-plan.md`           | Architecture source of truth; do not duplicate setup commands.                                                         |
+| Skill                       | **Not** a vendored skill. Setup is repo-specific and must stay in-tree so `skills-lock.json` remains third-party-only. |
 
 ### 8. Explicit non-goals for this onboarding pass
 
@@ -297,6 +297,7 @@ bun quickstart
    ```
 
    One file per port. One line: the worktree that owns it. Creating the file with exclusive `wx` is the only lock — if two setups race on `:3000`, one wins and the other takes `:3010`.
+
 3. If the path in a claim file no longer exists (worktree removed), the next setup treats that port as free.
 4. Setup then writes `NEXT_PUBLIC_SITE_URL=http://127.0.0.1:<port>` into **this** worktree’s `.env.local`. That URL is the source of truth for `bun run dev` and `bun run dev:stop` (they parse the port; there is no `PORT=` env).
 5. Re-running setup in the same tree keeps that URL. A first run with no URL picks the lowest free port in `3000, 3010, … 3090`.
@@ -328,11 +329,11 @@ Do not `supabase stop` from the child tree. Do not hand-delete `.git/fillthemat-
 
 ## Decision log
 
-| Option | Verdict |
-| --- | --- |
-| Document current Google + Studio flow only | Rejected as the end state. Acceptable as Phase 0. |
-| Point `bun run dev` at hosted Supabase | Rejected. Secrets in chat, shared data, Docker still needed for some people, worse agent story. |
-| Fake auth / skip Supabase locally | Rejected. Breaks `auth.users` FK and cookie/JWT behavior. |
-| Project skill under `.agents/skills` | Rejected. `AGENTS.md` forbids vendoring skills; lockfile is third-party-only. In-tree doc is the interface. |
-| Devcontainer as the default | Deferred. Optimize the native Bun + Docker Engine path first (OrbStack included). |
-| Email auth in production | Rejected. Product contract is Google for owners; prospects never have accounts. |
+| Option                                     | Verdict                                                                                                     |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Document current Google + Studio flow only | Rejected as the end state. Acceptable as Phase 0.                                                           |
+| Point `bun run dev` at hosted Supabase     | Rejected. Secrets in chat, shared data, Docker still needed for some people, worse agent story.             |
+| Fake auth / skip Supabase locally          | Rejected. Breaks `auth.users` FK and cookie/JWT behavior.                                                   |
+| Project skill under `.agents/skills`       | Rejected. `AGENTS.md` forbids vendoring skills; lockfile is third-party-only. In-tree doc is the interface. |
+| Devcontainer as the default                | Deferred. Optimize the native Bun + Docker Engine path first (OrbStack included).                           |
+| Email auth in production                   | Rejected. Product contract is Google for owners; prospects never have accounts.                             |

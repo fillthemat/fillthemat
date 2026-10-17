@@ -8,13 +8,13 @@ The Vercel project already exists and is linked: `jakegoodmandev-3440s-projects/
 
 A Next.js 16 app on Bun 1.4 (`vercel.ts`). It needs:
 
-| Dependency | Hosted equivalent |
-| --- | --- |
-| Local Docker Postgres + Auth | A **new** hosted Supabase project (not local, not a copy of some other product’s DB) |
-| `http://127.0.0.1:54321` Google callback | That project’s Google callback URL |
-| `onboarding@resend.dev` | Same for first deploy if you only email yourself; otherwise a verified domain |
-| Turnstile test keys | Keep test keys until you want real visitors; switch to live keys before any public link |
-| `VERCEL_OIDC_TOKEN` | Provided by Vercel at runtime; Gateway must allow the chosen model |
+| Dependency                               | Hosted equivalent                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| Local Docker Postgres + Auth             | A **new** hosted Supabase project (not local, not a copy of some other product’s DB)    |
+| `http://127.0.0.1:54321` Google callback | That project’s Google callback URL                                                      |
+| `onboarding@resend.dev`                  | Same for first deploy if you only email yourself; otherwise a verified domain           |
+| Turnstile test keys                      | Keep test keys until you want real visitors; switch to live keys before any public link |
+| `VERCEL_OIDC_TOKEN`                      | Provided by Vercel at runtime; Gateway must allow the chosen model                      |
 
 Do **not** point production at `127.0.0.1` database URLs.
 
@@ -49,7 +49,7 @@ The manual check accepts `DIRECT_URL` when `DATABASE_URL` is absent. If both are
    - In Supabase Auth: Google enabled, Site URL = production `https://…`, additional redirects:
      - `https://<fillthemat-host>/auth/callback`
      - `https://<fillthemat-host>/**` (preview URLs if you use them)
-      - keep local callback URLs if you still run `bun run dev`
+     - keep local callback URLs if you still run `bun run dev`
 
 ## 2. Hostname and Vercel env
 
@@ -112,7 +112,7 @@ Test keys (always pass) are acceptable while the URL is private. For any shared 
 From the repo (linked project), run local checks, then request a production deployment:
 
 ```bash
-bun run check
+bun run verify:checks
 bun run test
 bun run build
 bun run vercel:deploy:prod

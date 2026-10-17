@@ -54,26 +54,21 @@ it.each([
   ["slot_unavailable", "Select another time"],
   ["school_not_public", "not accepting online bookings"],
   ["internal_error", "contact the school before trying again"],
-])(
-  "maps %s to actionable copy with a support reference",
-  async (code, copy) => {
-    const options = setup();
-    options.key.current = key;
-    options.fetcher.mockResolvedValue(
-      Response.json({ error: code, requestId: reference }, { status: 400 }),
-    );
-    await submitBooking(options);
-    expect(options.setError).toHaveBeenLastCalledWith(
-      expect.stringContaining(copy),
-    );
-    expect(options.setError).toHaveBeenLastCalledWith(
-      expect.stringContaining(`Support reference: ${reference}.`),
-    );
-    expect(options.onBooked).not.toHaveBeenCalled();
-    expect(options.setPending).toHaveBeenLastCalledWith(false);
-    expect(options.resetVerification).toHaveBeenCalledTimes(1);
-  },
-);
+])("maps %s to actionable copy with a support reference", async (code, copy) => {
+  const options = setup();
+  options.key.current = key;
+  options.fetcher.mockResolvedValue(
+    Response.json({ error: code, requestId: reference }, { status: 400 }),
+  );
+  await submitBooking(options);
+  expect(options.setError).toHaveBeenLastCalledWith(expect.stringContaining(copy));
+  expect(options.setError).toHaveBeenLastCalledWith(
+    expect.stringContaining(`Support reference: ${reference}.`),
+  );
+  expect(options.onBooked).not.toHaveBeenCalled();
+  expect(options.setPending).toHaveBeenLastCalledWith(false);
+  expect(options.resetVerification).toHaveBeenCalledTimes(1);
+});
 
 it.each(["unknown", "constructor", "__proto__"])(
   "uses safe fallback for code %s",
@@ -81,10 +76,7 @@ it.each(["unknown", "constructor", "__proto__"])(
     const options = setup();
     options.key.current = key;
     options.fetcher.mockResolvedValue(
-      Response.json(
-        { error, requestId: reference, message: "SENTINEL_SQL" },
-        { status: 500 },
-      ),
+      Response.json({ error, requestId: reference, message: "SENTINEL_SQL" }, { status: 500 }),
     );
     await submitBooking(options);
     expect(options.setError).toHaveBeenLastCalledWith(
@@ -99,17 +91,12 @@ it.each(["key", "booking"])(
     const options = setup();
     if (stage === "booking") options.key.current = key;
     options.fetcher.mockResolvedValue(
-      Response.json(
-        { error: "rate_limited", requestId: reference },
-        { status: 429 },
-      ),
+      Response.json({ error: "rate_limited", requestId: reference }, { status: 429 }),
     );
     await submitBooking(options);
     expect(options.fetcher).toHaveBeenCalledTimes(1);
     expect(options.onBooked).not.toHaveBeenCalled();
-    expect(options.setError).toHaveBeenLastCalledWith(
-      expect.stringContaining(reference),
-    );
+    expect(options.setError).toHaveBeenLastCalledWith(expect.stringContaining(reference));
     expect(options.setPending).toHaveBeenLastCalledWith(false);
     expect(options.resetVerification).toHaveBeenCalledTimes(1);
   },
@@ -129,23 +116,21 @@ it.each(["key", "booking"])(
   },
 );
 
-it.each([
-  null,
-  {},
-  { idempotencyKey: "SENTINEL_KEY" },
-  { idempotencyKey: 123 },
-])("rejects invalid key response %j", async (body) => {
-  const options = setup();
-  options.fetcher.mockResolvedValue(Response.json(body));
-  await submitBooking(options);
-  expect(options.fetcher).toHaveBeenCalledTimes(1);
-  expect(options.key.current).toBeNull();
-  expect(options.buildBody).not.toHaveBeenCalled();
-  expect(options.setError).toHaveBeenLastCalledWith(fallback);
-  expect(options.setPending).toHaveBeenLastCalledWith(false);
-  expect(options.onBooked).not.toHaveBeenCalled();
-  expect(options.resetVerification).toHaveBeenCalledTimes(1);
-});
+it.each([null, {}, { idempotencyKey: "SENTINEL_KEY" }, { idempotencyKey: 123 }])(
+  "rejects invalid key response %j",
+  async (body) => {
+    const options = setup();
+    options.fetcher.mockResolvedValue(Response.json(body));
+    await submitBooking(options);
+    expect(options.fetcher).toHaveBeenCalledTimes(1);
+    expect(options.key.current).toBeNull();
+    expect(options.buildBody).not.toHaveBeenCalled();
+    expect(options.setError).toHaveBeenLastCalledWith(fallback);
+    expect(options.setPending).toHaveBeenLastCalledWith(false);
+    expect(options.onBooked).not.toHaveBeenCalled();
+    expect(options.resetVerification).toHaveBeenCalledTimes(1);
+  },
+);
 
 it.each(["key_success", "key_error", "booking_error"])(
   "handles non-JSON %s bodies safely",
@@ -165,19 +150,17 @@ it.each(["key_success", "key_error", "booking_error"])(
   },
 );
 
-it.each([
-  null,
-  [],
-  { error: 1 },
-  { error: "unknown", requestId: "SENTINEL_SECRET" },
-])("handles malformed error envelope %j", async (body) => {
-  const options = setup();
-  options.key.current = key;
-  options.fetcher.mockResolvedValue(Response.json(body, { status: 500 }));
-  await submitBooking(options);
-  expect(options.setError).toHaveBeenLastCalledWith(fallback);
-  expect(options.onBooked).not.toHaveBeenCalled();
-});
+it.each([null, [], { error: 1 }, { error: "unknown", requestId: "SENTINEL_SECRET" }])(
+  "handles malformed error envelope %j",
+  async (body) => {
+    const options = setup();
+    options.key.current = key;
+    options.fetcher.mockResolvedValue(Response.json(body, { status: 500 }));
+    await submitBooking(options);
+    expect(options.setError).toHaveBeenLastCalledWith(fallback);
+    expect(options.onBooked).not.toHaveBeenCalled();
+  },
+);
 
 it("reuses the same idempotency key when retrying an uncertain network outcome", async () => {
   const options = setup();
@@ -192,9 +175,7 @@ it("reuses the same idempotency key when retrying an uncertain network outcome",
   options.fetcher
     .mockResolvedValueOnce(Response.json({ idempotencyKey: key }))
     .mockRejectedValueOnce(new Error("network interrupted"))
-    .mockResolvedValueOnce(
-      Response.json({ bookingId: "booking-id", idempotent: true }),
-    );
+    .mockResolvedValueOnce(Response.json({ bookingId: "booking-id", idempotent: true }));
   await submitBooking(options);
   expect(options.onBooked).not.toHaveBeenCalled();
   expect(options.resetVerification).toHaveBeenCalledTimes(1);
@@ -205,22 +186,13 @@ it("reuses the same idempotency key when retrying an uncertain network outcome",
     "/api/bookings",
   ]);
   expect(options.buildBody.mock.calls).toEqual([[key], [key]]);
-  expect(
-    options.fetcher.mock.calls
-      .slice(1)
-      .map(([, init]) => JSON.parse(init.body)),
-  ).toEqual([
+  expect(options.fetcher.mock.calls.slice(1).map(([, init]) => JSON.parse(init.body))).toEqual([
     { idempotencyKey: key, turnstileToken: "first-token" },
     { idempotencyKey: key, turnstileToken: "fresh-token" },
   ]);
   expect(options.resetVerification).toHaveBeenCalledTimes(1);
   expect(options.onBooked).toHaveBeenCalledTimes(1);
-  expect(options.setPending.mock.calls).toEqual([
-    [true],
-    [false],
-    [true],
-    [false],
-  ]);
+  expect(options.setPending.mock.calls).toEqual([[true], [false], [true], [false]]);
 });
 
 it("calls success only after both successful requests", async () => {
@@ -254,9 +226,7 @@ it("preserves a provided reference on an invalid key response", async () => {
     Response.json({ idempotencyKey: "invalid", requestId: reference }),
   );
   await submitBooking(options);
-  expect(options.setError).toHaveBeenLastCalledWith(
-    `${fallback} Support reference: ${reference}.`,
-  );
+  expect(options.setError).toHaveBeenLastCalledWith(`${fallback} Support reference: ${reference}.`);
   expect(options.fetcher).toHaveBeenCalledTimes(1);
   expect(options.onBooked).not.toHaveBeenCalled();
 });

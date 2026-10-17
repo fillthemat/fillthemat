@@ -89,29 +89,20 @@ describe("booking HTTP failures", () => {
     expect(setError).toHaveBeenLastCalledWith(
       expect.stringContaining(`Support reference: ${record.requestId}.`),
     );
-    expect(JSON.stringify([record, setError.mock.calls])).not.toContain(
-      "SENTINEL",
-    );
+    expect(JSON.stringify([record, setError.mock.calls])).not.toContain("SENTINEL");
     expect(onBooked).not.toHaveBeenCalled();
   });
 
   it("keeps request contexts separate across concurrent failures", async () => {
     const { dependencies, handler } = setup();
     dependencies.getPublicSchoolBySlug.mockResolvedValue(null);
-    const responses = await Promise.all([
-      handler(request()),
-      handler(request()),
-    ]);
-    const envelopes = await Promise.all(
-      responses.map((response) => response.json()),
-    );
+    const responses = await Promise.all([handler(request()), handler(request())]);
+    const envelopes = await Promise.all(responses.map((response) => response.json()));
     expect(envelopes[0].requestId).not.toBe(envelopes[1].requestId);
-    expect(
-      dependencies.logFailure.mock.calls.map(([record]) => record.requestId),
-    ).toEqual(envelopes.map((envelope) => envelope.requestId));
-    expect(
-      dependencies.logFailure.mock.calls.every(([record]) => !record.schoolId),
-    ).toBe(true);
+    expect(dependencies.logFailure.mock.calls.map(([record]) => record.requestId)).toEqual(
+      envelopes.map((envelope) => envelope.requestId),
+    );
+    expect(dependencies.logFailure.mock.calls.every(([record]) => !record.schoolId)).toBe(true);
   });
 
   it("preserves the recipient quota refusal", async () => {
@@ -132,13 +123,9 @@ describe("booking HTTP failures", () => {
     error.cause = error;
     dependencies.bookSlot.mockRejectedValue(error);
     expect((await handler(request())).status).toBe(500);
-    expect(dependencies.logFailure.mock.calls[0][0]).not.toHaveProperty(
-      "databaseCode",
-    );
+    expect(dependencies.logFailure.mock.calls[0][0]).not.toHaveProperty("databaseCode");
     expect(dependencies.logFailure.mock.calls[0][0].diagnostic).toBe("unknown");
-    expect(JSON.stringify(dependencies.logFailure.mock.calls)).not.toContain(
-      "SENTINEL",
-    );
+    expect(JSON.stringify(dependencies.logFailure.mock.calls)).not.toContain("SENTINEL");
   });
   it("omits unavailable deployment fields and maps code-shaped non-allowlisted codes to unknown", async () => {
     vi.stubEnv("VERCEL_ENV", "");
@@ -154,9 +141,7 @@ describe("booking HTTP failures", () => {
   });
   function setup() {
     const dependencies = {
-      getPublicSchoolBySlug: vi
-        .fn()
-        .mockResolvedValue({ id: "school-internal-id" }),
+      getPublicSchoolBySlug: vi.fn().mockResolvedValue({ id: "school-internal-id" }),
       verifyTurnstile: vi.fn().mockResolvedValue(true),
       findBookingByIdempotencyKey: vi.fn().mockResolvedValue(null),
       emailBookingQuotaExceeded: vi.fn().mockResolvedValue(false),
@@ -191,9 +176,7 @@ describe("booking HTTP failures", () => {
       bookingId: "booking-id",
       idempotent: true,
     });
-    expect(
-      dependencies.findBookingByIdempotencyKey,
-    ).toHaveBeenCalledExactlyOnceWith(
+    expect(dependencies.findBookingByIdempotencyKey).toHaveBeenCalledExactlyOnceWith(
       "school-internal-id",
       body.idempotencyKey,
     );
@@ -214,40 +197,33 @@ describe("booking HTTP failures", () => {
     ["invalid_slot", 400],
     ["slot_unavailable", 409],
     ["school_not_public", 409],
-  ])(
-    "preserves the %s refusal and emits one correlated record",
-    async (code, status) => {
-      const { dependencies: d, handler } = setup();
-      let input = request();
-      if (code === "too_large")
-        input = request(undefined, { "content-length": "999999999" });
-      else if (code === "invalid") input = request("{}");
-      else if (code === "not_found")
-        d.getPublicSchoolBySlug.mockResolvedValue(null);
-      else if (code === "verification_failed")
-        d.verifyTurnstile.mockResolvedValue(false);
-      else if (code === "rate_limited")
-        d.emailBookingQuotaExceeded.mockResolvedValue(true);
-      else
-        d.bookSlot.mockResolvedValue({
-          ok: false,
-          code: code === "acknowledged" ? "already_booked" : code,
-        });
-      const response = await handler(input);
-      const json = await response.json();
-      expect(response.status).toBe(status);
-      expect(json).toEqual({ error: code, requestId: expect.any(String) });
-      expect(d.logFailure).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({
-          error: code,
-          status,
-          requestId: json.requestId,
-        }),
-      );
-      expect(JSON.stringify(d.logFailure.mock.calls)).not.toContain("SENTINEL");
-      expect(d.attemptPendingForBooking).not.toHaveBeenCalled();
-    },
-  );
+  ])("preserves the %s refusal and emits one correlated record", async (code, status) => {
+    const { dependencies: d, handler } = setup();
+    let input = request();
+    if (code === "too_large") input = request(undefined, { "content-length": "999999999" });
+    else if (code === "invalid") input = request("{}");
+    else if (code === "not_found") d.getPublicSchoolBySlug.mockResolvedValue(null);
+    else if (code === "verification_failed") d.verifyTurnstile.mockResolvedValue(false);
+    else if (code === "rate_limited") d.emailBookingQuotaExceeded.mockResolvedValue(true);
+    else
+      d.bookSlot.mockResolvedValue({
+        ok: false,
+        code: code === "acknowledged" ? "already_booked" : code,
+      });
+    const response = await handler(input);
+    const json = await response.json();
+    expect(response.status).toBe(status);
+    expect(json).toEqual({ error: code, requestId: expect.any(String) });
+    expect(d.logFailure).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        error: code,
+        status,
+        requestId: json.requestId,
+      }),
+    );
+    expect(JSON.stringify(d.logFailure.mock.calls)).not.toContain("SENTINEL");
+    expect(d.attemptPendingForBooking).not.toHaveBeenCalled();
+  });
 
   it("treats malformed JSON as invalid and ignores inbound correlation IDs", async () => {
     const { dependencies, handler } = setup();
@@ -266,27 +242,21 @@ describe("booking HTTP failures", () => {
     "emailBookingQuotaExceeded",
     "recipientQuotaExceeded",
     "bookSlot",
-  ] as const)(
-    "catches unexpected %s failures with resolved school context",
-    async (stage) => {
-      const { dependencies, handler } = setup();
-      dependencies[stage].mockRejectedValue(new Error("SENTINEL_SECRET"));
-      const response = await handler(request());
-      expect(response.status).toBe(500);
-      expect(dependencies.logFailure).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({
-          schoolId: "school-internal-id",
-          error: "internal_error",
-        }),
-      );
-      expect(
-        JSON.stringify([
-          await response.json(),
-          dependencies.logFailure.mock.calls,
-        ]),
-      ).not.toContain("SENTINEL");
-    },
-  );
+  ] as const)("catches unexpected %s failures with resolved school context", async (stage) => {
+    const { dependencies, handler } = setup();
+    dependencies[stage].mockRejectedValue(new Error("SENTINEL_SECRET"));
+    const response = await handler(request());
+    expect(response.status).toBe(500);
+    expect(dependencies.logFailure).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        schoolId: "school-internal-id",
+        error: "internal_error",
+      }),
+    );
+    expect(
+      JSON.stringify([await response.json(), dependencies.logFailure.mock.calls]),
+    ).not.toContain("SENTINEL");
+  });
 
   it.each([false, true])(
     "preserves successful booking output (idempotent: %s)",
@@ -304,9 +274,7 @@ describe("booking HTTP failures", () => {
         participantName: "Participant",
         idempotent,
       });
-      expect(dependencies.attemptPendingForBooking).toHaveBeenCalledTimes(
-        idempotent ? 0 : 1,
-      );
+      expect(dependencies.attemptPendingForBooking).toHaveBeenCalledTimes(idempotent ? 0 : 1);
       expect(dependencies.logFailure).not.toHaveBeenCalled();
     },
   );
@@ -328,15 +296,11 @@ describe("booking HTTP failures", () => {
         status: 200,
       }),
     );
-    expect(JSON.stringify(dependencies.logFailure.mock.calls)).not.toContain(
-      "SENTINEL",
-    );
+    expect(JSON.stringify(dependencies.logFailure.mock.calls)).not.toContain("SENTINEL");
   });
   it("preserves a saved booking and safely falls back when the logger throws", async () => {
     const { dependencies, handler } = setup();
-    dependencies.attemptPendingForBooking.mockRejectedValue(
-      new Error("SENTINEL_PROVIDER"),
-    );
+    dependencies.attemptPendingForBooking.mockRejectedValue(new Error("SENTINEL_PROVIDER"));
     dependencies.logFailure.mockImplementation(() => {
       throw new Error("SENTINEL_LOGGER");
     });
@@ -367,22 +331,17 @@ describe("booking HTTP failures", () => {
       if (error === "internal_error")
         dependencies.bookSlot.mockRejectedValue(new Error("SENTINEL_DB"));
       if (error === "delivery_retry_pending")
-        dependencies.attemptPendingForBooking.mockRejectedValue(
-          new Error("SENTINEL_PROVIDER"),
-        );
+        dependencies.attemptPendingForBooking.mockRejectedValue(new Error("SENTINEL_PROVIDER"));
       const fallbackLog = vi.spyOn(console, "error").mockImplementation(() => {
         throw new Error("SENTINEL_FALLBACK");
       });
       try {
-        const response = await handler(
-          request(error === "invalid" ? "{}" : undefined),
-        );
+        const response = await handler(request(error === "invalid" ? "{}" : undefined));
         expect(response.status).toBe(
           error === "invalid" ? 400 : error === "internal_error" ? 500 : 200,
         );
         const envelope = await response.json();
-        if (error === "delivery_retry_pending")
-          expect(envelope.bookingId).toBe("booking-id");
+        if (error === "delivery_retry_pending") expect(envelope.bookingId).toBe("booking-id");
         else
           expect(envelope).toMatchObject({
             error,
@@ -432,8 +391,6 @@ describe("booking HTTP failures", () => {
         databaseCode: "42703",
       }),
     );
-    expect(JSON.stringify([json, logFailure.mock.calls])).not.toContain(
-      "SENTINEL",
-    );
+    expect(JSON.stringify([json, logFailure.mock.calls])).not.toContain("SENTINEL");
   });
 });

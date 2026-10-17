@@ -16,14 +16,14 @@ D10 / D11** and §1.6 (implemented bounded retries), plus `docs/decisions/whatsa
 
 ## 0. What is already shipped (do not re-derive)
 
-| Phase | In tree |
-| --- | --- |
-| 1 | `whatsapp_deliveries`, nullable `contacts.email` + unique `(school_id, phone)`, `schools.whatsapp_phone_number_id` / `whatsapp_waba_id`, `isLocalWhatsAppNoop()` |
-| 2 | `/api/webhooks/whatsapp` GET verify + POST `X-Hub-Signature-256`, wamid dedupe, replay CLI |
-| 3 | `conversations.wa_id_hash`, inbound UIMessage parts, `generatingAt` |
-| 4 | `whatsapp_jobs` worker, Graph client + noop, 24h window enforced for text/interactive; explicit utility templates only, `after()` wake, typing indicator, daily cron `0 5 * * *` |
-| 5 | intents + confirmation buttons, shared `create-lead`, `bookSlot` no-email + WA template confirmation, per-`wa_id` caps |
-| #79 | terminal `dead`, five-execution cap for WhatsApp jobs and WhatsApp/email sends, fresh/retry claim lanes, bounded in-run WhatsApp retries, stale-confirmation cutoff, owner email and one in-window prospect apology |
+| Phase | In tree                                                                                                                                                                                                             |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `whatsapp_deliveries`, nullable `contacts.email` + unique `(school_id, phone)`, `schools.whatsapp_phone_number_id` / `whatsapp_waba_id`, `isLocalWhatsAppNoop()`                                                    |
+| 2     | `/api/webhooks/whatsapp` GET verify + POST `X-Hub-Signature-256`, wamid dedupe, replay CLI                                                                                                                          |
+| 3     | `conversations.wa_id_hash`, inbound UIMessage parts, `generatingAt`                                                                                                                                                 |
+| 4     | `whatsapp_jobs` worker, Graph client + noop, 24h window enforced for text/interactive; explicit utility templates only, `after()` wake, typing indicator, daily cron `0 5 * * *`                                    |
+| 5     | intents + confirmation buttons, shared `create-lead`, `bookSlot` no-email + WA template confirmation, per-`wa_id` caps                                                                                              |
+| #79   | terminal `dead`, five-execution cap for WhatsApp jobs and WhatsApp/email sends, fresh/retry claim lanes, bounded in-run WhatsApp retries, stale-confirmation cutoff, owner email and one in-window prospect apology |
 
 **Toggle today:** a school is WhatsApp-routable iff `schools.whatsapp_phone_number_id` is set (unique
 when non-null). Local seed uses `LOCAL_WHATSAPP_PHONE_NUMBER_ID`. There is **no dashboard UI** for
@@ -44,17 +44,17 @@ settings form, that is a **separate, optional, small Director task** — not Pha
 4. Template **names and body variable counts** in `src/lib/whatsapp/templates.ts` must match Meta
    exactly (`en_US`):
 
-   | name | body params (order) |
-   | --- | --- |
+   | name                   | body params (order)                 |
+   | ---------------------- | ----------------------------------- |
    | `booking_confirmation` | school, participant, offering, when |
-   | `booking_reminder` | school, participant, when |
-   | `lead_confirmation` | school |
+   | `booking_reminder`     | school, participant, when           |
+   | `lead_confirmation`    | school                              |
 
    Local render strings in that file are **not** what Meta stores. You submit real copy in Business
    Manager; Graph send only passes the name + ordered body params.
 
 5. Optional deploy-time check (not required locally): `after()` / `waitUntil` actually runs on the
-    Vercel runtime you ship. Daily cron is the safety net if it does not.
+   Vercel runtime you ship. Daily cron is the safety net if it does not.
 6. **Pre-pilot correctness gate: [#78](https://github.com/fillthemat/fillthemat/issues/78).** Customer-service
    windows must use the verified customer's message time, not processing time. #79 does not fix that bug;
    its apology uses original inbound receipt time, which still is not the verified Meta timestamp.
@@ -182,7 +182,7 @@ All of these on **staging**, then the same on **production** with the pilot numb
    owner email still fires.
 4. **Booking path second:** `prepare_booking` → interactive confirm → `bookings` row, occupancy +1,
    no double-write on Meta retry of the same wamid. No-email contact → `booking_confirmation`
-    template enqueued (needs the template APPROVED even inside 24h; checking the row alone is not delivery).
+   template enqueued (needs the template APPROVED even inside 24h; checking the row alone is not delivery).
 5. **Out-of-window template:** after 24h with no inbound (or force-closed window in a controlled
    test), a template send succeeds once approved.
 6. **Caps:** do not load-test a real number into the daily cap; the integration tests already cover

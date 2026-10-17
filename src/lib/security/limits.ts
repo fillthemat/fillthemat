@@ -1,11 +1,6 @@
 import { and, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import {
-  bookings,
-  emailDeliveries,
-  messages,
-  whatsappDeliveries,
-} from "@/db/schema";
+import { bookings, emailDeliveries, messages, whatsappDeliveries } from "@/db/schema";
 
 export const MAX_BOOKINGS_PER_EMAIL_PER_DAY = 6;
 export const MAX_OUTBOUND_RECIPIENTS_PER_DAY = 12;
@@ -60,9 +55,7 @@ export async function recipientQuotaExceeded(
   return (row?.count ?? 0) >= MAX_OUTBOUND_RECIPIENTS_PER_DAY;
 }
 
-export async function conversationMessageCount(
-  conversationId: string,
-): Promise<number> {
+export async function conversationMessageCount(conversationId: string): Promise<number> {
   const db = getDb();
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })

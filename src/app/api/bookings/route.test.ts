@@ -58,8 +58,7 @@ it.each(["unexpected", "degraded"])(
     const exception = new Error("SENTINEL_PRIVATE_SQL\nSENTINEL_PROVIDER", {
       cause: { code: "42703", params: ["SENTINEL_SECRET"] },
     });
-    if (outcome === "unexpected")
-      dependencies.bookSlot.mockRejectedValue(exception);
+    if (outcome === "unexpected") dependencies.bookSlot.mockRejectedValue(exception);
     else dependencies.attemptPendingForBooking.mockRejectedValue(exception);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const response = await POST(
@@ -91,9 +90,7 @@ it.each(["unexpected", "degraded"])(
     const record = JSON.parse(line);
     expect(record).toEqual({
       event: unexpected ? "request.failed" : "delivery.degraded",
-      operation: unexpected
-        ? "booking.create"
-        : "booking.confirmation_delivery",
+      operation: unexpected ? "booking.create" : "booking.confirmation_delivery",
       requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       method: "POST",
       route: "/api/bookings",

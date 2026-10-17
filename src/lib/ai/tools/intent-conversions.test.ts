@@ -7,12 +7,9 @@ describe("Booking Intent conversion", () => {
     undefined,
     { ok: false as const, reason: "invalid" as const },
     { ok: false as const, reason: "slot_unavailable" as const },
-  ])(
-    "returns no Booking Intent for a missing or failed result: %j",
-    (result) => {
-      expect(bookingIntentFromResult(result)).toBeNull();
-    },
-  );
+  ])("returns no Booking Intent for a missing or failed result: %j", (result) => {
+    expect(bookingIntentFromResult(result)).toBeNull();
+  });
 
   it("maps a successful result to the participant and proposed trial occurrence", () => {
     expect(

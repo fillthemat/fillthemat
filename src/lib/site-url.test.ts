@@ -22,9 +22,7 @@ describe("getSiteUrl", () => {
       "x-forwarded-host": "fillthemat-git-main-team.vercel.app",
       "x-forwarded-proto": "https",
     });
-    expect(getSiteUrl(headers)).toBe(
-      "https://fillthemat-git-main-team.vercel.app",
-    );
+    expect(getSiteUrl(headers)).toBe("https://fillthemat-git-main-team.vercel.app");
   });
 
   it("ignores untrusted hosts", () => {
@@ -40,8 +38,6 @@ describe("getSiteUrl", () => {
 describe("publicSchoolUrl", () => {
   it("appends the school path", () => {
     process.env.NEXT_PUBLIC_SITE_URL = "https://fillthemat.com";
-    expect(publicSchoolUrl("tiger-dojo")).toBe(
-      "https://fillthemat.com/s/tiger-dojo",
-    );
+    expect(publicSchoolUrl("tiger-dojo")).toBe("https://fillthemat.com/s/tiger-dojo");
   });
 });

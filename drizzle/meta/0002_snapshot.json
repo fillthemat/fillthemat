@@ -207,12 +207,8 @@
           "tableFrom": "bookings",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -221,14 +217,8 @@
           "tableFrom": "bookings",
           "tableTo": "contacts",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "contact_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "contact_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -237,14 +227,8 @@
           "tableFrom": "bookings",
           "tableTo": "participants",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "participant_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "participant_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -253,14 +237,8 @@
           "tableFrom": "bookings",
           "tableTo": "trial_offerings",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "trial_offering_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "trial_offering_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -269,14 +247,8 @@
           "tableFrom": "bookings",
           "tableTo": "trial_windows",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "trial_window_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "trial_window_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -285,14 +257,8 @@
           "tableFrom": "bookings",
           "tableTo": "trial_occurrences",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "trial_occurrence_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "trial_occurrence_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -301,14 +267,8 @@
           "tableFrom": "bookings",
           "tableTo": "conversations",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "conversation_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -317,14 +277,8 @@
           "tableFrom": "bookings",
           "tableTo": "landing_sessions",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "landing_session_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "landing_session_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -334,18 +288,12 @@
         "bookings_school_id_id": {
           "name": "bookings_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         },
         "bookings_school_idempotency": {
           "name": "bookings_school_idempotency",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "idempotency_key"
-          ]
+          "columns": ["school_id", "idempotency_key"]
         }
       },
       "policies": {},
@@ -414,12 +362,8 @@
           "tableFrom": "contacts",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -429,26 +373,17 @@
         "contacts_school_id_id": {
           "name": "contacts_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         },
         "contacts_school_email": {
           "name": "contacts_school_email",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "email"
-          ]
+          "columns": ["school_id", "email"]
         },
         "contacts_school_phone": {
           "name": "contacts_school_phone",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "phone"
-          ]
+          "columns": ["school_id", "phone"]
         }
       },
       "policies": {},
@@ -530,12 +465,8 @@
           "tableFrom": "conversations",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -544,14 +475,8 @@
           "tableFrom": "conversations",
           "tableTo": "landing_sessions",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "landing_session_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "landing_session_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -560,14 +485,8 @@
           "tableFrom": "conversations",
           "tableTo": "contacts",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "contact_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "contact_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -577,25 +496,17 @@
         "conversations_school_id_id": {
           "name": "conversations_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         },
         "conversations_resume_token_hash": {
           "name": "conversations_resume_token_hash",
           "nullsNotDistinct": false,
-          "columns": [
-            "resume_token_hash"
-          ]
+          "columns": ["resume_token_hash"]
         },
         "conversations_school_wa_id_hash": {
           "name": "conversations_school_wa_id_hash",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "wa_id_hash"
-          ]
+          "columns": ["school_id", "wa_id_hash"]
         }
       },
       "policies": {},
@@ -820,12 +731,8 @@
           "tableFrom": "email_deliveries",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -834,14 +741,8 @@
           "tableFrom": "email_deliveries",
           "tableTo": "bookings",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "booking_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "booking_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -850,14 +751,8 @@
           "tableFrom": "email_deliveries",
           "tableTo": "leads",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "lead_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "lead_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -867,9 +762,7 @@
         "email_deliveries_provider_key": {
           "name": "email_deliveries_provider_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "provider_idempotency_key"
-          ]
+          "columns": ["provider_idempotency_key"]
         }
       },
       "policies": {},
@@ -934,12 +827,8 @@
           "tableFrom": "faqs",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -949,10 +838,7 @@
         "faqs_school_id_id": {
           "name": "faqs_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         }
       },
       "policies": {},
@@ -1058,12 +944,8 @@
           "tableFrom": "funnel_events",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1182,12 +1064,8 @@
           "tableFrom": "landing_sessions",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1197,18 +1075,12 @@
         "landing_sessions_school_id_id": {
           "name": "landing_sessions_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         },
         "landing_sessions_school_key": {
           "name": "landing_sessions_school_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "session_key_hash"
-          ]
+          "columns": ["school_id", "session_key_hash"]
         }
       },
       "policies": {},
@@ -1297,12 +1169,8 @@
           "tableFrom": "leads",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1311,14 +1179,8 @@
           "tableFrom": "leads",
           "tableTo": "landing_sessions",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "landing_session_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "landing_session_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1327,14 +1189,8 @@
           "tableFrom": "leads",
           "tableTo": "contacts",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "contact_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "contact_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1343,14 +1199,8 @@
           "tableFrom": "leads",
           "tableTo": "trial_offerings",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "trial_offering_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "trial_offering_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1360,10 +1210,7 @@
         "leads_school_id_id": {
           "name": "leads_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         }
       },
       "policies": {},
@@ -1457,12 +1304,8 @@
           "tableFrom": "messages",
           "tableTo": "conversations",
           "schemaTo": "app",
-          "columnsFrom": [
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["conversation_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1472,10 +1315,7 @@
         "messages_conversation_message_id": {
           "name": "messages_conversation_message_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "conversation_id",
-            "message_id"
-          ]
+          "columns": ["conversation_id", "message_id"]
         }
       },
       "policies": {},
@@ -1539,12 +1379,8 @@
           "tableFrom": "participants",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1553,14 +1389,8 @@
           "tableFrom": "participants",
           "tableTo": "contacts",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "contact_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "contact_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1570,18 +1400,12 @@
         "participants_school_id_id": {
           "name": "participants_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         },
         "participants_contact_normalized_name": {
           "name": "participants_contact_normalized_name",
           "nullsNotDistinct": false,
-          "columns": [
-            "contact_id",
-            "normalized_name"
-          ]
+          "columns": ["contact_id", "normalized_name"]
         }
       },
       "policies": {},
@@ -1777,12 +1601,8 @@
           "tableFrom": "schools",
           "tableTo": "users",
           "schemaTo": "app",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1792,23 +1612,17 @@
         "schools_owner_user_id_unique": {
           "name": "schools_owner_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "owner_user_id"
-          ]
+          "columns": ["owner_user_id"]
         },
         "schools_slug_unique": {
           "name": "schools_slug_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "slug"
-          ]
+          "columns": ["slug"]
         },
         "schools_school_id_unique": {
           "name": "schools_school_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "policies": {},
@@ -1904,12 +1718,8 @@
           "tableFrom": "trial_occurrences",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1918,14 +1728,8 @@
           "tableFrom": "trial_occurrences",
           "tableTo": "trial_windows",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "trial_window_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "trial_window_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1934,14 +1738,8 @@
           "tableFrom": "trial_occurrences",
           "tableTo": "trial_offerings",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "trial_offering_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "trial_offering_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1951,18 +1749,12 @@
         "trial_occurrences_school_id_id": {
           "name": "trial_occurrences_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         },
         "trial_occurrences_window_start": {
           "name": "trial_occurrences_window_start",
           "nullsNotDistinct": false,
-          "columns": [
-            "trial_window_id",
-            "start_at"
-          ]
+          "columns": ["trial_window_id", "start_at"]
         }
       },
       "policies": {},
@@ -2070,12 +1862,8 @@
           "tableFrom": "trial_offerings",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2085,10 +1873,7 @@
         "trial_offerings_school_id_id": {
           "name": "trial_offerings_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         }
       },
       "policies": {},
@@ -2186,12 +1971,8 @@
           "tableFrom": "trial_windows",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2200,14 +1981,8 @@
           "tableFrom": "trial_windows",
           "tableTo": "trial_offerings",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "trial_offering_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "trial_offering_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2217,10 +1992,7 @@
         "trial_windows_school_id_id": {
           "name": "trial_windows_school_id_id",
           "nullsNotDistinct": false,
-          "columns": [
-            "school_id",
-            "id"
-          ]
+          "columns": ["school_id", "id"]
         }
       },
       "policies": {},
@@ -2450,12 +2222,8 @@
           "tableFrom": "whatsapp_deliveries",
           "tableTo": "schools",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["school_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2464,14 +2232,8 @@
           "tableFrom": "whatsapp_deliveries",
           "tableTo": "bookings",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "booking_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "booking_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2480,14 +2242,8 @@
           "tableFrom": "whatsapp_deliveries",
           "tableTo": "leads",
           "schemaTo": "app",
-          "columnsFrom": [
-            "school_id",
-            "lead_id"
-          ],
-          "columnsTo": [
-            "school_id",
-            "id"
-          ],
+          "columnsFrom": ["school_id", "lead_id"],
+          "columnsTo": ["school_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2497,9 +2253,7 @@
         "whatsapp_deliveries_provider_key": {
           "name": "whatsapp_deliveries_provider_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "provider_idempotency_key"
-          ]
+          "columns": ["provider_idempotency_key"]
         }
       },
       "policies": {},
@@ -2511,20 +2265,12 @@
     "app.booking_status": {
       "name": "booking_status",
       "schema": "app",
-      "values": [
-        "booked",
-        "showed",
-        "no_show",
-        "cancelled"
-      ]
+      "values": ["booked", "showed", "no_show", "cancelled"]
     },
     "app.cron_result": {
       "name": "cron_result",
       "schema": "app",
-      "values": [
-        "success",
-        "error"
-      ]
+      "values": ["success", "error"]
     },
     "app.email_kind": {
       "name": "email_kind",
@@ -2541,37 +2287,17 @@
     "app.email_state": {
       "name": "email_state",
       "schema": "app",
-      "values": [
-        "pending",
-        "claimed",
-        "sent",
-        "failed",
-        "delivered",
-        "bounced",
-        "complained"
-      ]
+      "values": ["pending", "claimed", "sent", "failed", "delivered", "bounced", "complained"]
     },
     "app.message_completion": {
       "name": "message_completion",
       "schema": "app",
-      "values": [
-        "complete",
-        "streaming",
-        "aborted",
-        "error"
-      ]
+      "values": ["complete", "streaming", "aborted", "error"]
     },
     "app.whatsapp_delivery_state": {
       "name": "whatsapp_delivery_state",
       "schema": "app",
-      "values": [
-        "pending",
-        "claimed",
-        "sent",
-        "delivered",
-        "read",
-        "failed"
-      ]
+      "values": ["pending", "claimed", "sent", "delivered", "read", "failed"]
     }
   },
   "schemas": {

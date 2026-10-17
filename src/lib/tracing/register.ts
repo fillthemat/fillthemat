@@ -1,5 +1,5 @@
-import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
 import type { SpanExporter } from "@opentelemetry/sdk-trace-base";
+import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { registerTelemetry } from "ai";
 import { createTraceSpanProcessor } from "./span-processor";
@@ -46,10 +46,7 @@ export function registerTracing({
   } catch (error) {
     // Next fails every request if instrumentation throws. Replies matter
     // more than their traces.
-    console.error(
-      "tracing: setup failed",
-      error instanceof Error ? error.name : "unknown",
-    );
+    console.error("tracing: setup failed", error instanceof Error ? error.name : "unknown");
   }
   return registration.provider;
 }

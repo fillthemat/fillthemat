@@ -1,7 +1,4 @@
-export type EditorTarget =
-  | { type: "closed" }
-  | { type: "create" }
-  | { type: "edit"; id: string };
+export type EditorTarget = { type: "closed" } | { type: "create" } | { type: "edit"; id: string };
 
 export function sameTarget(a: EditorTarget, b: EditorTarget): boolean {
   if (a.type !== b.type) return false;

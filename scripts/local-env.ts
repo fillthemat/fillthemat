@@ -35,10 +35,7 @@ export function writeEnvFile(path: string, vars: Record<string, string>) {
   const body = Object.entries(vars)
     .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
     .join("\n");
-  writeFileSync(
-    path,
-    `# Generated/merged by bun run setup. Do not commit.\n\n${body}\n`,
-  );
+  writeFileSync(path, `# Generated/merged by bun run setup. Do not commit.\n\n${body}\n`);
 }
 
 export type SupabaseStatusEnv = {
@@ -88,8 +85,7 @@ export function mergeLocalEnv(
     CRON_SECRET: existing.CRON_SECRET || generatedSecret,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY:
       existing.NEXT_PUBLIC_TURNSTILE_SITE_KEY || TURNSTILE_TEST_SITE_KEY,
-    TURNSTILE_SECRET_KEY:
-      existing.TURNSTILE_SECRET_KEY || TURNSTILE_TEST_SECRET_KEY,
+    TURNSTILE_SECRET_KEY: existing.TURNSTILE_SECRET_KEY || TURNSTILE_TEST_SECRET_KEY,
     ALLOW_SELF_APPROVAL: existing.ALLOW_SELF_APPROVAL || "true",
     NEXT_PUBLIC_DEV_AUTH: existing.NEXT_PUBLIC_DEV_AUTH || "true",
   };

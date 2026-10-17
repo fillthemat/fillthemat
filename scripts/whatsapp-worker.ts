@@ -12,9 +12,7 @@ function loadEnvLocal() {
 async function main() {
   const args = process.argv.slice(2);
   if (!args.includes("--once")) {
-    console.error(
-      "usage: bun scripts/whatsapp-worker.ts --once  (drains one worker tick)",
-    );
+    console.error("usage: bun scripts/whatsapp-worker.ts --once  (drains one worker tick)");
     process.exit(1);
   }
   loadEnvLocal();

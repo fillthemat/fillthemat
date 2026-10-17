@@ -1,15 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { MockLanguageModelV4 } from "ai/test";
 import { and, eq } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
 import {
@@ -21,24 +13,13 @@ import {
   whatsappJobs,
 } from "@/db/schema";
 import * as languageModel from "@/lib/ai/language-model";
-import {
-  findOrCreateConversation,
-  loadTranscript,
-} from "@/lib/conversations/conversation-store";
+import { findOrCreateConversation, loadTranscript } from "@/lib/conversations/conversation-store";
 import * as emailDelivery from "@/lib/email/deliveries";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
 import * as whatsappDelivery from "@/lib/whatsapp/deliveries";
-import {
-  authSql,
-  loadLocalEnv,
-  whileSavingMessages,
-} from "@/test/integration-env";
+import { authSql, loadLocalEnv, whileSavingMessages } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
-import {
-  buttonReplyPayload,
-  post,
-  textInboundPayload,
-} from "@/test/whatsapp-webhook";
+import { buttonReplyPayload, post, textInboundPayload } from "@/test/whatsapp-webhook";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 
 loadLocalEnv();
@@ -65,10 +46,7 @@ function acceptingTransport() {
 }
 
 async function jobFor(wamid: string) {
-  const [job] = await db
-    .select()
-    .from(whatsappJobs)
-    .where(eq(whatsappJobs.dedupeKey, wamid));
+  const [job] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.dedupeKey, wamid));
   return job;
 }
 
@@ -102,10 +80,7 @@ function modelCalling(toolName: string, input: Record<string, unknown>) {
   vi.spyOn(languageModel, "defaultLanguageModel").mockReturnValue(model);
 }
 
-async function whileFirstAssistantSaveFails(
-  conversationId: string,
-  work: () => Promise<void>,
-) {
+async function whileFirstAssistantSaveFails(conversationId: string, work: () => Promise<void>) {
   const sequence = `test_turn_commit_${randomUUID().replaceAll("-", "")}`;
   await sql.unsafe(`create sequence public.${sequence}`);
   try {
@@ -185,9 +160,7 @@ beforeAll(async () => {
   });
 });
 afterAll(async () => {
-  await db
-    .delete(whatsappJobs)
-    .where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
+  await db.delete(whatsappJobs).where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
   await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
@@ -211,25 +184,19 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
     const { send, transport } = acceptingTransport();
     const now = new Date();
     // Fault injection at the post-commit boundary; no delivery has been claimed or sent.
-    vi.spyOn(
-      whatsappDelivery,
-      "attemptWhatsAppDeliveriesNow",
-    ).mockRejectedValueOnce(new Error("test before-send failure"));
+    vi.spyOn(whatsappDelivery, "attemptWhatsAppDeliveriesNow").mockRejectedValueOnce(
+      new Error("test before-send failure"),
+    );
     expect(
-      (await drainWhatsAppJobs(randomUUID(), 10, { now: () => now, transport }))
-        .retrying,
+      (await drainWhatsAppJobs(randomUUID(), 10, { now: () => now, transport })).retrying,
     ).toBe(1);
     expect(send).not.toHaveBeenCalled();
+    expect((await loadTranscript(conversation.conversation.id)).map(({ role }) => role)).toEqual([
+      "user",
+      "assistant",
+    ]);
     expect(
-      (await loadTranscript(conversation.conversation.id)).map(
-        ({ role }) => role,
-      ),
-    ).toEqual(["user", "assistant"]);
-    expect(
-      await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.recipientWaId, waId)),
+      await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.recipientWaId, waId)),
     ).toMatchObject([{ state: "pending", attempts: 0 }]);
     // Replaying the job cannot regenerate the Turn or perform its immediate send.
     expect(
@@ -241,19 +208,14 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
       ).done,
     ).toBe(1);
     expect(send).not.toHaveBeenCalled();
-    expect(
-      (await drainDueWhatsAppDeliveries(randomUUID(), 25, { transport })).sent,
-    ).toBe(1);
+    expect((await drainDueWhatsAppDeliveries(randomUUID(), 25, { transport })).sent).toBe(1);
     expect(send).toHaveBeenCalledTimes(1);
     await POST(post(payload));
     await runWhatsAppWorkerOnce(randomUUID(), { transport });
     expect(send).toHaveBeenCalledTimes(1);
     expect(await jobFor(wamid)).toMatchObject({ state: "done", attempts: 1 });
     expect(
-      await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.recipientWaId, waId)),
+      await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.recipientWaId, waId)),
     ).toMatchObject([{ state: "sent", attempts: 1 }]);
   });
 
@@ -276,23 +238,16 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
       .spyOn(emailDelivery, "attemptPendingForLead")
       .mockRejectedValueOnce(new Error("test lead email failure"));
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(
-      (await drainWhatsAppJobs(randomUUID(), 10, { transport })).done,
-    ).toBe(1);
+    expect((await drainWhatsAppJobs(randomUUID(), 10, { transport })).done).toBe(1);
     expect(send).toHaveBeenCalledTimes(1);
     expect(await jobFor(wamid)).toMatchObject({ state: "done", attempts: 1 });
     const [lead] = await db
       .select()
       .from(leads)
-      .where(
-        and(eq(leads.schoolId, schoolId), eq(leads.participantName, "Taylor")),
-      );
+      .where(and(eq(leads.schoolId, schoolId), eq(leads.participantName, "Taylor")));
     expect(lead).toMatchObject({ schoolId });
     expect(
-      await db
-        .select()
-        .from(emailDeliveries)
-        .where(eq(emailDeliveries.leadId, lead.id)),
+      await db.select().from(emailDeliveries).where(eq(emailDeliveries.leadId, lead.id)),
     ).toMatchObject([{ kind: "owner_lead", state: "pending", attempts: 0 }]);
     expect(log).toHaveBeenCalledWith("whatsapp_lead_email_attempt_failed", {
       leadId: lead.id,
@@ -304,10 +259,7 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(emailAttempt).toHaveBeenCalledTimes(1);
     expect(
-      await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.recipientWaId, waId)),
+      await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.recipientWaId, waId)),
     ).toMatchObject([{ state: "sent", attempts: 1 }]);
     const [ownerEmail] = await db
       .select()
@@ -321,11 +273,7 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
     const emailDependencies = { transport: { send: sendEmail } };
     const emailScope = { ids: [ownerEmail.id] };
     expect(
-      await emailDelivery.runEmailSendOnce(
-        randomUUID(),
-        emailDependencies,
-        emailScope,
-      ),
+      await emailDelivery.runEmailSendOnce(randomUUID(), emailDependencies, emailScope),
     ).toMatchObject({ sent: 1 });
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sendEmail).toHaveBeenCalledWith(
@@ -335,18 +283,11 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
       }),
     );
     expect(
-      await emailDelivery.runEmailSendOnce(
-        randomUUID(),
-        emailDependencies,
-        emailScope,
-      ),
+      await emailDelivery.runEmailSendOnce(randomUUID(), emailDependencies, emailScope),
     ).toMatchObject({ claimed: 0, sent: 0 });
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(
-      await db
-        .select()
-        .from(emailDeliveries)
-        .where(eq(emailDeliveries.id, ownerEmail.id)),
+      await db.select().from(emailDeliveries).where(eq(emailDeliveries.id, ownerEmail.id)),
     ).toMatchObject([{ state: "sent", attempts: 1 }]);
   });
 
@@ -366,20 +307,16 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
     });
     expect((await POST(post(payload))).status).toBe(200);
     const { send, transport } = acceptingTransport();
-    await whileFirstAssistantSaveFails(
-      conversation.conversation.id,
-      async () => {
-        await runWhatsAppWorkerOnce(randomUUID(), {
-          transport,
-        });
-      },
-    );
+    await whileFirstAssistantSaveFails(conversation.conversation.id, async () => {
+      await runWhatsAppWorkerOnce(randomUUID(), {
+        transport,
+      });
+    });
     expect(send).toHaveBeenCalledTimes(1);
-    expect(
-      (await loadTranscript(conversation.conversation.id)).map(
-        ({ role }) => role,
-      ),
-    ).toEqual(["user", "assistant"]);
+    expect((await loadTranscript(conversation.conversation.id)).map(({ role }) => role)).toEqual([
+      "user",
+      "assistant",
+    ]);
     expect(await jobFor(wamid)).toMatchObject({ state: "done", attempts: 2 });
     const deliveries = await db
       .select()
@@ -419,32 +356,23 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
       ),
     );
     const { send, transport } = acceptingTransport();
-    await whileFirstAssistantSaveFails(
-      conversation.conversation.id,
-      async () => {
-        await runWhatsAppWorkerOnce(randomUUID(), {
-          transport,
-        });
-      },
-    );
+    await whileFirstAssistantSaveFails(conversation.conversation.id, async () => {
+      await runWhatsAppWorkerOnce(randomUUID(), {
+        transport,
+      });
+    });
     expect(send).toHaveBeenCalledTimes(1);
-    expect(
-      (await loadTranscript(conversation.conversation.id)).map(
-        ({ role }) => role,
-      ),
-    ).toEqual(["user", "assistant"]);
+    expect((await loadTranscript(conversation.conversation.id)).map(({ role }) => role)).toEqual([
+      "user",
+      "assistant",
+    ]);
     const savedLeads = await db
       .select()
       .from(leads)
-      .where(
-        and(eq(leads.schoolId, schoolId), eq(leads.participantName, "Alex")),
-      );
+      .where(and(eq(leads.schoolId, schoolId), eq(leads.participantName, "Alex")));
     expect(savedLeads).toMatchObject([{ participantName: "Alex" }]);
     expect(
-      await db
-        .select()
-        .from(emailDeliveries)
-        .where(eq(emailDeliveries.leadId, savedLeads[0].id)),
+      await db.select().from(emailDeliveries).where(eq(emailDeliveries.leadId, savedLeads[0].id)),
     ).toMatchObject([{ kind: "owner_lead", state: "sent", attempts: 1 }]);
     expect(await jobFor(wamid)).toMatchObject({ state: "done", attempts: 2 });
   });
@@ -486,30 +414,22 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
       ),
     );
     const { send, transport } = acceptingTransport();
-    await whileFirstAssistantSaveFails(
-      conversation.conversation.id,
-      async () => {
-        await runWhatsAppWorkerOnce(randomUUID(), {
-          now: () => new Date(now.getTime() + 1000),
-          transport,
-        });
-      },
-    );
+    await whileFirstAssistantSaveFails(conversation.conversation.id, async () => {
+      await runWhatsAppWorkerOnce(randomUUID(), {
+        now: () => new Date(now.getTime() + 1000),
+        transport,
+      });
+    });
     expect(send).toHaveBeenCalledTimes(1);
-    expect(
-      (await loadTranscript(conversation.conversation.id)).map(
-        ({ role }) => role,
-      ),
-    ).toEqual(["user", "assistant"]);
+    expect((await loadTranscript(conversation.conversation.id)).map(({ role }) => role)).toEqual([
+      "user",
+      "assistant",
+    ]);
     const intents = await db
       .select()
       .from(whatsappBookingIntents)
-      .where(
-        eq(whatsappBookingIntents.conversationId, conversation.conversation.id),
-      );
-    expect(intents).toMatchObject([
-      { state: "pending", participantName: "Alex" },
-    ]);
+      .where(eq(whatsappBookingIntents.conversationId, conversation.conversation.id));
+    expect(intents).toMatchObject([{ state: "pending", participantName: "Alex" }]);
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         buttons: [
@@ -519,13 +439,8 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
       }),
     );
     expect(
-      await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.recipientWaId, waId)),
-    ).toMatchObject([
-      { state: "sent", providerIdempotencyKey: `wa-confirm/${wamid}` },
-    ]);
+      await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.recipientWaId, waId)),
+    ).toMatchObject([{ state: "sent", providerIdempotencyKey: `wa-confirm/${wamid}` }]);
     expect(await jobFor(wamid)).toMatchObject({ state: "done", attempts: 2 });
   });
 
@@ -569,18 +484,11 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
       }),
     );
     expect(
-      await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.recipientWaId, waId)),
-    ).toMatchObject([
-      { state: "sent", providerIdempotencyKey: `wa-notice/${waId}/${wamid}` },
+      await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.recipientWaId, waId)),
+    ).toMatchObject([{ state: "sent", providerIdempotencyKey: `wa-notice/${waId}/${wamid}` }]);
+    expect((await loadTranscript(conversation.conversation.id)).map(({ role }) => role)).toEqual([
+      "user",
     ]);
-    expect(
-      (await loadTranscript(conversation.conversation.id)).map(
-        ({ role }) => role,
-      ),
-    ).toEqual(["user"]);
     await POST(post(payload));
     await runWhatsAppWorkerOnce(randomUUID(), { transport });
     expect(send).toHaveBeenCalledTimes(1);
@@ -640,17 +548,15 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
       .select()
       .from(whatsappDeliveries)
       .where(eq(whatsappDeliveries.recipientWaId, waId));
-    expect(
-      deliveries
-        .map(({ providerIdempotencyKey }) => providerIdempotencyKey)
-        .sort(),
-    ).toEqual([`wa-reply/${wamid}/0`, `wa-reply/${wamid}/1`]);
+    expect(deliveries.map(({ providerIdempotencyKey }) => providerIdempotencyKey).sort()).toEqual([
+      `wa-reply/${wamid}/0`,
+      `wa-reply/${wamid}/1`,
+    ]);
     expect(deliveries.every(({ state }) => state === "sent")).toBe(true);
-    expect(
-      (await loadTranscript(conversation.conversation.id)).map(
-        ({ role }) => role,
-      ),
-    ).toEqual(["user", "assistant"]);
+    expect((await loadTranscript(conversation.conversation.id)).map(({ role }) => role)).toEqual([
+      "user",
+      "assistant",
+    ]);
   });
 
   it("exhausts five failed reply saves and sends the fallback instead of silently completing", async () => {
@@ -735,10 +641,7 @@ describe("WhatsApp Turn commit through webhook and worker", () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(await jobFor(wamid)).toMatchObject({ state: "done", attempts: 1 });
     expect(
-      await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.recipientWaId, waId)),
+      await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.recipientWaId, waId)),
     ).toMatchObject([{ state: "sent", attempts: 1 }]);
   });
 });

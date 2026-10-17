@@ -1,22 +1,16 @@
-import { pathToFileURL } from "node:url";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 
 const migrationLockKey = 156_001;
 
 // The CLI validates the target; the shared routine also supports a local rehearsal.
-export async function migrateProduction(
-  url: string,
-  migrationsFolder = "drizzle",
-) {
+export async function migrateProduction(url: string, migrationsFolder = "drizzle") {
   if (new URL(url).port === "6543")
-    throw Object.assign(
-      new Error("Transaction pooler is unsafe for migrations"),
-      {
-        code: "TRANSACTION_POOLER",
-      },
-    );
+    throw Object.assign(new Error("Transaction pooler is unsafe for migrations"), {
+      code: "TRANSACTION_POOLER",
+    });
   const client = postgres(url, {
     prepare: false,
     max: 1,
@@ -57,11 +51,7 @@ async function main() {
     throw new Error("Refusing migration outside Vercel Production");
   if (!url) throw new Error("Missing DIRECT_URL");
   const host = new URL(url).hostname;
-  if (
-    /^(localhost\.?$|.*\.localhost\.?$|127\.|\[?::1\]?$|\[::ffff:7f)/i.test(
-      host,
-    )
-  )
+  if (/^(localhost\.?$|.*\.localhost\.?$|127\.|\[?::1\]?$|\[::ffff:7f)/i.test(host))
     throw new Error("Refusing production migration against loopback");
   await migrateProduction(url);
   console.info("Production migrations completed.");
@@ -69,20 +59,13 @@ async function main() {
 
 function errorCode(error: unknown): string | undefined {
   if (!error || typeof error !== "object") return;
-  if (
-    "code" in error &&
-    typeof error.code === "string" &&
-    /^[A-Z0-9_]{2,40}$/.test(error.code)
-  )
+  if ("code" in error && typeof error.code === "string" && /^[A-Z0-9_]{2,40}$/.test(error.code))
     return error.code;
   // Drizzle wraps SQL failures. Never log the query or raw connection error.
   if ("cause" in error) return errorCode(error.cause);
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error: unknown) => {
     const code = errorCode(error);
     console.error(

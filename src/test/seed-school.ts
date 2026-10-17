@@ -1,12 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { schools, trialOfferings, users } from "@/db/schema";
-import {
-  type authSql,
-  deleteAuthUser,
-  insertAuthUser,
-  requireRow,
-} from "./integration-env";
+import { type authSql, deleteAuthUser, insertAuthUser, requireRow } from "./integration-env";
 
 type Sql = ReturnType<typeof authSql>;
 
@@ -32,9 +27,7 @@ export async function seedSchool(
   const db = getDb();
   const email = `${school.slug}@local.test`;
   await insertAuthUser(sql, ownerId, email);
-  await db
-    .insert(users)
-    .values({ id: ownerId, email, name: `${school.name} Owner` });
+  await db.insert(users).values({ id: ownerId, email, name: `${school.name} Owner` });
   const [row] = await db
     .insert(schools)
     .values({

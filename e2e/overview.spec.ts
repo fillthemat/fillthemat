@@ -18,21 +18,13 @@ test.beforeEach(async ({ page }) => {
 
 test("overview metrics use honest labels and drill-downs", async ({ page }) => {
   await page.goto("/dashboard");
-  await expect(
-    page.getByRole("heading", { name: "Overview", level: 1 }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
   const summary = page.getByRole("region", { name: "Summary" });
-  await expect(
-    summary.getByText("Upcoming bookings", { exact: true }),
-  ).toBeVisible();
+  await expect(summary.getByText("Upcoming bookings", { exact: true })).toBeVisible();
   await expect(summary.getByText("Scheduled from now")).toBeVisible();
   await expect(summary.getByText("Leads", { exact: true })).toBeVisible();
-  await expect(
-    summary.getByText("Booking conversion", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "View bookings" }),
-  ).toHaveAttribute(
+  await expect(summary.getByText("Booking conversion", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View bookings" })).toHaveAttribute(
     "href",
     "/dashboard/bookings?filter=upcoming&status=booked",
   );
@@ -42,16 +34,8 @@ test("overview metrics use honest labels and drill-downs", async ({ page }) => {
   );
 
   await page.getByText("Booking activity and definitions").click();
-  await expect(
-    page.getByText("Eligible sessions", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/later cancellation does not undo/i),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Chat-assisted bookings", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/recorded booking-confirmation events/i),
-  ).toBeVisible();
+  await expect(page.getByText("Eligible sessions", { exact: true })).toBeVisible();
+  await expect(page.getByText(/later cancellation does not undo/i)).toBeVisible();
+  await expect(page.getByText("Chat-assisted bookings", { exact: true })).toBeVisible();
+  await expect(page.getByText(/recorded booking-confirmation events/i)).toBeVisible();
 });

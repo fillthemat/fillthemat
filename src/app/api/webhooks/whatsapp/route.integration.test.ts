@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
 import {
@@ -13,10 +13,7 @@ import {
 } from "@/db/schema";
 import { hashWaId } from "@/lib/crypto";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
-import {
-  WHATSAPP_MAX_BODY_BYTES,
-  WHATSAPP_STUB_VERIFY_TOKEN,
-} from "@/lib/whatsapp/config";
+import { WHATSAPP_MAX_BODY_BYTES, WHATSAPP_STUB_VERIFY_TOKEN } from "@/lib/whatsapp/config";
 import {
   authSql,
   deleteAuthUser,
@@ -35,8 +32,9 @@ const sql = authSql();
 const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
 const phoneNumberId = `199${Date.now().toString().slice(-9)}`;
-const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } =
-  scopedWhatsAppRunner(() => [phoneNumberId]);
+const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } = scopedWhatsAppRunner(() => [
+  phoneNumberId,
+]);
 const slug = `wa-${suffix}`;
 const waId = "16505551234";
 let schoolId = "";
@@ -65,10 +63,7 @@ async function messageRows() {
 }
 
 async function deliveryRows() {
-  return db
-    .select()
-    .from(whatsappDeliveries)
-    .where(eq(whatsappDeliveries.schoolId, schoolId));
+  return db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.schoolId, schoolId));
 }
 
 async function runWorker() {
@@ -77,23 +72,13 @@ async function runWorker() {
   await db
     .update(whatsappJobs)
     .set({ nextAttemptAt: new Date(Date.now() - 1000) })
-    .where(
-      and(
-        eq(whatsappJobs.phoneNumberId, phoneNumberId),
-        eq(whatsappJobs.state, "pending"),
-      ),
-    );
+    .where(and(eq(whatsappJobs.phoneNumberId, phoneNumberId), eq(whatsappJobs.state, "pending")));
   const runId = randomUUID();
   await runWhatsAppWorkerOnce(runId);
   await db
     .update(whatsappDeliveries)
     .set({ nextAttemptAt: new Date(Date.now() - 1000) })
-    .where(
-      and(
-        eq(whatsappDeliveries.schoolId, schoolId),
-        eq(whatsappDeliveries.state, "pending"),
-      ),
-    );
+    .where(and(eq(whatsappDeliveries.schoolId, schoolId), eq(whatsappDeliveries.state, "pending")));
   await drainDueWhatsAppDeliveries(runId);
 }
 
@@ -136,9 +121,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db
-    .delete(whatsappJobs)
-    .where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
+  await db.delete(whatsappJobs).where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
   await db.delete(users).where(eq(users.id, ownerId));
   await deleteAuthUser(sql, ownerId);
   await sql.end({ timeout: 5 });
@@ -264,21 +247,14 @@ describe("conversation invariants survive enqueue-then-ack", () => {
 
   it("routes a second distinct message from the same wa_id into one conversation", async () => {
     const id = "16505551111";
-    expect(
-      (await POST(post(inboundFor(id, `wamid.inv-a.${suffix}`, "Hello"))))
-        .status,
-    ).toBe(200);
-    expect(
-      (await POST(post(inboundFor(id, `wamid.inv-b.${suffix}`, "What times?"))))
-        .status,
-    ).toBe(200);
+    expect((await POST(post(inboundFor(id, `wamid.inv-a.${suffix}`, "Hello")))).status).toBe(200);
+    expect((await POST(post(inboundFor(id, `wamid.inv-b.${suffix}`, "What times?")))).status).toBe(
+      200,
+    );
 
     await runWorker();
 
-    const conversation = requireRow(
-      await conversationForWa(id),
-      "conversation",
-    );
+    const conversation = requireRow(await conversationForWa(id), "conversation");
     const rows = await conversationMessages(conversation.id);
     expect(rows.filter((row) => row.role === "user")).toHaveLength(2);
     expect(rows.filter((row) => row.role === "assistant")).toHaveLength(2);
@@ -287,10 +263,9 @@ describe("conversation invariants survive enqueue-then-ack", () => {
 
   it("starts a new conversation after inactivity and keeps the old transcript", async () => {
     const id = "16505550062";
-    expect(
-      (await POST(post(inboundFor(id, `wamid.inactive-a.${suffix}`, "Hello"))))
-        .status,
-    ).toBe(200);
+    expect((await POST(post(inboundFor(id, `wamid.inactive-a.${suffix}`, "Hello")))).status).toBe(
+      200,
+    );
     await runWorker();
     const original = requireRow(await conversationForWa(id), "conversation");
     const originalMessages = await conversationMessages(original.id);
@@ -299,40 +274,25 @@ describe("conversation invariants survive enqueue-then-ack", () => {
       .set({ expiresAt: addDays(new Date(), -1) })
       .where(eq(conversations.id, original.id));
     expect(
-      (
-        await POST(
-          post(inboundFor(id, `wamid.inactive-b.${suffix}`, "Hello again")),
-        )
-      ).status,
+      (await POST(post(inboundFor(id, `wamid.inactive-b.${suffix}`, "Hello again")))).status,
     ).toBe(200);
     await runWorker();
-    const current = requireRow(
-      await conversationForWa(id),
-      "current conversation",
-    );
+    const current = requireRow(await conversationForWa(id), "current conversation");
     expect(current.id).not.toBe(original.id);
     expect(current.generatingAt).toBeNull();
     expect(await conversationMessages(current.id)).toHaveLength(2);
     expect(await conversationMessages(original.id)).toEqual(originalMessages);
-    const [ended] = await db
-      .select()
-      .from(conversations)
-      .where(eq(conversations.id, original.id));
+    const [ended] = await db.select().from(conversations).where(eq(conversations.id, original.id));
     expect(ended?.endedAt).toBeInstanceOf(Date);
     expect(ended?.endReason).toBe("inactivity");
   });
 
   it("reschedules while generatingAt is held, then completes on release", async () => {
     const id = "16505552222";
-    expect(
-      (await POST(post(inboundFor(id, `wamid.lock-a.${suffix}`)))).status,
-    ).toBe(200);
+    expect((await POST(post(inboundFor(id, `wamid.lock-a.${suffix}`)))).status).toBe(200);
     await runWorker();
 
-    const conversation = requireRow(
-      await conversationForWa(id),
-      "conversation",
-    );
+    const conversation = requireRow(await conversationForWa(id), "conversation");
     const before = await conversationMessages(conversation.id);
 
     // Simulate a concurrent worker mid-flight by holding the single-flight lock.
@@ -341,9 +301,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
       .set({ generatingAt: new Date(), updatedAt: new Date() })
       .where(eq(conversations.id, conversation.id));
 
-    expect(
-      (await POST(post(inboundFor(id, `wamid.lock-b.${suffix}`)))).status,
-    ).toBe(200);
+    expect((await POST(post(inboundFor(id, `wamid.lock-b.${suffix}`)))).status).toBe(200);
     await runWorker();
 
     const jobs = await db
@@ -356,9 +314,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     );
     // Deferred, not failed/dropped, and nothing was double-written.
     expect(deferred.state).toBe("pending");
-    expect(await conversationMessages(conversation.id)).toHaveLength(
-      before.length,
-    );
+    expect(await conversationMessages(conversation.id)).toHaveLength(before.length);
 
     // Release the lock and make the deferred job due again; it then completes.
     await db
@@ -373,23 +329,16 @@ describe("conversation invariants survive enqueue-then-ack", () => {
 
     const after = await conversationMessages(conversation.id);
     expect(after).toHaveLength(before.length + 2);
-    expect(
-      requireRow(await conversationForWa(id), "conversation").generatingAt,
-    ).toBeNull();
+    expect(requireRow(await conversationForWa(id), "conversation").generatingAt).toBeNull();
   });
 
   it("ends a conversation at its message limit on an ordinary message with an unsaved notice, then answers the next message in a new conversation", async () => {
     const id = "16505553333";
     const capSuffix = `${suffix}-question`;
-    expect(
-      (await POST(post(inboundFor(id, `wamid.cap-seed.${capSuffix}`)))).status,
-    ).toBe(200);
+    expect((await POST(post(inboundFor(id, `wamid.cap-seed.${capSuffix}`)))).status).toBe(200);
     await runWorker();
 
-    const conversation = requireRow(
-      await conversationForWa(id),
-      "conversation",
-    );
+    const conversation = requireRow(await conversationForWa(id), "conversation");
     const existing = await conversationMessages(conversation.id);
     const fill = MAX_CHAT_MESSAGES_PER_CONVERSATION - existing.length;
 
@@ -406,13 +355,9 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     }
 
     const before = await conversationMessages(conversation.id);
-    expect(
-      (
-        await POST(
-          post(inboundFor(id, `wamid.cap-over.${capSuffix}`, "Hello?")),
-        )
-      ).status,
-    ).toBe(200);
+    expect((await POST(post(inboundFor(id, `wamid.cap-over.${capSuffix}`, "Hello?")))).status).toBe(
+      200,
+    );
     await runWorker();
 
     expect(await conversationMessages(conversation.id)).toEqual(before);
@@ -439,32 +384,21 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     expect(notice?.state).toBe("sent");
 
     expect(
-      (
-        await POST(
-          post(inboundFor(id, `wamid.cap-next.${capSuffix}`, "Hello again")),
-        )
-      ).status,
+      (await POST(post(inboundFor(id, `wamid.cap-next.${capSuffix}`, "Hello again")))).status,
     ).toBe(200);
     await runWorker();
     const current = requireRow(await conversationForWa(id), "new conversation");
     expect(current.id).not.toBe(conversation.id);
     expect(current.generatingAt).toBeNull();
     const currentMessages = await conversationMessages(current.id);
-    expect(currentMessages.filter(({ role }) => role === "user")).toHaveLength(
-      1,
-    );
-    expect(
-      currentMessages.filter(({ role }) => role === "assistant"),
-    ).toHaveLength(1);
+    expect(currentMessages.filter(({ role }) => role === "user")).toHaveLength(1);
+    expect(currentMessages.filter(({ role }) => role === "assistant")).toHaveLength(1);
     expect(await conversationMessages(conversation.id)).toEqual(before);
     const deliveries = await db
       .select()
       .from(whatsappDeliveries)
       .where(
-        and(
-          eq(whatsappDeliveries.schoolId, schoolId),
-          eq(whatsappDeliveries.recipientWaId, id),
-        ),
+        and(eq(whatsappDeliveries.schoolId, schoolId), eq(whatsappDeliveries.recipientWaId, id)),
       );
     expect(deliveries).toHaveLength(3);
     expect(deliveries.every(({ state }) => state === "sent")).toBe(true);
@@ -472,14 +406,9 @@ describe("conversation invariants survive enqueue-then-ack", () => {
 
   it("answers the next inbound message after an abandoned generation lock", async () => {
     const id = "16505554444";
-    expect(
-      (await POST(post(inboundFor(id, `wamid.abandoned-a.${suffix}`)))).status,
-    ).toBe(200);
+    expect((await POST(post(inboundFor(id, `wamid.abandoned-a.${suffix}`)))).status).toBe(200);
     await runWorker();
-    const conversation = requireRow(
-      await conversationForWa(id),
-      "conversation",
-    );
+    const conversation = requireRow(await conversationForWa(id), "conversation");
     const before = await conversationMessages(conversation.id);
 
     // A crashed function left its claim behind eleven minutes ago.
@@ -488,9 +417,7 @@ describe("conversation invariants survive enqueue-then-ack", () => {
       .set({ generatingAt: new Date(Date.now() - 11 * 60 * 1000) })
       .where(eq(conversations.id, conversation.id));
     const wamid = `wamid.abandoned-b.${suffix}`;
-    expect(
-      (await POST(post(inboundFor(id, wamid, "Can I try a class?")))).status,
-    ).toBe(200);
+    expect((await POST(post(inboundFor(id, wamid, "Can I try a class?")))).status).toBe(200);
     await runWorker();
 
     const after = await conversationMessages(conversation.id);
@@ -500,27 +427,17 @@ describe("conversation invariants survive enqueue-then-ack", () => {
     expect(after.filter((row) => row.role === "assistant")).toHaveLength(
       before.filter((row) => row.role === "assistant").length + 1,
     );
-    expect(
-      requireRow(await conversationForWa(id), "conversation").generatingAt,
-    ).toBeNull();
-    const [job] = await db
-      .select()
-      .from(whatsappJobs)
-      .where(eq(whatsappJobs.dedupeKey, wamid));
+    expect(requireRow(await conversationForWa(id), "conversation").generatingAt).toBeNull();
+    const [job] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.dedupeKey, wamid));
     expect(job?.state).toBe("done");
     const deliveries = await db
       .select()
       .from(whatsappDeliveries)
       .where(
-        and(
-          eq(whatsappDeliveries.schoolId, schoolId),
-          eq(whatsappDeliveries.recipientWaId, id),
-        ),
+        and(eq(whatsappDeliveries.schoolId, schoolId), eq(whatsappDeliveries.recipientWaId, id)),
       );
     expect(deliveries).toHaveLength(2);
-    expect(deliveries.every((delivery) => delivery.state === "sent")).toBe(
-      true,
-    );
+    expect(deliveries.every((delivery) => delivery.state === "sent")).toBe(true);
   });
 });
 

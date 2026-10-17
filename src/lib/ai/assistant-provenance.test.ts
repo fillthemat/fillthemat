@@ -1,12 +1,7 @@
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import {
-  type AssistantInput,
-  completedReply,
-  type ReplyFinish,
-  streamedReply,
-} from "./assistant";
+import { type AssistantInput, completedReply, type ReplyFinish, streamedReply } from "./assistant";
 import { platformInstructionsHash } from "./provenance";
 import { assistantTools } from "./tools";
 

@@ -43,20 +43,20 @@ not editing an AI configuration database.
 
 ## Files
 
-| File | Role |
-| --- | --- |
-| `page.tsx` | RSC shell: resolves the section, loads only that section's data. |
-| `sections.ts` | Category ids, labels, purpose copy, `sectionHref`. |
-| `settings-shell.tsx` | Client shell: local nav rail + unsaved-changes guard. |
-| `actions.ts` | Server Actions. Every one still calls `requireOwnedSchool()`. |
-| `mutations.ts` | School-scoped writes used by actions (and integration tests). |
-| `schemas.ts` | Zod schemas + owner-facing validation messages + limits. |
-| `form-state.ts` | `SettingsFormState` returned by every action. |
-| `form-utils.ts` | Pure save/merge helpers, including create `clearOnSuccess`. |
-| `queries.ts` | Server-only reads (kept out of `"use server"` on purpose). |
-| `format.ts` | Pure formatting: times, durations, age ranges, counts. |
-| `ui/*` | Labeled controls, save bar, confirm dialogs, inline editors. |
-| `sections/*` | One client component per category. |
+| File                 | Role                                                             |
+| -------------------- | ---------------------------------------------------------------- |
+| `page.tsx`           | RSC shell: resolves the section, loads only that section's data. |
+| `sections.ts`        | Category ids, labels, purpose copy, `sectionHref`.               |
+| `settings-shell.tsx` | Client shell: local nav rail + unsaved-changes guard.            |
+| `actions.ts`         | Server Actions. Every one still calls `requireOwnedSchool()`.    |
+| `mutations.ts`       | School-scoped writes used by actions (and integration tests).    |
+| `schemas.ts`         | Zod schemas + owner-facing validation messages + limits.         |
+| `form-state.ts`      | `SettingsFormState` returned by every action.                    |
+| `form-utils.ts`      | Pure save/merge helpers, including create `clearOnSuccess`.      |
+| `queries.ts`         | Server-only reads (kept out of `"use server"` on purpose).       |
+| `format.ts`          | Pure formatting: times, durations, age ranges, counts.           |
+| `ui/*`               | Labeled controls, save bar, confirm dialogs, inline editors.     |
+| `sections/*`         | One client component per category.                               |
 
 `windowHasFutureBooking` moved from `actions.ts` to `queries.ts`: exporting it
 from a `"use server"` module made it a callable endpoint that accepted any

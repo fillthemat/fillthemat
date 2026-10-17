@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  assistantContext,
-  kidsOffering,
-  toolExecutionOptions,
-} from "@/test/assistant-context";
+import { assistantContext, kidsOffering, toolExecutionOptions } from "@/test/assistant-context";
 import { requestContact } from "./request-contact";
 
 describe("gather a Lead Request", () => {

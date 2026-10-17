@@ -1,16 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  bookingIcsUid,
-  buildTrialIcs,
-  escapeIcsText,
-  foldIcsLine,
-} from "./ics";
+import { bookingIcsUid, buildTrialIcs, escapeIcsText, foldIcsLine } from "./ics";
 
 describe("ICS helpers", () => {
   it("escapes backslash, comma, semicolon, and newlines", () => {
-    expect(escapeIcsText("Dojo; A, B\\C\nNext")).toBe(
-      "Dojo\\; A\\, B\\\\C\\nNext",
-    );
+    expect(escapeIcsText("Dojo; A, B\\C\nNext")).toBe("Dojo\\; A\\, B\\\\C\\nNext");
   });
 
   it("folds lines at RFC octet limits", () => {
@@ -39,9 +32,7 @@ describe("ICS helpers", () => {
 
     expect(ics.endsWith("\r\n")).toBe(true);
     expect(ics).toContain("METHOD:PUBLISH");
-    expect(ics).toContain(
-      "UID:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@fillthemat.com",
-    );
+    expect(ics).toContain("UID:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@fillthemat.com");
     expect(ics).toContain("DTSTART:20260309T220000Z");
     expect(ics).toContain("DTEND:20260309T230000Z");
     expect(ics).toContain("DTSTAMP:20260301T120000Z");

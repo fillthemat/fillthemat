@@ -1,8 +1,8 @@
 "use client";
 
+import type * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
-import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
@@ -11,8 +11,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/85",
-        outline:
-          "border-border bg-transparent hover:bg-muted hover:text-foreground",
+        outline: "border-border bg-transparent hover:bg-muted hover:text-foreground",
         secondary: "bg-secondary text-secondary-foreground hover:bg-accent",
         ghost: "hover:bg-muted hover:text-foreground",
         destructive:

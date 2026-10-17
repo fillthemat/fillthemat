@@ -15,12 +15,7 @@ export function prepareBooking(ctx: AssistantContext) {
       participantName: z.string().trim().min(1).max(80).optional(),
       participantAge: z.number().int().min(0).max(99).optional(),
     }),
-    execute: async ({
-      offeringId,
-      slotId,
-      participantName,
-      participantAge,
-    }) => {
+    execute: async ({ offeringId, slotId, participantName, participantAge }) => {
       const parsed = parseSlotId(slotId);
       if (!parsed) {
         return { ok: false as const, reason: "invalid" as const };

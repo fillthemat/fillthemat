@@ -16,9 +16,7 @@ function snapshotBlock(booking: Booking): string {
     `Participant: ${booking.participantNameSnapshot} (age ${booking.participantAgeSnapshot})`,
     `When: ${formatWhen(booking)}`,
     booking.locationSnapshot ? `Where: ${booking.locationSnapshot}` : null,
-    booking.instructionsSnapshot
-      ? `What to know:\n${booking.instructionsSnapshot}`
-      : null,
+    booking.instructionsSnapshot ? `What to know:\n${booking.instructionsSnapshot}` : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -43,11 +41,7 @@ Fillthemat`;
 }
 
 export function prospectReminderEmail(school: School, booking: Booking) {
-  const date = formatInTimeZone(
-    booking.startAt,
-    booking.timezoneSnapshot,
-    "EEEE, MMMM d",
-  );
+  const date = formatInTimeZone(booking.startAt, booking.timezoneSnapshot, "EEEE, MMMM d");
   const text = `Reminder: ${booking.participantNameSnapshot}'s trial class at ${school.name} is on ${date}.
 
 ${snapshotBlock(booking)}
@@ -106,10 +100,7 @@ Fillthemat`;
   };
 }
 
-export function ownerWhatsAppConfirmationFailedEmail(
-  school: School,
-  booking: Booking,
-) {
+export function ownerWhatsAppConfirmationFailedEmail(school: School, booking: Booking) {
   return {
     subject: `Please contact ${booking.participantNameSnapshot} about their trial booking`,
     text: `We couldn't confirm this booking with ${booking.participantNameSnapshot} on WhatsApp. Please contact them to let them know they're booked at ${school.name}.

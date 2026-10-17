@@ -1,15 +1,5 @@
+import { and, asc, eq, gt, inArray, lt, lte, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  lt,
-  lte,
-  notInArray,
-  sql,
-} from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   type Booking,
@@ -35,10 +25,7 @@ import {
   type RetryFailure,
   emailRetryDecision as retryDecision,
 } from "@/lib/retry-policy";
-import {
-  type EmailSendDependencies,
-  emailSendDependencies,
-} from "./dependencies";
+import { type EmailSendDependencies, emailSendDependencies } from "./dependencies";
 import { buildTrialIcs } from "./ics";
 import {
   ownerBookingEmail,
@@ -50,11 +37,7 @@ import {
   prospectReminderEmail,
 } from "./templates";
 
-function icsAttachment(
-  booking: Booking,
-  method: "PUBLISH" | "CANCEL",
-  now: Date,
-) {
+function icsAttachment(booking: Booking, method: "PUBLISH" | "CANCEL", now: Date) {
   const ics = buildTrialIcs({
     uid: booking.icsUid,
     sequence: booking.icsSequence,
@@ -113,11 +96,7 @@ async function renderDelivery(
     case "owner_lead": {
       if (!delivery.leadId) throw new InternalFailure("missing_lead");
       const db = getDb();
-      const [lead] = await db
-        .select()
-        .from(leads)
-        .where(eq(leads.id, delivery.leadId))
-        .limit(1);
+      const [lead] = await db.select().from(leads).where(eq(leads.id, delivery.leadId)).limit(1);
       if (!lead) throw new InternalFailure("missing_lead");
       const [contact] = await db
         .select()
@@ -176,9 +155,7 @@ async function failDelivery(
     .returning();
   if (!row) return "deferred";
   if (decision.action === "stop")
-    logDeadTransition(
-      deadEventFrom(row, "email_delivery", delivery.claimedBy ?? "unknown"),
-    );
+    logDeadTransition(deadEventFrom(row, "email_delivery", delivery.claimedBy ?? "unknown"));
   return decision.action === "stop" ? "dead" : "retrying";
 }
 
@@ -204,10 +181,7 @@ export async function sendDelivery(
       delivery,
       {
         kind: "internal",
-        reason: internalFailureReasonFrom(
-          delivery.failureReason,
-          "attempts_exhausted",
-        ),
+        reason: internalFailureReasonFrom(delivery.failureReason, "attempts_exhausted"),
       },
       delivery.lastError ?? "attempts_exhausted",
       dependencies.now(),
@@ -218,9 +192,7 @@ export async function sendDelivery(
       attempts: sql`${emailDeliveries.attempts} + 1`,
       updatedAt: dependencies.now(),
     })
-    .where(
-      and(ownedClaim(delivery), lt(emailDeliveries.attempts, MAX_EXECUTIONS)),
-    )
+    .where(and(ownedClaim(delivery), lt(emailDeliveries.attempts, MAX_EXECUTIONS)))
     .returning();
   if (!executing) return "deferred";
   try {
@@ -232,44 +204,24 @@ export async function sendDelivery(
     if (!school) throw new InternalFailure("school_missing");
     if (!school.approvedAt) throw new InternalFailure("school_not_approved");
     const booking = executing.bookingId
-      ? (
-          await db
-            .select()
-            .from(bookings)
-            .where(eq(bookings.id, executing.bookingId))
-            .limit(1)
-        )[0]
+      ? (await db.select().from(bookings).where(eq(bookings.id, executing.bookingId)).limit(1))[0]
       : null;
     // Keep ICS DTSTAMP stable when reusing Resend's idempotency key on retry:
     // changing attachment bytes would cause invalid_idempotent_request (409).
     // https://resend.com/docs/dashboard/emails/idempotency-keys
-    const rendered = await renderDelivery(
-      executing,
-      school,
-      booking ?? null,
-      executing.createdAt,
-    );
+    const rendered = await renderDelivery(executing, school, booking ?? null, executing.createdAt);
     const result = await dependencies.transport.send({
       to: executing.recipient,
       ...rendered,
       idempotencyKey: executing.providerIdempotencyKey,
     });
-    if (!result.ok)
-      return failDelivery(
-        executing,
-        result,
-        result.message,
-        dependencies.now(),
-      );
+    if (!result.ok) return failDelivery(executing, result, result.message, dependencies.now());
     const now = dependencies.now();
     const rows = await db
       .update(emailDeliveries)
       .set({
         state: "sent",
-        providerId:
-          result.kind === "local_noop"
-            ? `local-noop:${executing.id}`
-            : result.providerId,
+        providerId: result.kind === "local_noop" ? `local-noop:${executing.id}` : result.providerId,
         sentAt: now,
         lastError: null,
         failureReason: null,
@@ -286,8 +238,7 @@ export async function sendDelivery(
       executing,
       {
         kind: "internal",
-        reason:
-          error instanceof InternalFailure ? error.reason : "email_send_failed",
+        reason: error instanceof InternalFailure ? error.reason : "email_send_failed",
       },
       error instanceof Error ? error.message : "send_failed",
       dependencies.now(),
@@ -336,10 +287,7 @@ export async function recoverStuckEmailDeliveries(
       .where(
         and(
           eq(emailDeliveries.state, "claimed"),
-          lt(
-            emailDeliveries.claimedAt,
-            new Date(now.getTime() - staleBeforeMs),
-          ),
+          lt(emailDeliveries.claimedAt, new Date(now.getTime() - staleBeforeMs)),
           ids ? inArray(emailDeliveries.id, ids) : undefined,
         ),
       )
@@ -372,8 +320,7 @@ export async function recoverStuckEmailDeliveries(
       return row;
     });
   });
-  for (const row of result.dead)
-    logDeadTransition(deadEventFrom(row, "email_delivery", runId));
+  for (const row of result.dead) logDeadTransition(deadEventFrom(row, "email_delivery", runId));
   return { recovered: result.recovered, dead: result.dead.length };
 }
 
@@ -396,10 +343,7 @@ export async function attemptPendingForLead(
   overrides: Partial<EmailSendDependencies> = {},
 ) {
   const db = getDb();
-  const pending = await db
-    .select()
-    .from(emailDeliveries)
-    .where(eq(emailDeliveries.leadId, leadId));
+  const pending = await db.select().from(emailDeliveries).where(eq(emailDeliveries.leadId, leadId));
   return runEmailSendOnce(`lead:${randomUUID()}`, overrides, {
     ids: pending.map((row) => row.id),
   });
@@ -414,31 +358,24 @@ export async function claimDueDeliveries(
   const now = opts.now ?? new Date();
   if (opts.ids?.length === 0 || limit <= 0) return [];
   return db.transaction(async (tx) => {
-    const due = await takeClaimLanes(
-      limit,
-      async (fresh, count, excludedIds) => {
-        const rows = await tx
-          .select()
-          .from(emailDeliveries)
-          .where(
-            and(
-              inArray(emailDeliveries.state, ["pending", "failed"]),
-              lte(emailDeliveries.nextAttemptAt, now),
-              fresh
-                ? eq(emailDeliveries.attempts, 0)
-                : gt(emailDeliveries.attempts, 0),
-              opts.ids ? inArray(emailDeliveries.id, opts.ids) : undefined,
-              excludedIds.length
-                ? notInArray(emailDeliveries.id, excludedIds)
-                : undefined,
-            ),
-          )
-          .orderBy(asc(emailDeliveries.createdAt), asc(emailDeliveries.id))
-          .for("update", { skipLocked: true })
-          .limit(count);
-        return rows;
-      },
-    );
+    const due = await takeClaimLanes(limit, async (fresh, count, excludedIds) => {
+      const rows = await tx
+        .select()
+        .from(emailDeliveries)
+        .where(
+          and(
+            inArray(emailDeliveries.state, ["pending", "failed"]),
+            lte(emailDeliveries.nextAttemptAt, now),
+            fresh ? eq(emailDeliveries.attempts, 0) : gt(emailDeliveries.attempts, 0),
+            opts.ids ? inArray(emailDeliveries.id, opts.ids) : undefined,
+            excludedIds.length ? notInArray(emailDeliveries.id, excludedIds) : undefined,
+          ),
+        )
+        .orderBy(asc(emailDeliveries.createdAt), asc(emailDeliveries.id))
+        .for("update", { skipLocked: true })
+        .limit(count);
+      return rows;
+    });
 
     if (due.length === 0) return [];
 

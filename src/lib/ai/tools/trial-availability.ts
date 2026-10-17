@@ -3,11 +3,7 @@ import type { AssistantContext } from "../context";
 
 /** Resolve an active Trial Offering and its open Trial Occurrences this turn. */
 export function trialAvailability(
-  {
-    school,
-    catalog: { offerings, windows, occurrences },
-    now,
-  }: AssistantContext,
+  { school, catalog: { offerings, windows, occurrences }, now }: AssistantContext,
   offeringId: string,
 ) {
   const offering = offerings.find((row) => row.id === offeringId && row.active);

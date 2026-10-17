@@ -13,8 +13,7 @@ function matchesUpdatedAt(
   return sql`date_trunc('milliseconds', ${column}) = date_trunc('milliseconds', ${expected.toISOString()}::timestamptz)`;
 }
 
-export const MISSING_OFFERING =
-  "That trial class no longer exists. Refresh the page.";
+export const MISSING_OFFERING = "That trial class no longer exists. Refresh the page.";
 export const MISSING_FAQ = "That question no longer exists. Refresh the page.";
 export const STALE_EDIT =
   "This was updated elsewhere. Your edits are still here — reload the page to see the latest, then save again.";
@@ -65,17 +64,11 @@ function faqFormValues(row: {
   };
 }
 
-async function offeringOwnedBySchool(
-  db: Database,
-  schoolId: string,
-  id: string,
-) {
+async function offeringOwnedBySchool(db: Database, schoolId: string, id: string) {
   const [row] = await db
     .select({ id: trialOfferings.id })
     .from(trialOfferings)
-    .where(
-      and(eq(trialOfferings.id, id), eq(trialOfferings.schoolId, schoolId)),
-    )
+    .where(and(eq(trialOfferings.id, id), eq(trialOfferings.schoolId, schoolId)))
     .limit(1);
   return row ?? null;
 }
@@ -142,12 +135,9 @@ export async function updateOffering(
     .returning();
 
   if (updated) {
-    return successState(
-      `“${updated.name}” saved. New bookings use these settings.`,
-      {
-        ...offeringFormValues(updated),
-      },
-    );
+    return successState(`“${updated.name}” saved. New bookings use these settings.`, {
+      ...offeringFormValues(updated),
+    });
   }
 
   if (!(await offeringOwnedBySchool(db, schoolId, id))) {
@@ -193,9 +183,7 @@ export async function setOfferingActive(
       active: trialOfferings.active,
     })
     .from(trialOfferings)
-    .where(
-      and(eq(trialOfferings.id, id), eq(trialOfferings.schoolId, schoolId)),
-    )
+    .where(and(eq(trialOfferings.id, id), eq(trialOfferings.schoolId, schoolId)))
     .limit(1);
   if (!existing) return errorState(MISSING_OFFERING);
   return successState(

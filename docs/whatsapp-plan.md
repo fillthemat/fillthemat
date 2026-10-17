@@ -17,27 +17,27 @@ It began as a spike-and-plan (no code in that pass). Implementation landed in la
 
 ### 1.1 What stays shared (channel-agnostic, verified reusable)
 
-| Layer | Where | Why it survives |
-| --- | --- | --- |
-| Assistant | `src/lib/ai/assistant.ts` — `ToolLoopAgent` + `stopWhen: isStepCount(8)` + tools `list_trial_offerings` / `list_trial_occurrences` / `prepare_booking` / `request_contact`; WhatsApp calls its `completedReply`. Model from `src/lib/ai/language-model.ts`: `gateway(BOOKING_AGENT_MODEL)`, or a scripted local model outside production without a Gateway token | Pure function of (school, school catalog, messages). No browser or stream dependency. |
-| Immutable safety rules | `src/lib/ai/instructions.ts` (`PLATFORM_INSTRUCTIONS`) — the assistant never tells someone they are booked or will be contacted; booking and contact requests still need their confirmation through the platform. Tenant data is delimited and treated as untrusted (`assertTenantCannotOverride` test). Tool-specific requirements live in `src/lib/ai/tools/`. | Honesty and hostile-input invariants, channel-independent. |
-| Slot math | `src/lib/schedule/occurrences.ts:77-145` (`listOpenSlots`, 14-day horizon, 120-min lead) + `slot-id.ts` encode/parse | Pure. |
-| Booking write core | `src/lib/schedule/book-slot.ts` — single transaction, `(school_id, idempotency_key)` replay, `FOR UPDATE`, atomic `bookedCount < capacity` increment, contact/participant upsert, delivery enqueue, funnel event | The canonical write path; WhatsApp calls it with platform-minted keys. |
-| Public gates | `getPublicSchoolBySlug` / `getSchoolForLandingAccess` (`src/lib/public.ts:29-66`) — approved+published | Same gate semantics apply to WhatsApp. |
-| Persistence shape | `messages` rows hold `UIMessage` **parts** (`schema.ts:375-396`, `ai@7.0.84` idiom) | A text channel can reuse parts verbatim (text parts + tool parts). |
-| Delivery state machine pattern | `email_deliveries`: `pending→claimed→sent→delivered\|bounced\|complained`, retryable `failed`, terminal `dead`, five started executions, minute-based backoff; `FOR UPDATE SKIP LOCKED` fresh/retry lanes, unique `providerIdempotencyKey`, `providerId` correlation | Shared policy in `src/lib/retry-policy.ts`; WhatsApp has seconds-based in-run retries (§1.6). |
-| Webhook route pattern | `src/app/api/webhooks/resend/route.ts:7-49` — raw `request.text()`, size cap 64 KB → 413, signature verify, fast 200 ack, map to state enum | Copy for `/api/webhooks/whatsapp`. |
-| Degradable dev pattern | `src/lib/dev-flags.ts` (`isLocalEmailNoop`) — non-prod + missing key → stub that **still advances the real state machine** (`deliveries.ts:96-110`) | Template for `isLocalWhatsAppNoop()`. |
+| Layer                          | Where                                                                                                                                                                                                                                                                                                                                                            | Why it survives                                                                               |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Assistant                      | `src/lib/ai/assistant.ts` — `ToolLoopAgent` + `stopWhen: isStepCount(8)` + tools `list_trial_offerings` / `list_trial_occurrences` / `prepare_booking` / `request_contact`; WhatsApp calls its `completedReply`. Model from `src/lib/ai/language-model.ts`: `gateway(BOOKING_AGENT_MODEL)`, or a scripted local model outside production without a Gateway token | Pure function of (school, school catalog, messages). No browser or stream dependency.         |
+| Immutable safety rules         | `src/lib/ai/instructions.ts` (`PLATFORM_INSTRUCTIONS`) — the assistant never tells someone they are booked or will be contacted; booking and contact requests still need their confirmation through the platform. Tenant data is delimited and treated as untrusted (`assertTenantCannotOverride` test). Tool-specific requirements live in `src/lib/ai/tools/`. | Honesty and hostile-input invariants, channel-independent.                                    |
+| Slot math                      | `src/lib/schedule/occurrences.ts:77-145` (`listOpenSlots`, 14-day horizon, 120-min lead) + `slot-id.ts` encode/parse                                                                                                                                                                                                                                             | Pure.                                                                                         |
+| Booking write core             | `src/lib/schedule/book-slot.ts` — single transaction, `(school_id, idempotency_key)` replay, `FOR UPDATE`, atomic `bookedCount < capacity` increment, contact/participant upsert, delivery enqueue, funnel event                                                                                                                                                 | The canonical write path; WhatsApp calls it with platform-minted keys.                        |
+| Public gates                   | `getPublicSchoolBySlug` / `getSchoolForLandingAccess` (`src/lib/public.ts:29-66`) — approved+published                                                                                                                                                                                                                                                           | Same gate semantics apply to WhatsApp.                                                        |
+| Persistence shape              | `messages` rows hold `UIMessage` **parts** (`schema.ts:375-396`, `ai@7.0.84` idiom)                                                                                                                                                                                                                                                                              | A text channel can reuse parts verbatim (text parts + tool parts).                            |
+| Delivery state machine pattern | `email_deliveries`: `pending→claimed→sent→delivered\|bounced\|complained`, retryable `failed`, terminal `dead`, five started executions, minute-based backoff; `FOR UPDATE SKIP LOCKED` fresh/retry lanes, unique `providerIdempotencyKey`, `providerId` correlation                                                                                             | Shared policy in `src/lib/retry-policy.ts`; WhatsApp has seconds-based in-run retries (§1.6). |
+| Webhook route pattern          | `src/app/api/webhooks/resend/route.ts:7-49` — raw `request.text()`, size cap 64 KB → 413, signature verify, fast 200 ack, map to state enum                                                                                                                                                                                                                      | Copy for `/api/webhooks/whatsapp`.                                                            |
+| Degradable dev pattern         | `src/lib/dev-flags.ts` (`isLocalEmailNoop`) — non-prod + missing key → stub that **still advances the real state machine** (`deliveries.ts:96-110`)                                                                                                                                                                                                              | Template for `isLocalWhatsAppNoop()`.                                                         |
 
 ### 1.2 What becomes a channel adapter (web-specific today)
 
-| Concern | Web today | WhatsApp adapter |
-| --- | --- | --- |
-| Transport | `useChat` + `DefaultChatTransport` → POST `/api/chat`, SSE streaming (`booking-chat.tsx:47-57`) | Server-side driver: inbound webhook → load stored messages → `validateUIMessages` → run agent to completion → extract text parts → Graph API send. No SSE; needs a run-to-completion variant of the stream helpers. |
-| Conversation identity | `resumeTokenHash` = SHA-256 of a per-slug **localStorage** token, **globally unique** (`schema.ts:349,356`), first-school-wins + 403 on cross-school reuse (`chat/route.ts:87-99`) | Key by **(school_id, wa_id)** (Meta-verified phone). New nullable/wa-specific key on `conversations`; `resumeTokenHash` stays for web. |
-| Trust model | Turnstile + email/recipient quotas + client-minted idempotency UUID | Meta webhook signature (`X-Hub-Signature-256` over raw body with app secret), wa_id identity, wamid-based dedupe, per-wa_id quotas. |
-| Booking/lead entry | Forms (`POST /api/bookings`, `/api/leads`) after agent `prepare_booking` | Agent collects; **platform writes** via `bookSlot` after explicit in-chat confirmation (product decision A). |
-| History | GET `/api/chat` exists but client discards it (known gap, `docs/known-gaps.md`) | Server drives history directly from DB — no client gap. |
+| Concern               | Web today                                                                                                                                                                          | WhatsApp adapter                                                                                                                                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Transport             | `useChat` + `DefaultChatTransport` → POST `/api/chat`, SSE streaming (`booking-chat.tsx:47-57`)                                                                                    | Server-side driver: inbound webhook → load stored messages → `validateUIMessages` → run agent to completion → extract text parts → Graph API send. No SSE; needs a run-to-completion variant of the stream helpers. |
+| Conversation identity | `resumeTokenHash` = SHA-256 of a per-slug **localStorage** token, **globally unique** (`schema.ts:349,356`), first-school-wins + 403 on cross-school reuse (`chat/route.ts:87-99`) | Key by **(school_id, wa_id)** (Meta-verified phone). New nullable/wa-specific key on `conversations`; `resumeTokenHash` stays for web.                                                                              |
+| Trust model           | Turnstile + email/recipient quotas + client-minted idempotency UUID                                                                                                                | Meta webhook signature (`X-Hub-Signature-256` over raw body with app secret), wa_id identity, wamid-based dedupe, per-wa_id quotas.                                                                                 |
+| Booking/lead entry    | Forms (`POST /api/bookings`, `/api/leads`) after agent `prepare_booking`                                                                                                           | Agent collects; **platform writes** via `bookSlot` after explicit in-chat confirmation (product decision A).                                                                                                        |
+| History               | GET `/api/chat` exists but client discards it (known gap, `docs/known-gaps.md`)                                                                                                    | Server drives history directly from DB — no client gap.                                                                                                                                                             |
 
 ### 1.3 Data flow
 
@@ -120,6 +120,7 @@ WHATSAPP_SYSTEM_USER_TOKEN   # permanent System User token (business_management,
 WHATSAPP_API_VERSION         # default v23.0 (per provided Meta docs; parameterized everywhere)
 WHATSAPP_GRAPH_BASE          # optional override, default https://graph.facebook.com
 ```
+
 Local dev: no values needed — `isLocalWhatsAppNoop()` (non-prod + no token) logs + advances
 `whatsapp_deliveries` to terminal states. `bun run setup` prints a hint and leaves them blank.
 `bun run doctor` gains `WHATSAPP_*` report lines.
@@ -217,6 +218,7 @@ shippable and adds to the previous. **Phases 1–5 are done.** Only Phase 6 rema
 contact email, `whatsapp_deliveries`, stub dev flag, doctor lines.
 
 **Concrete changes**
+
 - Drizzle migration: `schools + whatsapp_phone_number_id + whatsapp_waba_id` (nullable);
   `contacts.email` → nullable + unique `(school_id, phone)` (existing `(school_id, email)` unchanged);
   new `whatsapp_deliveries` table (state machine + provider idempotency key unique + indexes on
@@ -227,6 +229,7 @@ contact email, `whatsapp_deliveries`, stub dev flag, doctor lines.
 - `src/lib/email/deliveries.ts` untouched (no email behavior change).
 
 **Acceptance criteria**
+
 - `bun run setup` + `bun run dev` succeed with no `WHATSAPP_*` values.
 - `bun run test` green (unit); existing integration suite green.
 - `bun run doctor` lists the stub state.
@@ -243,6 +246,7 @@ this phase, relax consumers in Phase 5 when the actual no-email path lands.
 verification over raw body, size cap, wa-message dedupe, fast 200 ack.
 
 **Concrete changes**
+
 - `src/app/api/webhooks/whatsapp/route.ts`:
   - GET: `hub.mode==="subscribe"` + `hub.verify_token===WHATSAPP_VERIFY_TOKEN` → 200 **text/plain**
     `hub.challenge`; mismatch → 403. Missing env → 500 `unconfigured` (Resend pattern).
@@ -258,6 +262,7 @@ verification over raw body, size cap, wa-message dedupe, fast 200 ack.
 413; duplicate wamid → single row.
 
 **Resolved decisions at this phase**
+
 - **D1 — env names.** `WHATSAPP_APP_SECRET` / `WHATSAPP_VERIFY_TOKEN` /
   `WHATSAPP_SYSTEM_USER_TOKEN` / `WHATSAPP_API_VERSION` / `WHATSAPP_GRAPH_BASE` (both infra spikes converge
   here). **RESOLVED (decision L): use these names.**
@@ -274,6 +279,7 @@ route comment. Concurrency: Meta retries — dedupe by wamid is the safety net, 
 same single-flight, message caps, and conversation lifecycle as web (ADR-0002).
 
 **Concrete changes**
+
 - `conversations` + `wa_id_hash` (nullable) + partial unique `(school_id, wa_id_hash)`; keep
   `resumeTokenHash` + global unique for web.
 - Extend `/api/webhooks/whatsapp` to create/find the conversation from `metadata.phone_number_id` → school
@@ -288,6 +294,7 @@ concurrent inbound on the same conversation is serialized. Per ADR-0002, a conve
 Ended conversations and their transcripts are kept; there is no transcript purge or retention deadline.
 
 **Resolved decisions at this phase**
+
 - **D2 — conversation message cap.** Web caps at 30 messages (429 `limit`); a long-lived WhatsApp thread
   would hit it abruptly. Options: keep 30 (simplest, symmetric), raise for WhatsApp, or window-reset.
   **RESOLVED (decision I): keep 30 for v1**; revisit with product when threads grow.
@@ -304,6 +311,7 @@ Ended conversations and their transcripts are kept; there is no transcript purge
 outbound queue, 24h-window enforcement plus explicit utility templates, status webhook.
 
 **Concrete changes**
+
 - Server-side agent driver: load history → `validateUIMessages([...history, inbound])` →
   the assistant's `completedReply(...)`, run **to completion** (see D3) → extract text parts →
   enqueue reply.
@@ -320,6 +328,7 @@ outbound queue, 24h-window enforcement plus explicit utility templates, status w
 state; no real Meta credentials anywhere; 24h-window logic unit-tested with synthetic `last_inbound_at`.
 
 **Resolved decisions at this phase**
+
 - **D3 — run-to-completion driver.** The existing helpers are SSE-oriented; plan a non-streaming
   "collect parts" wrapper around the agent (still `ToolLoopAgent`, same tools/rules). **RESOLVED: small
   internal helper, no public API change.**
@@ -344,6 +353,7 @@ row permanently. Only explicit utility-template deliveries can send outside the 
 model with Meta signature + wa_id identity + per-wa_id quotas.
 
 **Concrete changes**
+
 - **Leads**: `POST /api/leads`-equivalent path driven by the webhook after the agent collects consent, or a
   shared `src/lib/leads/create-lead.ts`; synthesize a landing session `utm_source='whatsapp'` (D6);
   contact upsert keyed `(school_id, phone)` when no email (Phase 1 schema); owner-lead delivery stays
@@ -360,6 +370,7 @@ model with Meta signature + wa_id identity + per-wa_id quotas.
 triggers 429-equivalent.
 
 **Resolved decisions at this phase**
+
 - **D6 — landing sessions on WhatsApp.** **RESOLVED (decision J): synthesize a pseudo session
   (`utm_source='whatsapp'`, keyed by wa conversation)** so `leads.landingSessionId NOT NULL` stays intact and
   funnel analytics keep working.
@@ -392,6 +403,7 @@ Vercel → App Review if non-role users → pilot school → publish.
 template send outside the window; a real WhatsApp booking in staging then production.
 
 **Resolved decisions at this phase**
+
 - **D10 — ship order.** **RESOLVED (decision D): leads first, bookings second**, one pilot school approved +
   published, dashboard flag per school toggles WhatsApp active.
 - **D11 — timed wake cadence in prod.** Active WhatsApp runs now retry within seconds (§1.6).
@@ -406,20 +418,20 @@ All spike-pass open questions are resolved exactly as confirmed below. These are
 implementer; reversing one is a product decision, not an implementation detail. The inline phase blocks
 (D1–D11) restate these at the point of impact.
 
-| # | Decision | Resolution (confirmed 2026-09-11) | Binds at |
-| --- | --- | --- | --- |
-| A | Do bookings/leads get created over WhatsApp (platform writes) or deep-link to `/s/<slug>`? | **Platform writes** via `bookSlot` after in-chat confirmation (full funnel in WhatsApp); deep-link is a fallback for incomplete data | Phase 5 |
-| B | WhatsApp contacts with no email? | `contacts.email` nullable + unique `(school_id, phone)`; WhatsApp-template confirmation when no email | Phase 1 schema, Phase 5 usage |
-| C | Tenancy model | **Shared Meta app + WABA, per-school `phone_number_id`** | Phase 5 (D9) |
-| D | Ship order | **Leads first, bookings second**, single pilot school, per-school toggle | Phase 6 (D10) |
-| E | Conversation identity over WhatsApp | `(school_id, wa_id)` key; `resumeTokenHash` untouched for web | Phase 3 |
-| F | Idempotency over WhatsApp | Platform-minted UUID per confirmation + wamid dedupe at webhook | Phase 5 (D7) |
-| G | Template library | Fillthemat-owned shared utility templates v1 | Phase 4 (D5) |
-| H | Send timing vs 24h window | inline send on inbound completion + existing cron for retries | Phase 4 (D4) |
-| I | Message cap on long-lived threads | keep 30 for v1 | Phase 3 (D2) |
-| J | Landing sessions for WhatsApp | synthesized pseudo-session `utm_source='whatsapp'` | Phase 5 (D6) |
-| K | Cancellation over WhatsApp | none in v1 (email-only path stays) | Phase 5 |
-| L | Webhook env names | `WHATSAPP_*` set above (converged across spikes) | Phase 2 (D1) |
+| #   | Decision                                                                                   | Resolution (confirmed 2026-09-11)                                                                                                    | Binds at                      |
+| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| A   | Do bookings/leads get created over WhatsApp (platform writes) or deep-link to `/s/<slug>`? | **Platform writes** via `bookSlot` after in-chat confirmation (full funnel in WhatsApp); deep-link is a fallback for incomplete data | Phase 5                       |
+| B   | WhatsApp contacts with no email?                                                           | `contacts.email` nullable + unique `(school_id, phone)`; WhatsApp-template confirmation when no email                                | Phase 1 schema, Phase 5 usage |
+| C   | Tenancy model                                                                              | **Shared Meta app + WABA, per-school `phone_number_id`**                                                                             | Phase 5 (D9)                  |
+| D   | Ship order                                                                                 | **Leads first, bookings second**, single pilot school, per-school toggle                                                             | Phase 6 (D10)                 |
+| E   | Conversation identity over WhatsApp                                                        | `(school_id, wa_id)` key; `resumeTokenHash` untouched for web                                                                        | Phase 3                       |
+| F   | Idempotency over WhatsApp                                                                  | Platform-minted UUID per confirmation + wamid dedupe at webhook                                                                      | Phase 5 (D7)                  |
+| G   | Template library                                                                           | Fillthemat-owned shared utility templates v1                                                                                         | Phase 4 (D5)                  |
+| H   | Send timing vs 24h window                                                                  | inline send on inbound completion + existing cron for retries                                                                        | Phase 4 (D4)                  |
+| I   | Message cap on long-lived threads                                                          | keep 30 for v1                                                                                                                       | Phase 3 (D2)                  |
+| J   | Landing sessions for WhatsApp                                                              | synthesized pseudo-session `utm_source='whatsapp'`                                                                                   | Phase 5 (D6)                  |
+| K   | Cancellation over WhatsApp                                                                 | none in v1 (email-only path stays)                                                                                                   | Phase 5                       |
+| L   | Webhook env names                                                                          | `WHATSAPP_*` set above (converged across spikes)                                                                                     | Phase 2 (D1)                  |
 
 ---
 
@@ -443,9 +455,9 @@ implementer; reversing one is a product decision, not an implementation detail. 
    public rollout.
 8. **Env on Vercel**: the five `WHATSAPP_*` vars; keep `bun run setup`-managed local env separate.
 9. **Monitoring/idempotency/retry**: inspect WhatsApp jobs/deliveries `failed` and `dead`, safe terminal
-    logs and WhatsApp cron counters (not maintenance `cron_runs`); wamid dedupe, five-execution cap,
-    fresh/retry lanes, in-run retry budget and per-wa_id caps. Closed-window text fails closed (`131047`),
-    with no generic template fallback. Operator alerting is absent; #78 must land before the pilot.
+   logs and WhatsApp cron counters (not maintenance `cron_runs`); wamid dedupe, five-execution cap,
+   fresh/retry lanes, in-run retry budget and per-wa_id caps. Closed-window text fails closed (`131047`),
+   with no generic template fallback. Operator alerting is absent; #78 must land before the pilot.
 10. **Rollout order**: staging pilot school → real test phone → leads → bookings → second school → publish.
 
 ---
@@ -463,9 +475,9 @@ implementer; reversing one is a product decision, not an implementation detail. 
 
 ---
 
-*Spike sources: `.worktrees/director-mtx2b4fb-{1,2,3}-*/docs/spike-{1,3}-notes.md`, `spike-{2,5}-notes.md`,
+_Spike sources: `.worktrees/director-mtx2b4fb-{1,2,3}-*/docs/spike-{1,3}-notes.md`, `spike-{2,5}-notes.md`,
 `spike-4-notes.md`. Grounding: `AGENTS.md`, `docs/local-development.md`, provided Meta docs (app creation +
-WhatsApp Cloud API Get Started, v23.0 endpoints), `ai@7.0.84` docs, `next@16.3.3` docs.*
+WhatsApp Cloud API Get Started, v23.0 endpoints), `ai@7.0.84` docs, `next@16.3.3` docs._
 
 ---
 

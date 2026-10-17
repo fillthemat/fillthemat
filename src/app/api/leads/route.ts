@@ -2,10 +2,7 @@ import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { createLead } from "@/lib/leads/create-lead";
 import { getRequestIp } from "@/lib/request";
 import { getPublicSchoolBySlug } from "@/lib/schools/public";
-import {
-  recipientQuotaExceeded,
-  requestBodyTooLarge,
-} from "@/lib/security/limits";
+import { recipientQuotaExceeded, requestBodyTooLarge } from "@/lib/security/limits";
 import { verifyTurnstile } from "@/lib/security/turnstile";
 import { leadRequestSchema } from "@/lib/validation";
 

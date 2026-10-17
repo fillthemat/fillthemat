@@ -62,9 +62,7 @@ describe("listOpenSlots", () => {
       occurrences: [],
       now,
     });
-    expect(
-      slots.some((slot) => slot.startAt.toISOString().startsWith("2026-03-08")),
-    ).toBe(false);
+    expect(slots.some((slot) => slot.startAt.toISOString().startsWith("2026-03-08"))).toBe(false);
   });
 
   it("uses the earlier offset for a repeated fall-back local time", () => {
@@ -76,9 +74,7 @@ describe("listOpenSlots", () => {
       occurrences: [],
       now,
     });
-    const fold = slots.find((slot) =>
-      slot.startAt.toISOString().startsWith("2026-11-01"),
-    );
+    const fold = slots.find((slot) => slot.startAt.toISOString().startsWith("2026-11-01"));
     expect(fold?.startAt.toISOString()).toBe("2026-11-01T05:30:00.000Z");
   });
 
@@ -91,14 +87,9 @@ describe("listOpenSlots", () => {
       occurrences: [],
       now,
     });
-    expect(slots[0]?.startAt.toISOString()).not.toBe(
-      "2026-03-09T22:00:00.000Z",
-    );
+    expect(slots[0]?.startAt.toISOString()).not.toBe("2026-03-09T22:00:00.000Z");
     expect(
-      slots.every(
-        (slot) =>
-          slot.startAt.getTime() <= now.getTime() + 14 * 24 * 60 * 60 * 1000,
-      ),
+      slots.every((slot) => slot.startAt.getTime() <= now.getTime() + 14 * 24 * 60 * 60 * 1000),
     ).toBe(true);
   });
 
@@ -119,9 +110,7 @@ describe("listOpenSlots", () => {
       ],
       now,
     });
-    expect(
-      slots.some((slot) => slot.startAt.getTime() === startAt.getTime()),
-    ).toBe(false);
+    expect(slots.some((slot) => slot.startAt.getTime() === startAt.getTime())).toBe(false);
   });
 });
 
@@ -131,8 +120,6 @@ describe("isAgeEligible", () => {
     expect(isAgeEligible(6, { minimumAge: 6, maximumAge: 12 })).toBe(true);
     expect(isAgeEligible(12, { minimumAge: 6, maximumAge: 12 })).toBe(true);
     expect(isAgeEligible(13, { minimumAge: 6, maximumAge: 12 })).toBe(false);
-    expect(isAgeEligible(40, { minimumAge: null, maximumAge: null })).toBe(
-      true,
-    );
+    expect(isAgeEligible(40, { minimumAge: null, maximumAge: null })).toBe(true);
   });
 });

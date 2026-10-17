@@ -1,15 +1,7 @@
+import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
-import { eq, inArray } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { schools, whatsappDeliveries } from "@/db/schema";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
@@ -24,8 +16,9 @@ const sql = authSql();
 const ownerId = randomUUID();
 const suffix = randomUUID();
 const phoneNumberId = `delivery-retry-${suffix}`;
-const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } =
-  scopedWhatsAppRunner(() => [phoneNumberId]);
+const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } = scopedWhatsAppRunner(() => [
+  phoneNumberId,
+]);
 const initialNow = new Date("2019-01-01T12:00:00Z");
 let now = initialNow;
 let schoolId: string;
@@ -42,16 +35,10 @@ beforeAll(async () => {
   schoolId = seeded.schoolId;
 });
 afterEach(async () => {
-  if (ids.length)
-    await db
-      .delete(whatsappDeliveries)
-      .where(inArray(whatsappDeliveries.id, ids));
+  if (ids.length) await db.delete(whatsappDeliveries).where(inArray(whatsappDeliveries.id, ids));
   ids.length = 0;
   now = initialNow;
-  await db
-    .update(schools)
-    .set({ approvedAt: new Date() })
-    .where(eq(schools.id, schoolId));
+  await db.update(schools).set({ approvedAt: new Date() }).where(eq(schools.id, schoolId));
   vi.restoreAllMocks();
 });
 afterAll(async () => {
@@ -59,9 +46,7 @@ afterAll(async () => {
   await sql.end({ timeout: 5 });
 });
 
-async function enqueue(
-  overrides: Partial<typeof whatsappDeliveries.$inferInsert> = {},
-) {
+async function enqueue(overrides: Partial<typeof whatsappDeliveries.$inferInsert> = {}) {
   const id = await enqueueWhatsAppDelivery(
     {
       schoolId,
@@ -76,17 +61,11 @@ async function enqueue(
   if (!id) throw new Error("test enqueue failed");
   ids.push(id);
   if (Object.keys(overrides).length)
-    await db
-      .update(whatsappDeliveries)
-      .set(overrides)
-      .where(eq(whatsappDeliveries.id, id));
+    await db.update(whatsappDeliveries).set(overrides).where(eq(whatsappDeliveries.id, id));
   return id;
 }
 async function delivery(id: string) {
-  const [row] = await db
-    .select()
-    .from(whatsappDeliveries)
-    .where(eq(whatsappDeliveries.id, id));
+  const [row] = await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.id, id));
   return row;
 }
 function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
@@ -102,14 +81,12 @@ function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
 describe("bounded WhatsApp delivery executions through the worker", () => {
   it("records an unknown send before retrying instead of treating it as a rejection", async () => {
     const id = await enqueue();
-    const send = vi.fn(
-      async (): Promise<WhatsAppSendOutcome> => ({
-        ok: false,
-        kind: "unknown",
-        reason: "network_error",
-        message: "Response lost",
-      }),
-    );
+    const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+      ok: false,
+      kind: "unknown",
+      reason: "network_error",
+      message: "Response lost",
+    }));
     await drainDueWhatsAppDeliveries(randomUUID(), 25, dependencies(send));
     expect(await delivery(id)).toMatchObject({
       state: "failed",
@@ -156,17 +133,12 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
     await started;
     try {
       now = new Date("2019-01-01T12:06:00Z");
-      const send = vi.fn(
-        async (): Promise<WhatsAppSendOutcome> => ({
-          ok: true,
-          kind: "accepted",
-          providerId: "must-not-send",
-        }),
-      );
-      const recovered = await runWhatsAppWorkerOnce(
-        randomUUID(),
-        dependencies(send),
-      );
+      const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+        ok: true,
+        kind: "accepted",
+        providerId: "must-not-send",
+      }));
+      const recovered = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
       expect(recovered.deliveries).toMatchObject({ claimed: 0, dead: 1 });
       expect(send).not.toHaveBeenCalled();
     } finally {
@@ -184,14 +156,8 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
   it("backfills legacy accepted failures to at least one execution without changing other states or reducing counts", async () => {
     const statements = readdirSync("drizzle")
       .filter((name) => name.endsWith(".sql"))
-      .flatMap((name) =>
-        readFileSync(`drizzle/${name}`, "utf8").split(
-          "--> statement-breakpoint",
-        ),
-      );
-    const backfill = statements.find((statement) =>
-      statement.includes("Legacy accepted sends"),
-    );
+      .flatMap((name) => readFileSync(`drizzle/${name}`, "utf8").split("--> statement-breakpoint"));
+    const backfill = statements.find((statement) => statement.includes("Legacy accepted sends"));
     expect(backfill).toBeDefined();
     if (!backfill) throw new Error("missing legacy delivery backfill");
     await sql.begin(async (tx) => {
@@ -205,12 +171,7 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
         ('accepted', 'sent', 0, 'legacy:sent'),
         ('delivered', 'delivered', 0, 'legacy:delivered'),
         ('read', 'read', 0, 'legacy:read')`;
-      await tx.unsafe(
-        backfill.replaceAll(
-          '"app"."whatsapp_deliveries"',
-          'pg_temp."wa_backfill"',
-        ),
-      );
+      await tx.unsafe(backfill.replaceAll('"app"."whatsapp_deliveries"', 'pg_temp."wa_backfill"'));
       const rows = await tx`SELECT id, attempts FROM wa_backfill ORDER BY id`;
       expect(rows.map((row) => [row.id, row.attempts])).toEqual([
         ["accepted", 0],
@@ -321,28 +282,21 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
       });
     }
   });
-  it.each([
-    131047, 131026, 190, 250, 100, 132001, 132015, 368, 130403, 131050, 131049,
-  ])(
+  it.each([131047, 131026, 190, 250, 100, 132001, 132015, 368, 130403, 131050, 131049])(
     "stops permanent Meta class %i after one execution and logs only structured fields",
     async (code) => {
       const id = await enqueue();
       const log = vi.spyOn(console, "error").mockImplementation(() => {});
-      const send = vi.fn(
-        async (): Promise<WhatsAppSendOutcome> => ({
-          ok: false,
-          kind: "whatsapp_error",
-          code,
-          subcode: 123,
-          details: "Private details",
-          status: 400,
-          message: "Private provider error",
-        }),
-      );
-      const result = await runWhatsAppWorkerOnce(
-        randomUUID(),
-        dependencies(send),
-      );
+      const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+        ok: false,
+        kind: "whatsapp_error",
+        code,
+        subcode: 123,
+        details: "Private details",
+        status: 400,
+        message: "Private provider error",
+      }));
+      const result = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
       expect(await delivery(id)).toMatchObject({
         state: "dead",
         attempts: 1,
@@ -447,22 +401,13 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
         "2019-01-01T12:02:30Z",
       ];
       for (let execution = 1; execution <= 5; execution++) {
-        const result = await drainDueWhatsAppDeliveries(
-          randomUUID(),
-          25,
-          dependencies(send),
-        );
+        const result = await drainDueWhatsAppDeliveries(randomUUID(), 25, dependencies(send));
         const row = await delivery(id);
         expect(row).toMatchObject({
           state: execution === 5 ? "dead" : "failed",
           attempts: execution,
-          failureReason:
-            outcome.kind === "unknown" ? outcome.reason : outcome.kind,
-          sendOutcome: [
-            "unknown",
-            "network_error",
-            "malformed_response",
-          ].includes(outcome.kind)
+          failureReason: outcome.kind === "unknown" ? outcome.reason : outcome.kind,
+          sendOutcome: ["unknown", "network_error", "malformed_response"].includes(outcome.kind)
             ? "unknown"
             : "rejected",
           terminalCause: execution === 5 ? "attempts_exhausted" : null,
@@ -473,13 +418,7 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
         if (execution < 5) {
           expect(row.nextAttemptAt).toEqual(new Date(due[execution - 1]));
           expect(
-            (
-              await drainDueWhatsAppDeliveries(
-                randomUUID(),
-                25,
-                dependencies(send),
-              )
-            ).claimed,
+            (await drainDueWhatsAppDeliveries(randomUUID(), 25, dependencies(send))).claimed,
           ).toBe(0);
           now = row.nextAttemptAt;
         }
@@ -503,17 +442,12 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
         failureReason: "network_error",
       });
       const log = vi.spyOn(console, "error").mockImplementation(() => {});
-      const send = vi.fn(
-        async (): Promise<WhatsAppSendOutcome> => ({
-          ok: true,
-          kind: "accepted",
-          providerId: "must-not-send",
-        }),
-      );
-      const result = await runWhatsAppWorkerOnce(
-        randomUUID(),
-        dependencies(send),
-      );
+      const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+        ok: true,
+        kind: "accepted",
+        providerId: "must-not-send",
+      }));
+      const result = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
       expect(await delivery(id)).toMatchObject({
         state: attempts === 5 ? "dead" : "pending",
         attempts,
@@ -542,10 +476,7 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
           ? { ok: true, kind, providerId: "fake:accepted" }
           : { ok: true, kind, providerId: null };
       });
-      const result = await runWhatsAppWorkerOnce(
-        randomUUID(),
-        dependencies(send),
-      );
+      const result = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
       expect(result.deliveries.sent).toBe(1);
       expect(await delivery(id)).toMatchObject({
         state: "sent",
@@ -567,18 +498,13 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
       failureReason: "whatsapp_error",
       failureCode: 131016,
     });
-    const send = vi.fn(
-      async (): Promise<WhatsAppSendOutcome> => ({
-        ok: true,
-        kind: "accepted",
-        providerId: "must-not-send",
-      }),
-    );
+    const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+      ok: true,
+      kind: "accepted",
+      providerId: "must-not-send",
+    }));
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const result = await runWhatsAppWorkerOnce(
-      randomUUID(),
-      dependencies(send),
-    );
+    const result = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
     expect(send).not.toHaveBeenCalled();
     expect(await delivery(id)).toMatchObject({
       state: "dead",
@@ -590,11 +516,7 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
     });
     expect(result.deliveries.dead).toBe(1);
   });
-  it.each([
-    "school_not_approved",
-    "text_window_closed",
-    "interactive_window_closed",
-  ])(
+  it.each(["school_not_approved", "text_window_closed", "interactive_window_closed"])(
     "stops %s without an outbound execution or transport request",
     async (reason) => {
       const id = await enqueue(
@@ -609,17 +531,12 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
             },
       );
       if (reason === "school_not_approved")
-        await db
-          .update(schools)
-          .set({ approvedAt: null })
-          .where(eq(schools.id, schoolId));
-      const send = vi.fn(
-        async (): Promise<WhatsAppSendOutcome> => ({
-          ok: true,
-          kind: "accepted",
-          providerId: "must-not-send",
-        }),
-      );
+        await db.update(schools).set({ approvedAt: null }).where(eq(schools.id, schoolId));
+      const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+        ok: true,
+        kind: "accepted",
+        providerId: "must-not-send",
+      }));
       const log = vi.spyOn(console, "error").mockImplementation(() => {});
       const runId = randomUUID();
       const result = await runWhatsAppWorkerOnce(runId, dependencies(send));
@@ -628,8 +545,7 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
         state: "dead",
         attempts: 0,
         terminalCause: "permanent",
-        failureReason:
-          reason === "school_not_approved" ? reason : "window_closed",
+        failureReason: reason === "school_not_approved" ? reason : "window_closed",
         claimedAt: null,
         claimedBy: null,
         body: "Private message",
@@ -642,8 +558,7 @@ describe("bounded WhatsApp delivery executions through the worker", () => {
         deferred: 0,
       });
       expect(
-        (await runWhatsAppWorkerOnce(randomUUID(), dependencies(send)))
-          .deliveries.claimed,
+        (await runWhatsAppWorkerOnce(randomUUID(), dependencies(send))).deliveries.claimed,
       ).toBe(0);
       expect(log).toHaveBeenCalledTimes(1);
       const event = JSON.parse(log.mock.calls[0][0]);

@@ -17,9 +17,7 @@ vi.mock("drizzle-orm/postgres-js/migrator", () => ({
 }));
 
 it("shares the production script, refuses unsafe targets and redacts failures", () => {
-  expect(scripts["db:migrate:deploy"]).toBe(
-    "bun --no-env-file scripts/migrate-prod.ts",
-  );
+  expect(scripts["db:migrate:deploy"]).toBe("bun --no-env-file scripts/migrate-prod.ts");
   expect(scripts["db:migrate:prod"]).toContain(
     "--env-file=.env.production.local scripts/migrate-prod.ts",
   );
@@ -38,9 +36,7 @@ it("shares the production script, refuses unsafe targets and redacts failures", 
         ...process.env,
         VERCEL: vercel,
         VERCEL_ENV: environment,
-        DIRECT_URL: host
-          ? `postgres://private_user:private_password@${host}/private_db`
-          : "",
+        DIRECT_URL: host ? `postgres://private_user:private_password@${host}/private_db` : "",
       },
       encoding: "utf8",
       timeout: 15_000,
@@ -49,23 +45,13 @@ it("shares the production script, refuses unsafe targets and redacts failures", 
     expect(result.stderr).toContain("Production migration failed");
     if (!vercel && environment === "" && host === "host.invalid")
       expect(
-        JSON.parse(
-          result.stderr.split("\n").find((line) => line.startsWith("{")) ??
-            "{}",
-        ).code,
+        JSON.parse(result.stderr.split("\n").find((line) => line.startsWith("{")) ?? "{}").code,
       ).toBeTypeOf("string");
     if (host.endsWith(":6543")) {
       expect(result.stderr).toContain('"code":"TRANSACTION_POOLER"');
-      expect(result.stderr).toContain(
-        "Use a direct or session-pooler URL, not port 6543",
-      );
+      expect(result.stderr).toContain("Use a direct or session-pooler URL, not port 6543");
     }
-    for (const secret of [
-      "private_user",
-      "private_password",
-      "private_db",
-      host,
-    ].filter(Boolean))
+    for (const secret of ["private_user", "private_password", "private_db", host].filter(Boolean))
       expect(result.stderr).not.toContain(secret);
   }
 });
@@ -73,19 +59,12 @@ it("shares the production script, refuses unsafe targets and redacts failures", 
 it("preserves the migration error when unlock or disconnect also fail", async () => {
   const original = Object.assign(new Error("SQL failed"), { code: "42P01" });
   for (const cleanup of ["unlock", "end", "both"]) {
-    transport.query
-      .mockReset()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
-    if (cleanup !== "end")
-      transport.query.mockRejectedValueOnce(new Error("unlock failed"));
+    transport.query.mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    if (cleanup !== "end") transport.query.mockRejectedValueOnce(new Error("unlock failed"));
     else transport.query.mockResolvedValueOnce([]);
     transport.end.mockReset();
-    if (cleanup !== "unlock")
-      transport.end.mockRejectedValueOnce(new Error("disconnect failed"));
+    if (cleanup !== "unlock") transport.end.mockRejectedValueOnce(new Error("disconnect failed"));
     transport.migrate.mockRejectedValue(original);
-    await expect(migrateProduction("postgres://host.invalid/db")).rejects.toBe(
-      original,
-    );
+    await expect(migrateProduction("postgres://host.invalid/db")).rejects.toBe(original);
   }
 });

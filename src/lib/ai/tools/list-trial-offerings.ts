@@ -3,9 +3,7 @@ import { z } from "zod";
 import { isAgeEligible } from "@/lib/schedule/occurrences";
 import type { AssistantContext } from "../context";
 
-export function listTrialOfferings({
-  catalog: { offerings },
-}: AssistantContext) {
+export function listTrialOfferings({ catalog: { offerings } }: AssistantContext) {
   return tool({
     description:
       "List trial offerings. Optionally filter by participant age in years. Eligibility is determined only by offering age ranges. Do not override them.",

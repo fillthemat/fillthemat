@@ -44,7 +44,7 @@ All findings below were checked against the actual Phase 4 code on
 
 This keeps Phase 4 on the Hobby plan, is the fewest-moving-parts design, and
 gives the fastest perceived reply cadence. Treat Supabase `pg_cron` as the
-fallback for *later* if time-based retry cadence ever needs to be sub-daily
+fallback for _later_ if time-based retry cadence ever needs to be sub-daily
 without paying for Vercel Pro (sketch provided in §Q1).
 
 ---
@@ -120,7 +120,7 @@ that loop, so `pg_cron` has exactly two shapes:
    stays exactly as-is; the DB only replaces Vercel's scheduler. Claim and
    idempotency are **preserved** because the route still runs
    `claimDueWhatsAppJobs` (`FOR UPDATE SKIP LOCKED`) and `dedupe_key = wamid`.
-   The `pg_cron` job should *not* re-implement claiming.
+   The `pg_cron` job should _not_ re-implement claiming.
 2. **A pure-SQL worker that selects and claims inside Postgres.** Rejected:
    it cannot run the agent/LLM step, so it would have to move the whole worker
    into the DB or an Edge Function — a rewrite that sacrifices the Drizzle
@@ -184,7 +184,7 @@ Ops notes for this shape:
 - There is no re-run of a missed tick beyond pg_cron's own scheduler; a paused
   Free project misses every tick until unpaused.
 
-**Architecting soundness verdict:** it *is* architecturally sound as a
+**Architecting soundness verdict:** it _is_ architecturally sound as a
 scheduler substitute (the claim/idempotency contracts transfer cleanly), but it
 is still a **poll in disguise** — the reply cadence improvement is only "faster
 cron", and every tick adds a DB→Vercel HTTP hop plus a new failure mode (the
@@ -199,7 +199,7 @@ No — not without adding a long-running process that doesn't exist in this stac
 - **Queues are pull-based.** The Queues quickstart is explicit: "a pull-based
   Queue … consumers actively fetch Messages when they're ready to process
   them." `pgmq` gives a durable table + `pop`/`read` with a visibility window
-  and archived `a_*` tables, but *someone must call pop*. There is no push
+  and archived `a_*` tables, but _someone must call pop_. There is no push
   delivery to a dead-letter or to your app.
 - **Edge Functions are request-triggered, not resident.** They cannot run a
   persistent queue consumer. You'd still schedule Edge Function invocations
@@ -211,7 +211,7 @@ No — not without adding a long-running process that doesn't exist in this stac
   not a trigger swap.
 
 So every Supabase-native shape is still "a periodic poll in disguise" for this
-codebase. If queueing fidelity ever matters, `pgmq` is a *better* durable queue
+codebase. If queueing fidelity ever matters, `pgmq` is a _better_ durable queue
 than `whatsapp_jobs` polling is, but it does not change the wake-up problem.
 pgmq 1.5.1 also shipped a `delay` behavior change (changelog 2025-10-08) with
 upgrades paused briefly — notable but not a blocker here.
@@ -243,17 +243,17 @@ unless you already have a subscriber.
 **Vercel duration limits (docs fetched 2026-09-11, "Duration limits" table,
 fluid compute enabled by default):**
 
-| Plan | Default | Maximum |
-| --- | --- | --- |
-| Hobby | 300 s (5 min) | 300 s |
-| Pro | 300 s | 800 s (1800 s beta) |
+| Plan  | Default       | Maximum             |
+| ----- | ------------- | ------------------- |
+| Hobby | 300 s (5 min) | 300 s               |
+| Pro   | 300 s         | 800 s (1800 s beta) |
 
 So on Hobby the webhook's `after` callback has a 5-minute budget — far more
 than the agent loop needs (a tool-loop `agent.generate()` is typically single-
 digit-to-tens of seconds). The webhook still 200s fast (enqueue is awaited
 before `after`); the worker runs after the response is flushed.
 
-**Does it remove the cron entirely?** For *dispatch* of a fresh inbound
+**Does it remove the cron entirely?** For _dispatch_ of a fresh inbound
 message, yes — the reply is crafted in the same invocation instead of waiting
 for the next tick. It does **not** remove the need for a safety-net sweeper,
 because `after`/`waitUntil` is best-effort and time-based retries still need a
@@ -274,7 +274,7 @@ rather than "cron or nothing".
 "1.4.x"`, so production functions run on Vercel's Bun runtime. The Vercel
 `waitUntil` changelog (2024) names Node.js and Edge runtimes; the current Bun
 runtime docs I fetched do not list `after`/`waitUntil` support explicitly. If
-Bun does not honor `waitUntil`, the worst case is *not* data loss — the job row
+Bun does not honor `waitUntil`, the worst case is _not_ data loss — the job row
 is already committed (enqueue-then-ack), and the daily sweeper picks it up —
 it only forfeits the instant dispatch. Verification step before rollout: deploy
 a preview, send one inbound, and confirm the assistant reply lands within
@@ -334,22 +334,22 @@ the pinned Graph version before shipping (same `POST …/messages` path as text)
 work; generation time is additive and identical across options. Typing
 indicator is orthogonal and can be layered onto any option.
 
-| Option | p50 / p95 dispatch | Real reply latency | Cost | Ops burden | Failure modes | Idempotency | Moving parts |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| **0. Baseline: Hobby 1-min cron (PR #34)** | 30 s / ~57 s +gen | 35–75 s | $0 | none | **deploy fails on Hobby**; missed ticks; stuck `claimed` rows | preserved (dedupe_key + SKIP LOCKED) | 1 (Vercel) |
-| **1. Vercel Pro + 1-min cron** | 30 s / ~57 s +gen | 35–75 s | $20/mo | upgrade plan, keep `CRON_SECRET` | missed ticks; stuck `claimed` | preserved | 1 |
-| **2. Supabase `pg_cron` → pg_net → route (minute)** | 30 s / ~57 s +gen | 35–75 s | $0 on Vercel, **$25/mo Supabase Pro** for production pause-safety (Free: 1-wk pause) | enable 2 extensions + migration + Vault secret + monitor `cron.job_run_details`/`net._http_response` + egress allow-list | missed ticks; pg_net call can fail/timing-out; Free pause | preserved (the route claims) | 3 (Supabase, pg_net, Vercel) |
-| **2b. Same, sub-minute (10–30 s)** | 10–15 s / ~28 s +gen | 15–40 s | same as 2 | same, plus idle-wake mitigation | same, more invocations | preserved | 3 |
-| **3. `pgmq` + cron-pulled consumer** | = poll interval | same as 2/2b | same as 2 | queue mgmt + RLS/API exposure + consumer rewrite | visibility-window expiry vs claim crash overlap | equivalent (visibility timeout ≈ claim) | 4+ |
-| **3b. Realtime "always on"** | near-0 only w/ resident subscriber | seconds | new deployment target | build/subscribe/monitor a WS process | subscriber crash = silent | preserved | 5+ |
-| **4. Webhook `after()` + typing + daily sweeper (recommended)** | **~0 s** (same invocation) | **~1 s perceived (typing), actual = generation (≈5–20 s)** | **$0 (Hobby)** | no new infra; small route/worker edits; daily cron already Hobby-safe | crashed `after` → sweeper reclaims `claimed`; retries become daily | preserved | 1 (Vercel) + 1 daily cron |
+| Option                                                          | p50 / p95 dispatch                 | Real reply latency                                         | Cost                                                                                 | Ops burden                                                                                                               | Failure modes                                                      | Idempotency                             | Moving parts                 |
+| --------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | --------------------------------------- | ---------------------------- |
+| **0. Baseline: Hobby 1-min cron (PR #34)**                      | 30 s / ~57 s +gen                  | 35–75 s                                                    | $0                                                                                   | none                                                                                                                     | **deploy fails on Hobby**; missed ticks; stuck `claimed` rows      | preserved (dedupe_key + SKIP LOCKED)    | 1 (Vercel)                   |
+| **1. Vercel Pro + 1-min cron**                                  | 30 s / ~57 s +gen                  | 35–75 s                                                    | $20/mo                                                                               | upgrade plan, keep `CRON_SECRET`                                                                                         | missed ticks; stuck `claimed`                                      | preserved                               | 1                            |
+| **2. Supabase `pg_cron` → pg_net → route (minute)**             | 30 s / ~57 s +gen                  | 35–75 s                                                    | $0 on Vercel, **$25/mo Supabase Pro** for production pause-safety (Free: 1-wk pause) | enable 2 extensions + migration + Vault secret + monitor `cron.job_run_details`/`net._http_response` + egress allow-list | missed ticks; pg_net call can fail/timing-out; Free pause          | preserved (the route claims)            | 3 (Supabase, pg_net, Vercel) |
+| **2b. Same, sub-minute (10–30 s)**                              | 10–15 s / ~28 s +gen               | 15–40 s                                                    | same as 2                                                                            | same, plus idle-wake mitigation                                                                                          | same, more invocations                                             | preserved                               | 3                            |
+| **3. `pgmq` + cron-pulled consumer**                            | = poll interval                    | same as 2/2b                                               | same as 2                                                                            | queue mgmt + RLS/API exposure + consumer rewrite                                                                         | visibility-window expiry vs claim crash overlap                    | equivalent (visibility timeout ≈ claim) | 4+                           |
+| **3b. Realtime "always on"**                                    | near-0 only w/ resident subscriber | seconds                                                    | new deployment target                                                                | build/subscribe/monitor a WS process                                                                                     | subscriber crash = silent                                          | preserved                               | 5+                           |
+| **4. Webhook `after()` + typing + daily sweeper (recommended)** | **~0 s** (same invocation)         | **~1 s perceived (typing), actual = generation (≈5–20 s)** | **$0 (Hobby)**                                                                       | no new infra; small route/worker edits; daily cron already Hobby-safe                                                    | crashed `after` → sweeper reclaims `claimed`; retries become daily | preserved                               | 1 (Vercel) + 1 daily cron    |
 
 Notes:
 
 - Options 0/1/2/2b all keep the "silent until the full reply lands" feel unless
   the typing indicator is added; typing is the biggest single UX win and costs
   ~1 Graph call.
-- Supabase's "always on" is *not actually always-on* on their serverless
+- Supabase's "always on" is _not actually always-on_ on their serverless
   product: pg_cron is a scheduler and pgmq is a durable buffer; both still need
   an external waker. Only a resident consumer (3b) is truly push, and that's a
   new component this repo doesn't have.
@@ -439,12 +439,20 @@ invocation can't strand rows:
 
 ```ts
 // run before drainWhatsAppJobs / drainDueWhatsAppDeliveries
-await db.update(whatsappJobs).set({
-  state: "pending", claimedAt: null, claimedBy: null, updatedAt: new Date(),
-}).where(and(
-  eq(whatsappJobs.state, "claimed"),
-  lt(whatsappJobs.claimedAt, new Date(Date.now() - 5 * 60_000)),
-));
+await db
+  .update(whatsappJobs)
+  .set({
+    state: "pending",
+    claimedAt: null,
+    claimedBy: null,
+    updatedAt: new Date(),
+  })
+  .where(
+    and(
+      eq(whatsappJobs.state, "claimed"),
+      lt(whatsappJobs.claimedAt, new Date(Date.now() - 5 * 60_000)),
+    ),
+  );
 // … same shape for whatsappDeliveries …
 ```
 
@@ -480,8 +488,8 @@ Reasoning:
   $0 and with no new infrastructure.
 - **Identical correctness semantics.** Every Phase 4 invariant (wamid dedupe,
   `FOR UPDATE SKIP LOCKED`, single-flight `claimGenerating`, inline send on
-  completion) is reused untouched; `after()` only changes *who wakes the
-  worker and when*.
+  completion) is reused untouched; `after()` only changes _who wakes the
+  worker and when_.
 - **Supabase is the wrong place to fix the cadence problem.** pg_cron is
   scheduler-shaped, not event-shaped; it substitutes one poll for another,
   adds a DB→Vercel hop, and effectively implies Supabase Pro for production

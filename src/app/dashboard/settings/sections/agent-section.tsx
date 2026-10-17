@@ -29,29 +29,16 @@ export function AgentSection({
   logoUrl: string | null;
   primaryColor: string | null;
 }) {
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    reset,
-    errorFor,
-  } = useSettingsForm({
-    action: updateAgentAction,
-    initialValues: { welcomeMessage, agentInstructions },
-    dirtyKey: "agent:settings",
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
+    useSettingsForm({
+      action: updateAgentAction,
+      initialValues: { welcomeMessage, agentInstructions },
+      dirtyKey: "agent:settings",
+    });
 
   return (
     <div className="grid gap-6 xl:grid-cols-(--settings-page-columns)">
-      <form
-        ref={formRef}
-        action={formAction}
-        className="flex min-w-0 flex-col gap-5"
-      >
+      <form ref={formRef} action={formAction} className="flex min-w-0 flex-col gap-5">
         <TextAreaField
           label="Welcome message"
           name="welcomeMessage"
@@ -86,9 +73,7 @@ export function AgentSection({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() =>
-                  setField("agentInstructions", EXAMPLE_INSTRUCTIONS)
-                }
+                onClick={() => setField("agentInstructions", EXAMPLE_INSTRUCTIONS)}
               >
                 Start From This Example
               </Button>
@@ -102,9 +87,7 @@ export function AgentSection({
             <li>Never invents prices or discounts.</li>
             <li>Eligibility comes from trial-class age ranges.</li>
             <li>Only offers real open class times — never holds a spot.</li>
-            <li>
-              Never takes payment, handles waivers, or confirms a booking.
-            </li>
+            <li>Never takes payment, handles waivers, or confirms a booking.</li>
           </ul>
         </Callout>
 

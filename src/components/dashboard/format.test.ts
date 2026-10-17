@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  bookingStatusVariant,
-  formatBookingStatus,
-  formatEmailState,
-} from "./format";
+import { bookingStatusVariant, formatBookingStatus, formatEmailState } from "./format";
 
 describe("formatBookingStatus", () => {
   it("uses owner-facing words", () => {

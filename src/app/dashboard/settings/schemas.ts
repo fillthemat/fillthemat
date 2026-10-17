@@ -46,10 +46,7 @@ function required(max: number, missing: string, tooLong: string) {
 const ageField = z
   .string()
   .trim()
-  .refine(
-    (value) => value === "" || /^\d{1,2}$/.test(value),
-    "Use a whole age between 0 and 99.",
-  )
+  .refine((value) => value === "" || /^\d{1,2}$/.test(value), "Use a whole age between 0 and 99.")
   .transform((value) => (value === "" ? null : Number(value)));
 
 /** Field name -> first message, ready to render next to an input. */
@@ -94,27 +91,15 @@ export const profileSchema = z.object({
       "Use a two-letter country code, such as US.",
     )
     .transform((value) => (value === "" ? "US" : value)),
-  parkingNotes: optional(
-    LIMITS.parkingNotes,
-    "Shorten your parking notes a little.",
-  ),
-  accessNotes: optional(
-    LIMITS.accessNotes,
-    "Shorten your entrance notes a little.",
-  ),
-  trialGuidance: optional(
-    LIMITS.trialGuidance,
-    "Shorten your arrival guidance a little.",
-  ),
+  parkingNotes: optional(LIMITS.parkingNotes, "Shorten your parking notes a little."),
+  accessNotes: optional(LIMITS.accessNotes, "Shorten your entrance notes a little."),
+  trialGuidance: optional(LIMITS.trialGuidance, "Shorten your arrival guidance a little."),
 });
 
 /** Only parsed while the school is unpublished — both fields lock after that. */
 export const publicAddressSchema = z.object({
   slug: slugSchema,
-  timezone: z
-    .string()
-    .trim()
-    .refine(isValidTimezone, "Choose a time zone from the list."),
+  timezone: z.string().trim().refine(isValidTimezone, "Choose a time zone from the list."),
 });
 
 export const pricingSchema = z.object({
@@ -160,27 +145,16 @@ export const offeringSchema = z
       "Name this trial class.",
       `Keep the name under ${LIMITS.offeringName} characters.`,
     ),
-    description: optional(
-      LIMITS.offeringDescription,
-      "Shorten the description a little.",
-    ),
+    description: optional(LIMITS.offeringDescription, "Shorten the description a little."),
     minimumAge: ageField,
     maximumAge: ageField,
     attire: optional(LIMITS.offeringAttire, "Shorten the attire note."),
-    expectations: optional(
-      LIMITS.offeringExpectations,
-      "Shorten what to expect a little.",
-    ),
-    waiverNotes: optional(
-      LIMITS.offeringWaiverNotes,
-      "Shorten the waiver note.",
-    ),
+    expectations: optional(LIMITS.offeringExpectations, "Shorten what to expect a little."),
+    waiverNotes: optional(LIMITS.offeringWaiverNotes, "Shorten the waiver note."),
   })
   .refine(
     (value) =>
-      value.minimumAge == null ||
-      value.maximumAge == null ||
-      value.minimumAge <= value.maximumAge,
+      value.minimumAge == null || value.maximumAge == null || value.minimumAge <= value.maximumAge,
     {
       message: "The youngest age must be lower than the oldest age.",
       path: ["maximumAge"],
@@ -192,10 +166,7 @@ export const offeringSchema = z
 const timeValue = z
   .string()
   .trim()
-  .regex(
-    /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d{1,3})?)?$/,
-    "Choose a start time.",
-  )
+  .regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d{1,3})?)?$/, "Choose a start time.")
   .transform((value) => {
     const [hour, minute] = value.split(":");
     return Number(hour) * 60 + Number(minute);
@@ -299,10 +270,7 @@ export const OFFERING_EDITOR_FIELDS = [
 export const FAQ_EDITOR_FIELDS = ["question", "answer"] as const;
 
 /** FormData -> plain object of trimmed strings, safe to hand to zod. */
-export function formValues(
-  formData: FormData,
-  fields: readonly string[],
-): Record<string, string> {
+export function formValues(formData: FormData, fields: readonly string[]): Record<string, string> {
   const values: Record<string, string> = {};
   for (const field of fields) {
     const raw = formData.get(field);

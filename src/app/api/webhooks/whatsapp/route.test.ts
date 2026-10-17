@@ -47,9 +47,7 @@ afterEach(() => {
 
 describe("POST /api/webhooks/whatsapp acknowledgement", () => {
   it("returns 500 so Meta redelivers when inbound enqueue fails", async () => {
-    vi.mocked(enqueueInboundJobs).mockRejectedValueOnce(
-      new Error("DB unavailable"),
-    );
+    vi.mocked(enqueueInboundJobs).mockRejectedValueOnce(new Error("DB unavailable"));
 
     const response = await POST(post(inboundPayload()));
 
@@ -90,9 +88,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
   });
 
   it("still returns 200 when a status-only callback fails", async () => {
-    vi.mocked(applyWhatsAppStatuses).mockRejectedValueOnce(
-      new Error("DB unavailable"),
-    );
+    vi.mocked(applyWhatsAppStatuses).mockRejectedValueOnce(new Error("DB unavailable"));
 
     const response = await POST(post(statusPayload()));
 
@@ -124,9 +120,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
   });
 
   it("still acknowledges durable messages when the read/typing Graph call fails", async () => {
-    vi.mocked(sendWhatsAppTypingIndicator).mockRejectedValueOnce(
-      new Error("Graph unavailable"),
-    );
+    vi.mocked(sendWhatsAppTypingIndicator).mockRejectedValueOnce(new Error("Graph unavailable"));
 
     const response = await POST(post(inboundPayload()));
 
@@ -137,9 +131,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
   });
 
   it("enqueues mixed-payload messages even when their status callback fails", async () => {
-    vi.mocked(applyWhatsAppStatuses).mockRejectedValueOnce(
-      new Error("DB unavailable"),
-    );
+    vi.mocked(applyWhatsAppStatuses).mockRejectedValueOnce(new Error("DB unavailable"));
     const payload = inboundPayload();
     Object.assign(payload.entry[0].changes[0].value, { statuses });
 
@@ -152,9 +144,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
   });
 
   it("returns 500 for mixed payloads when enqueue fails after status success", async () => {
-    vi.mocked(enqueueInboundJobs).mockRejectedValueOnce(
-      new Error("DB unavailable"),
-    );
+    vi.mocked(enqueueInboundJobs).mockRejectedValueOnce(new Error("DB unavailable"));
     const payload = inboundPayload();
     Object.assign(payload.entry[0].changes[0].value, { statuses });
 

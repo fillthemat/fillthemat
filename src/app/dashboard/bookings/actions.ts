@@ -30,8 +30,7 @@ export async function updateAttendanceAction(formData: FormData) {
     await db.insert(funnelEvents).values({
       schoolId: school.id,
       bookingId: id,
-      eventType:
-        status === "showed" ? FUNNEL_EVENTS.showed : FUNNEL_EVENTS.noShow,
+      eventType: status === "showed" ? FUNNEL_EVENTS.showed : FUNNEL_EVENTS.noShow,
     });
   }
   revalidatePath("/dashboard/bookings");

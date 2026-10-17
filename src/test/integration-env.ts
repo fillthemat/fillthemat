@@ -13,9 +13,7 @@ import { GATEWAY_TOKEN_ENV_VARS } from "@/lib/ai/gateway-token";
  */
 export function loadLocalEnv(envFile = ".env.local") {
   if (!existsSync(envFile)) {
-    throw new Error(
-      `Missing ${envFile}. Run bun run setup in this worktree first.`,
-    );
+    throw new Error(`Missing ${envFile}. Run bun run setup in this worktree first.`);
   }
   const parsed = parseEnv(readFileSync(envFile, "utf8"));
   for (const [key, value] of Object.entries(parsed)) {
@@ -66,11 +64,7 @@ export async function whileSavingMessages(
   }
 }
 
-export async function insertAuthUser(
-  sql: ReturnType<typeof postgres>,
-  id: string,
-  email: string,
-) {
+export async function insertAuthUser(sql: ReturnType<typeof postgres>, id: string, email: string) {
   await sql`
     insert into auth.users (
       id,
@@ -109,10 +103,7 @@ export async function insertAuthUser(
   `;
 }
 
-export async function deleteAuthUser(
-  sql: ReturnType<typeof postgres>,
-  id: string,
-) {
+export async function deleteAuthUser(sql: ReturnType<typeof postgres>, id: string) {
   await sql`delete from auth.users where id = ${id}::uuid`;
 }
 

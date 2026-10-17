@@ -13,9 +13,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Read only the recipient needed by job-death fallback from a persisted payload. */
 export function jobRecipientWaId(payload: unknown): string | null {
-  return isRecord(payload) &&
-    typeof payload.waId === "string" &&
-    payload.waId.trim()
+  return isRecord(payload) && typeof payload.waId === "string" && payload.waId.trim()
     ? payload.waId
     : null;
 }
@@ -43,9 +41,7 @@ function textFromMessage(message: Record<string, unknown>): string | null {
  * Iterates `entry[] -> changes[] -> value.messages[]` defensively as arrays so a
  * malformed/status payload simply yields an empty list (which the route acks).
  */
-export function parseInboundWhatsAppMessages(
-  payload: unknown,
-): InboundWhatsAppMessage[] {
+export function parseInboundWhatsAppMessages(payload: unknown): InboundWhatsAppMessage[] {
   if (!isRecord(payload) || !Array.isArray(payload.entry)) return [];
 
   const out: InboundWhatsAppMessage[] = [];
@@ -56,20 +52,14 @@ export function parseInboundWhatsAppMessages(
       const value = change.value;
       const metadata = isRecord(value.metadata) ? value.metadata : {};
       const phoneNumberId =
-        typeof metadata.phone_number_id === "string"
-          ? metadata.phone_number_id
-          : "";
+        typeof metadata.phone_number_id === "string" ? metadata.phone_number_id : "";
 
       let contactWaId: string | null = null;
       let profileName: string | null = null;
       const contacts = value.contacts;
       if (Array.isArray(contacts)) {
         for (const contact of contacts) {
-          if (
-            isRecord(contact) &&
-            typeof contact.wa_id === "string" &&
-            contactWaId === null
-          ) {
+          if (isRecord(contact) && typeof contact.wa_id === "string" && contactWaId === null) {
             contactWaId = contact.wa_id;
           }
           if (
@@ -93,10 +83,7 @@ export function parseInboundWhatsAppMessages(
       for (const message of value.messages) {
         if (!isRecord(message)) continue;
         const wamid = typeof message.id === "string" ? message.id : "";
-        const waId =
-          (typeof message.from === "string" ? message.from : "") ||
-          contactWaId ||
-          "";
+        const waId = (typeof message.from === "string" ? message.from : "") || contactWaId || "";
         if (!phoneNumberId || !wamid || !waId) continue;
         out.push({
           phoneNumberId,

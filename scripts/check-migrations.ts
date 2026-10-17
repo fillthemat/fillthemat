@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { readMigrationFiles } from "drizzle-orm/migrator";
+import { readFileSync } from "node:fs";
 import postgres from "postgres";
 
 class MigrationCheckError extends Error {}
@@ -11,9 +11,7 @@ async function main() {
     throw new MigrationCheckError(
       "DATABASE_URL or DIRECT_URL is required for the migration check.",
     );
-  const journal = JSON.parse(
-    readFileSync("drizzle/meta/_journal.json", "utf8"),
-  ) as {
+  const journal = JSON.parse(readFileSync("drizzle/meta/_journal.json", "utf8")) as {
     entries: Array<{ tag: string }>;
   };
   const required = readMigrationFiles({ migrationsFolder: "drizzle" });
@@ -24,8 +22,7 @@ async function main() {
     await client.begin("READ ONLY", async (tx) => {
       // Transaction-local works through the runtime transaction pooler too.
       await tx`set local statement_timeout = '5s'`;
-      const [table] =
-        await tx`select to_regclass('drizzle.__drizzle_migrations') as name`;
+      const [table] = await tx`select to_regclass('drizzle.__drizzle_migrations') as name`;
       const applied = table?.name
         ? await tx<
             { hash: string; created_at: string }[]
@@ -33,15 +30,10 @@ async function main() {
         : [];
       const pending: string[] = [];
       // Drizzle migrate only applies timestamps newer than this watermark.
-      const newestApplied = Math.max(
-        0,
-        ...applied.map((row) => Number(row.created_at)),
-      );
+      const newestApplied = Math.max(0, ...applied.map((row) => Number(row.created_at)));
       for (const [index, migration] of required.entries()) {
         const tag = journal.entries[index].tag;
-        const rows = applied.filter(
-          (row) => Number(row.created_at) === migration.folderMillis,
-        );
+        const rows = applied.filter((row) => Number(row.created_at) === migration.folderMillis);
         if (rows.some((row) => row.hash !== migration.hash)) {
           throw new MigrationCheckError(
             `applied migration ${tag} hash differs — needs manual repair; db:migrate:prod will not fix this. No database changes were made.`,
@@ -72,11 +64,7 @@ main().catch((error: unknown) => {
   // Connection errors can contain credentials/URLs; never dump raw exceptions.
   const identifiers: string[] = [];
   if (error && typeof error === "object") {
-    if (
-      "code" in error &&
-      typeof error.code === "string" &&
-      /^[A-Z0-9_]{2,40}$/.test(error.code)
-    )
+    if ("code" in error && typeof error.code === "string" && /^[A-Z0-9_]{2,40}$/.test(error.code))
       identifiers.push(`code=${error.code}`);
     if (
       "name" in error &&

@@ -18,21 +18,12 @@ export function readLandingSessionToken(slug: string): string | null {
   }
 }
 
-export function LandingSession({
-  slug,
-  preview,
-}: {
-  slug: string;
-  preview: boolean;
-}) {
+export function LandingSession({ slug, preview }: { slug: string; preview: boolean }) {
   useEffect(() => {
     const existing = readLandingSessionToken(slug);
     const token = existing ?? randomToken();
     const exp = Date.now() + LANDING_SESSION_MINUTES * 60 * 1000;
-    window.localStorage.setItem(
-      storageKey(slug),
-      JSON.stringify({ token, exp }),
-    );
+    window.localStorage.setItem(storageKey(slug), JSON.stringify({ token, exp }));
     const params = new URLSearchParams(window.location.search);
     void fetch("/api/sessions", {
       method: "POST",

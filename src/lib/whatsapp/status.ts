@@ -17,9 +17,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toTimestamp(value: unknown): number | null {
   const parsed =
-    typeof value === "string" || typeof value === "number"
-      ? Number(value)
-      : Number.NaN;
+    typeof value === "string" || typeof value === "number" ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -33,9 +31,7 @@ const KNOWN_STATUSES = new Set(["sent", "delivered", "read", "failed"]);
  * `statuses[].id` is the wamid of OUR outbound message and correlates via
  * `whatsapp_deliveries.provider_id`.
  */
-export function parseInboundWhatsAppStatuses(
-  payload: unknown,
-): InboundWhatsAppStatus[] {
+export function parseInboundWhatsAppStatuses(payload: unknown): InboundWhatsAppStatus[] {
   if (!isRecord(payload) || !Array.isArray(payload.entry)) return [];
 
   const out: InboundWhatsAppStatus[] = [];
@@ -64,8 +60,7 @@ export function parseInboundWhatsAppStatuses(
             if (!isRecord(error)) continue;
             errorSubcode = toTimestamp(error.error_subcode);
             errorDetails =
-              isRecord(error.error_data) &&
-              typeof error.error_data.details === "string"
+              isRecord(error.error_data) && typeof error.error_data.details === "string"
                 ? error.error_data.details
                 : null;
             errorCode =
@@ -85,10 +80,7 @@ export function parseInboundWhatsAppStatuses(
         out.push({
           status: statusName as InboundWhatsAppStatus["status"],
           wamid,
-          recipientId:
-            typeof status.recipient_id === "string"
-              ? status.recipient_id
-              : null,
+          recipientId: typeof status.recipient_id === "string" ? status.recipient_id : null,
           timestamp: toTimestamp(status.timestamp),
           errorCode,
           errorMessage,
@@ -99,8 +91,7 @@ export function parseInboundWhatsAppStatuses(
               ? status.biz_opaque_callback_data
               : null,
           phoneNumberId:
-            isRecord(value.metadata) &&
-            typeof value.metadata.phone_number_id === "string"
+            isRecord(value.metadata) && typeof value.metadata.phone_number_id === "string"
               ? value.metadata.phone_number_id
               : null,
         });

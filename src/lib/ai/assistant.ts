@@ -18,14 +18,8 @@ import { assistantInstructions } from "./instructions";
 import { defaultLanguageModel } from "./language-model";
 import { platformInstructionsHash } from "./provenance";
 import { assistantTools } from "./tools";
-import {
-  type BookingIntent,
-  bookingIntentFromResult,
-} from "./tools/prepare-booking";
-import {
-  type LeadRequest,
-  leadRequestFromResult,
-} from "./tools/request-contact";
+import { type BookingIntent, bookingIntentFromResult } from "./tools/prepare-booking";
+import { type LeadRequest, leadRequestFromResult } from "./tools/request-contact";
 
 export type { AssistantSchool, SchoolCatalog } from "./context";
 export type { BookingIntent } from "./tools/prepare-booking";
@@ -123,9 +117,7 @@ export type ReplyFinish = {
   provenance: ReplyProvenance;
 };
 
-type StreamEnd = Parameters<
-  UIMessageStreamOnEndCallback<AssistantUIMessage>
->[0];
+type StreamEnd = Parameters<UIMessageStreamOnEndCallback<AssistantUIMessage>>[0];
 
 function replyCompletion(end: StreamEnd): ReplyCompletion {
   // A model error part mid-stream can still report a completed outcome.

@@ -5,11 +5,7 @@ const now = new Date("2025-01-01T00:00:00Z");
 describe("email retry policy", () => {
   it("stops validation and credential failures without interpreting prose", () => {
     expect(
-      retryDecision(
-        { kind: "email_error", name: "validation_error", status: 422 },
-        1,
-        now,
-      ),
+      retryDecision({ kind: "email_error", name: "validation_error", status: 422 }, 1, now),
     ).toEqual({ action: "stop", cause: "permanent" });
   });
   it.each([
@@ -27,26 +23,18 @@ describe("email retry policy", () => {
     "missing_required_field",
     "missing_required_parameter",
     "invalid_to_address",
-  ])(
-    "stops named permanent email error %s even without HTTP status",
-    (name) => {
-      expect(
-        retryDecision({ kind: "email_error", name, status: null }, 1, now),
-      ).toEqual({ action: "stop", cause: "permanent" });
-    },
-  );
-  it.each([400, 401, 403, 404, 405, 413, 422])(
-    "stops deterministic HTTP %i",
-    (status) => {
-      expect(
-        retryDecision(
-          { kind: "email_error", name: "unrecognised", status },
-          1,
-          now,
-        ),
-      ).toEqual({ action: "stop", cause: "permanent" });
-    },
-  );
+  ])("stops named permanent email error %s even without HTTP status", (name) => {
+    expect(retryDecision({ kind: "email_error", name, status: null }, 1, now)).toEqual({
+      action: "stop",
+      cause: "permanent",
+    });
+  });
+  it.each([400, 401, 403, 404, 405, 413, 422])("stops deterministic HTTP %i", (status) => {
+    expect(retryDecision({ kind: "email_error", name: "unrecognised", status }, 1, now)).toEqual({
+      action: "stop",
+      cause: "permanent",
+    });
+  });
   it.each([
     ["concurrent_idempotent_requests", 409],
     ["resource_locked", 409],
@@ -56,26 +44,23 @@ describe("email retry policy", () => {
     ["application_error", 500],
     ["service_unavailable", 503],
     ["unrecognised", null],
-  ])(
-    "bounds transient/unknown %s without changing minute cadence",
-    (name, status) => {
-      const failure = {
-        kind: "email_error" as const,
-        name: String(name),
-        status: typeof status === "number" ? status : null,
-      };
-      expect(retryDecision(failure, 1, now)).toEqual({
-        action: "retry",
-        at: new Date("2025-01-01T00:01:00Z"),
-      });
-      expect(retryDecision(failure, 4, now)).toEqual({
-        action: "retry",
-        at: new Date("2025-01-01T00:08:00Z"),
-      });
-      expect(retryDecision(failure, 5, now)).toEqual({
-        action: "stop",
-        cause: "attempts_exhausted",
-      });
-    },
-  );
+  ])("bounds transient/unknown %s without changing minute cadence", (name, status) => {
+    const failure = {
+      kind: "email_error" as const,
+      name: String(name),
+      status: typeof status === "number" ? status : null,
+    };
+    expect(retryDecision(failure, 1, now)).toEqual({
+      action: "retry",
+      at: new Date("2025-01-01T00:01:00Z"),
+    });
+    expect(retryDecision(failure, 4, now)).toEqual({
+      action: "retry",
+      at: new Date("2025-01-01T00:08:00Z"),
+    });
+    expect(retryDecision(failure, 5, now)).toEqual({
+      action: "stop",
+      cause: "attempts_exhausted",
+    });
+  });
 });

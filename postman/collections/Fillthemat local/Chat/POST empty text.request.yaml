@@ -2,7 +2,7 @@ $kind: http-request
 id: aa984b179e8ba5f0a6c83316
 name: POST empty text
 method: POST
-url: '{{baseUrl}}/api/chat'
+url: "{{baseUrl}}/api/chat"
 description: 'User text empty. Expect 400 { error: "invalid_message" }.'
 body:
   type: json

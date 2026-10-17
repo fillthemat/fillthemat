@@ -25,10 +25,7 @@ export const IDLE_STATE: SettingsFormState = {
   values: null,
 };
 
-export function successState(
-  message: string,
-  values?: Record<string, string>,
-): SettingsFormState {
+export function successState(message: string, values?: Record<string, string>): SettingsFormState {
   return {
     status: "success",
     message,

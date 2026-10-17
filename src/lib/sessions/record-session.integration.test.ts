@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/sessions/route";
 import { getDb } from "@/db";
@@ -64,29 +64,25 @@ describe("recordLandingSession", () => {
   it.each([
     { preview: true, userAgent: "Mozilla/5.0", botReason: null },
     { preview: false, userAgent: "Googlebot", botReason: "user_agent" },
-  ])(
-    "does not qualify previews or known bots: %j",
-    async ({ preview, userAgent, botReason }) => {
-      const token = randomUUID();
-      expect(
-        await recordLandingSession({ slug, token, preview, userAgent }),
-      ).toEqual({ status: "recorded", qualified: false });
-      const [session] = await db
-        .select()
-        .from(landingSessions)
-        .where(eq(landingSessions.sessionKeyHash, hashToken(token)));
-      expect(session?.isPreview).toBe(preview);
-      expect(session?.botExclusionReason).toBe(botReason);
-      expect(session?.qualifiedAt).toBeNull();
-      const events = await db
-        .select()
-        .from(funnelEvents)
-        .where(
-          eq(funnelEvents.landingSessionId, requireRow(session, "session").id),
-        );
-      expect(events).toHaveLength(0);
-    },
-  );
+  ])("does not qualify previews or known bots: %j", async ({ preview, userAgent, botReason }) => {
+    const token = randomUUID();
+    expect(await recordLandingSession({ slug, token, preview, userAgent })).toEqual({
+      status: "recorded",
+      qualified: false,
+    });
+    const [session] = await db
+      .select()
+      .from(landingSessions)
+      .where(eq(landingSessions.sessionKeyHash, hashToken(token)));
+    expect(session?.isPreview).toBe(preview);
+    expect(session?.botExclusionReason).toBe(botReason);
+    expect(session?.qualifiedAt).toBeNull();
+    const events = await db
+      .select()
+      .from(funnelEvents)
+      .where(eq(funnelEvents.landingSessionId, requireRow(session, "session").id));
+    expect(events).toHaveLength(0);
+  });
 
   it.each(["approvedAt", "publishedAt"] as const)(
     "does not qualify schools without %s",
@@ -159,9 +155,7 @@ describe("recordLandingSession", () => {
   it("reuses a qualified visit and handles concurrent first visits without duplicate funnel events", async () => {
     const token = randomUUID();
     const results = await Promise.all(
-      Array.from({ length: 5 }, () =>
-        recordLandingSession({ slug, token, userAgent: null }),
-      ),
+      Array.from({ length: 5 }, () => recordLandingSession({ slug, token, userAgent: null })),
     );
     expect(results).toEqual(
       Array.from({ length: 5 }, () => ({
@@ -185,12 +179,7 @@ describe("recordLandingSession", () => {
     const events = await db
       .select()
       .from(funnelEvents)
-      .where(
-        eq(
-          funnelEvents.landingSessionId,
-          requireRow(sessions[0], "session").id,
-        ),
-      );
+      .where(eq(funnelEvents.landingSessionId, requireRow(sessions[0], "session").id));
     expect(events).toHaveLength(1);
   });
 
@@ -230,9 +219,7 @@ describe("sessions HTTP adapter", () => {
   );
 
   it("maps unknown schools to the original 404 response", async () => {
-    const response = await POST(
-      request({ slug: `missing-${randomUUID()}`, token: randomUUID() }),
-    );
+    const response = await POST(request({ slug: `missing-${randomUUID()}`, token: randomUUID() }));
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "not_found" });
   });

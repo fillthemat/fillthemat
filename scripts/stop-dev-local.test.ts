@@ -1,12 +1,5 @@
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -27,11 +20,9 @@ function runStop(envFile?: string) {
   mkdirSync(bin);
   const listenLog = join(cwd, "listeners.log");
   // Stub the OS boundary so tests can never discover or stop real listeners.
-  writeFileSync(
-    join(bin, "lsof"),
-    '#!/bin/sh\nprintf "%s\\n" "$@" > "$STOP_DEV_LISTEN_LOG"\n',
-    { mode: 0o755 },
-  );
+  writeFileSync(join(bin, "lsof"), '#!/bin/sh\nprintf "%s\\n" "$@" > "$STOP_DEV_LISTEN_LOG"\n', {
+    mode: 0o755,
+  });
   const result = spawnSync("bun", [script], {
     cwd,
     encoding: "utf8",
@@ -104,8 +95,6 @@ describe("dev:stop", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("Nothing listening on port 3020\n");
     expect(result.stderr).toBe("");
-    expect(readFileSync(result.listenLog, "utf8")).toBe(
-      "-nP\n-iTCP:3020\n-sTCP:LISTEN\n-t\n",
-    );
+    expect(readFileSync(result.listenLog, "utf8")).toBe("-nP\n-iTCP:3020\n-sTCP:LISTEN\n-t\n");
   });
 });

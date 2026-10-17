@@ -46,10 +46,15 @@ export const emailStateEnum = appSchema.enum("email_state", [
   "dead",
 ]);
 
-export const whatsappDeliveryStateEnum = appSchema.enum(
-  "whatsapp_delivery_state",
-  ["pending", "claimed", "sent", "delivered", "read", "failed", "dead"],
-);
+export const whatsappDeliveryStateEnum = appSchema.enum("whatsapp_delivery_state", [
+  "pending",
+  "claimed",
+  "sent",
+  "delivered",
+  "read",
+  "failed",
+  "dead",
+]);
 
 export const whatsappJobStateEnum = appSchema.enum("whatsapp_job_state", [
   "pending",
@@ -59,10 +64,12 @@ export const whatsappJobStateEnum = appSchema.enum("whatsapp_job_state", [
   "dead",
 ]);
 
-export const whatsappBookingIntentStateEnum = appSchema.enum(
-  "whatsapp_booking_intent_state",
-  ["pending", "confirmed", "expired", "superseded"],
-);
+export const whatsappBookingIntentStateEnum = appSchema.enum("whatsapp_booking_intent_state", [
+  "pending",
+  "confirmed",
+  "expired",
+  "superseded",
+]);
 
 export const messageCompletionEnum = appSchema.enum("message_completion", [
   "complete",
@@ -71,20 +78,15 @@ export const messageCompletionEnum = appSchema.enum("message_completion", [
   "error",
 ]);
 
-export const conversationEndReasonEnum = appSchema.enum(
-  "conversation_end_reason",
-  ["inactivity", "message_limit"],
-);
-
-export const cronResultEnum = appSchema.enum("cron_result", [
-  "success",
-  "error",
+export const conversationEndReasonEnum = appSchema.enum("conversation_end_reason", [
+  "inactivity",
+  "message_limit",
 ]);
 
+export const cronResultEnum = appSchema.enum("cron_result", ["success", "error"]);
+
 const timestamps = {
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
@@ -144,10 +146,7 @@ export const schools = appSchema.table(
       "schools_primary_color",
       sql`${t.primaryColor} IS NULL OR ${t.primaryColor} ~ '^#[0-9A-Fa-f]{6}$'`,
     ),
-    check(
-      "schools_logo_url",
-      sql`${t.logoUrl} IS NULL OR ${t.logoUrl} ~ '^https://'`,
-    ),
+    check("schools_logo_url", sql`${t.logoUrl} IS NULL OR ${t.logoUrl} ~ '^https://'`),
   ],
 );
 
@@ -168,10 +167,7 @@ export const faqs = appSchema.table(
       foreignColumns: [schools.id],
       name: "faqs_school_id_fk",
     }).onDelete("cascade"),
-    check(
-      "faqs_question_len",
-      sql`char_length(${t.question}) BETWEEN 1 AND 200`,
-    ),
+    check("faqs_question_len", sql`char_length(${t.question}) BETWEEN 1 AND 200`),
     check("faqs_answer_len", sql`char_length(${t.answer}) BETWEEN 1 AND 2000`),
   ],
 );
@@ -204,10 +200,7 @@ export const trialOfferings = appSchema.table(
         AND (${t.maximumAge} IS NULL OR ${t.maximumAge} BETWEEN 0 AND 99)
         AND (${t.minimumAge} IS NULL OR ${t.maximumAge} IS NULL OR ${t.minimumAge} <= ${t.maximumAge})`,
     ),
-    check(
-      "trial_offerings_name_len",
-      sql`char_length(${t.name}) BETWEEN 1 AND 80`,
-    ),
+    check("trial_offerings_name_len", sql`char_length(${t.name}) BETWEEN 1 AND 80`),
   ],
 );
 
@@ -238,10 +231,7 @@ export const trialWindows = appSchema.table(
       name: "trial_windows_offering_fk",
     }).onDelete("cascade"),
     check("trial_windows_day", sql`${t.dayOfWeek} BETWEEN 0 AND 6`),
-    check(
-      "trial_windows_start_minute",
-      sql`${t.startMinute} BETWEEN 0 AND 1439`,
-    ),
+    check("trial_windows_start_minute", sql`${t.startMinute} BETWEEN 0 AND 1439`),
     check("trial_windows_duration", sql`${t.durationMinutes} > 0`),
     check("trial_windows_capacity", sql`${t.capacity} BETWEEN 1 AND 50`),
   ],
@@ -321,10 +311,7 @@ export const participants = appSchema.table(
   },
   (t) => [
     unique("participants_school_id_id").on(t.schoolId, t.id),
-    unique("participants_contact_normalized_name").on(
-      t.contactId,
-      t.normalizedName,
-    ),
+    unique("participants_contact_normalized_name").on(t.contactId, t.normalizedName),
     foreignKey({
       columns: [t.schoolId],
       foreignColumns: [schools.id],
@@ -344,12 +331,8 @@ export const landingSessions = appSchema.table(
     id: uuid("id").primaryKey().defaultRandom(),
     schoolId: uuid("school_id").notNull(),
     sessionKeyHash: text("session_key_hash").notNull(),
-    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     qualifiedAt: timestamp("qualified_at", { withTimezone: true }),
     utmSource: text("utm_source"),
     utmMedium: text("utm_medium"),
@@ -422,17 +405,10 @@ export const messages = appSchema.table(
     messageId: text("message_id").notNull(),
     role: text("role").notNull(),
     parts: jsonb("parts").notNull().$type<unknown>(),
-    completion: messageCompletionEnum("completion")
-      .notNull()
-      .default("complete"),
+    completion: messageCompletionEnum("completion").notNull().default("complete"),
     ...timestamps,
   },
-  (t) => [
-    unique("messages_conversation_message_id").on(
-      t.conversationId,
-      t.messageId,
-    ),
-  ],
+  (t) => [unique("messages_conversation_message_id").on(t.conversationId, t.messageId)],
 );
 
 export const leads = appSchema.table(
@@ -550,10 +526,7 @@ export const bookings = appSchema.table(
       foreignColumns: [landingSessions.schoolId, landingSessions.id],
       name: "bookings_landing_session_fk",
     }).onDelete("set null"),
-    check(
-      "bookings_participant_age",
-      sql`${t.participantAgeSnapshot} BETWEEN 0 AND 99`,
-    ),
+    check("bookings_participant_age", sql`${t.participantAgeSnapshot} BETWEEN 0 AND 99`),
   ],
 );
 
@@ -573,9 +546,7 @@ export const emailDeliveries = appSchema.table(
     lastError: text("last_error"),
     failureReason: text("failure_reason"),
     terminalCause: text("terminal_cause").$type<TerminalCause>(),
-    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimedBy: text("claimed_by"),
@@ -631,9 +602,7 @@ export const whatsappDeliveries = appSchema.table(
       title: string;
     }> | null>(),
     windowExpiresAt: timestamp("window_expires_at", { withTimezone: true }),
-    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     statusAt: timestamp("status_at", { withTimezone: true }),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
@@ -676,9 +645,7 @@ export const whatsappJobs = appSchema.table(
     payload: jsonb("payload").notNull().$type<unknown>(),
     state: whatsappJobStateEnum("state").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
-    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimedBy: text("claimed_by"),
     lastError: text("last_error"),
@@ -749,9 +716,7 @@ export const funnelEvents = appSchema.table(
     leadId: uuid("lead_id"),
     eventType: text("event_type").notNull(),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("funnel_events_school_created_idx").on(t.schoolId, t.createdAt),
@@ -765,16 +730,12 @@ export const funnelEvents = appSchema.table(
 
 export const cronRuns = appSchema.table("cron_runs", {
   id: uuid("id").primaryKey().defaultRandom(),
-  startedAt: timestamp("started_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   reminderCount: integer("reminder_count").notNull().default(0),
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
-  endedConversationCount: integer("ended_conversation_count")
-    .notNull()
-    .default(0),
+  endedConversationCount: integer("ended_conversation_count").notNull().default(0),
   result: cronResultEnum("result"),
   errorSummary: text("error_summary"),
 });

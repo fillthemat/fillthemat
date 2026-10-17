@@ -26,9 +26,9 @@ it("does not report historic transcript purges as ended conversations", async ()
         await tx.unsafe(statement);
       }
     }
-    expect(
-      await tx`select ended_conversation_count from migration_review_test.cron_runs`,
-    ).toEqual([{ ended_conversation_count: 0 }]);
+    expect(await tx`select ended_conversation_count from migration_review_test.cron_runs`).toEqual([
+      { ended_conversation_count: 0 },
+    ]);
     await tx`drop schema migration_review_test cascade`;
   });
 });

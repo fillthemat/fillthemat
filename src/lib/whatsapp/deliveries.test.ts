@@ -84,9 +84,7 @@ describe("planWhatsAppDelivery", () => {
         templateName: null,
         templateParams: null,
         windowExpiresAt: subHours(now, 1),
-        interactiveButtons: [
-          { id: "confirm_booking:abc", title: "Confirm booking" },
-        ],
+        interactiveButtons: [{ id: "confirm_booking:abc", title: "Confirm booking" }],
         body: "Ready to book?",
       },
       now,

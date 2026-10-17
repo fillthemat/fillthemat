@@ -17,14 +17,14 @@ shaped the way it is, not the JSON itself.
 
 ## Final rule set
 
-| Rule | Severity | Notes |
-| --- | --- | --- |
-| `shadcn/no-restyle` | `error` | `allow: ["layout"]` + a `^TableCell$` contract (§ below) |
-| `shadcn/require-static-classes` | `error` | static `cn(...)` literals only |
-| `shadcn/no-raw-colors` | `warn` | zero findings — promotable to `error` |
-| `shadcn/no-arbitrary-values` | `warn` | zero findings — promotable to `error` |
-| `shadcn/no-inline-styles` | `warn` | zero findings — promotable to `error` |
-| `shadcn/no-unknown-classes` | `warn` | zero findings — promotable to `error` |
+| Rule                            | Severity | Notes                                                    |
+| ------------------------------- | -------- | -------------------------------------------------------- |
+| `shadcn/no-restyle`             | `error`  | `allow: ["layout"]` + a `^TableCell$` contract (§ below) |
+| `shadcn/require-static-classes` | `error`  | static `cn(...)` literals only                           |
+| `shadcn/no-raw-colors`          | `warn`   | zero findings — promotable to `error`                    |
+| `shadcn/no-arbitrary-values`    | `warn`   | zero findings — promotable to `error`                    |
+| `shadcn/no-inline-styles`       | `warn`   | zero findings — promotable to `error`                    |
+| `shadcn/no-unknown-classes`     | `warn`   | zero findings — promotable to `error`                    |
 
 The `src/components/ui/**` override turns off `no-restyle`,
 `no-arbitrary-values`, and `require-static-classes` there, so the primitives may
@@ -96,7 +96,7 @@ utilities: `--tracking-eyebrow: 0.2em`, `--text-metric: 1.75rem`,
 ### Font-size tokens: the `text-(length:--*)` disambiguation
 
 A `--text-*` theme token surfaces as a `text-<name>` class, which the plugin's
-`cn`-grammar classifier misreads as a *color* utility — so `text-metric` was
+`cn`-grammar classifier misreads as a _color_ utility — so `text-metric` was
 flagged by `no-raw-colors` as "not a declared theme color". The Tailwind v4
 disambiguating form `text-(length:--text-metric)` both sets
 `font-size: var(--text-metric)` correctly and passes every rule. Use the same

@@ -1,14 +1,6 @@
-import { createHmac, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { createHmac, randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/webhooks/resend/route";
 import { getDb } from "@/db";
 import { emailDeliveries } from "@/db/schema";
@@ -61,15 +53,11 @@ describe("recordResendDeliveryEvent", () => {
       .select()
       .from(emailDeliveries)
       .where(eq(emailDeliveries.schoolId, schoolId));
-    expect(rows.find((row) => row.providerId === providerId)?.state).toBe(
-      "delivered",
+    expect(rows.find((row) => row.providerId === providerId)?.state).toBe("delivered");
+    expect(rows.find((row) => row.providerId === providerId)?.updatedAt.getTime()).toBeGreaterThan(
+      new Date("2025-01-01T00:00:00Z").getTime(),
     );
-    expect(
-      rows.find((row) => row.providerId === providerId)?.updatedAt.getTime(),
-    ).toBeGreaterThan(new Date("2025-01-01T00:00:00Z").getTime());
-    expect(rows.find((row) => row.providerId === otherProviderId)?.state).toBe(
-      "sent",
-    );
+    expect(rows.find((row) => row.providerId === otherProviderId)?.state).toBe("sent");
   });
 
   it.each([
@@ -127,10 +115,7 @@ describe("recordResendDeliveryEvent", () => {
       data: { email_id: randomUUID() },
     });
     expect(
-      await db
-        .select()
-        .from(emailDeliveries)
-        .where(eq(emailDeliveries.schoolId, schoolId)),
+      await db.select().from(emailDeliveries).where(eq(emailDeliveries.schoolId, schoolId)),
     ).toEqual(before);
   });
 });
@@ -156,11 +141,7 @@ describe("Resend HTTP adapter", () => {
     });
   }
 
-  async function expectResponse(
-    request: Request,
-    status: number,
-    body: unknown,
-  ) {
+  async function expectResponse(request: Request, status: number, body: unknown) {
     const response = await POST(request);
     expect(response.status).toBe(status);
     expect(await response.json()).toEqual(body);

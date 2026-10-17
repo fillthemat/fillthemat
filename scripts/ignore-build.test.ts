@@ -14,10 +14,7 @@ const preview = {
 afterEach(() => vi.restoreAllMocks());
 
 it("disables merge-queue deployments", () => {
-  expect(config.git?.deploymentEnabled).toHaveProperty(
-    "gh-readonly-queue/**",
-    false,
-  );
+  expect(config.git?.deploymentEnabled).toHaveProperty("gh-readonly-queue/**", false);
 });
 
 it("skips gh-pages without any repository files or Bun available", () => {
@@ -77,37 +74,27 @@ it.each([
   expect(isDocsPath(path)).toBe(expected);
 });
 
-it.each(["ts", "tsx", "js", "mjs"])(
-  "builds for .%s code in docs/agents",
-  (extension) => {
-    for (const directory of ["docs", ".agents"])
-      expect(isDocsPath(`${directory}/nested/code.${extension}`)).toBe(false);
-  },
-);
+it.each(["ts", "tsx", "js", "mjs"])("builds for .%s code in docs/agents", (extension) => {
+  for (const directory of ["docs", ".agents"])
+    expect(isDocsPath(`${directory}/nested/code.${extension}`)).toBe(false);
+});
 
 it("skips only when every changed path is allowlisted", () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
-  expect(run(preview, () => "README.md\0docs/file with\nnewline.txt\0")).toBe(
-    0,
-  );
+  expect(run(preview, () => "README.md\0docs/file with\nnewline.txt\0")).toBe(0);
   expect(run(preview, () => "README.md\0scripts/tool.ts\0")).toBe(1);
-  expect(log).toHaveBeenLastCalledWith(
-    'Build: non-docs path: "scripts/tool.ts"',
-  );
+  expect(log).toHaveBeenLastCalledWith('Build: non-docs path: "scripts/tool.ts"');
   // --no-renames retains both paths when code is moved into docs.
   expect(run(preview, () => "src/tool.ts\0docs/tool.ts\0")).toBe(1);
 });
 
-it.each(["production", "development", undefined])(
-  "builds in %s",
-  (environment) => {
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    const readDiff = vi.fn(() => "README.md\0");
-    expect(run({ ...preview, VERCEL_ENV: environment }, readDiff)).toBe(1);
-    expect(readDiff).not.toHaveBeenCalled();
-    expect(log).toHaveBeenLastCalledWith("Build: non-Preview");
-  },
-);
+it.each(["production", "development", undefined])("builds in %s", (environment) => {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  const readDiff = vi.fn(() => "README.md\0");
+  expect(run({ ...preview, VERCEL_ENV: environment }, readDiff)).toBe(1);
+  expect(readDiff).not.toHaveBeenCalled();
+  expect(log).toHaveBeenLastCalledWith("Build: non-Preview");
+});
 
 it("builds for missing bases or git errors without printing env values", () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -127,7 +114,5 @@ it("builds for missing bases or git errors without printing env values", () => {
     }),
   ).toBe(1);
   expect(log).toHaveBeenLastCalledWith("Build: git error");
-  expect(JSON.stringify(log.mock.calls)).not.toContain(
-    preview.VERCEL_GIT_PREVIOUS_SHA,
-  );
+  expect(JSON.stringify(log.mock.calls)).not.toContain(preview.VERCEL_GIT_PREVIOUS_SHA);
 });

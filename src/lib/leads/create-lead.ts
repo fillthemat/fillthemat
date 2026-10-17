@@ -1,9 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import {
-  type Transaction,
-  type TransactionOptions,
-  withTransaction,
-} from "@/db";
+import type { Channel } from "@/lib/channel";
+import { type Transaction, type TransactionOptions, withTransaction } from "@/db";
 import {
   contacts,
   emailDeliveries,
@@ -12,7 +9,6 @@ import {
   leads,
   type School,
 } from "@/db/schema";
-import type { Channel } from "@/lib/channel";
 import { hashToken, hashWaId, normalizeEmail } from "@/lib/crypto";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
 
@@ -57,13 +53,8 @@ export type CreateLeadInput = {
  * - Owner-lead delivery always stays email (`recipient` = school notification
  *   email); the funnel event records `{ channel: 'whatsapp' }` for WhatsApp.
  */
-export async function createLead(
-  input: CreateLeadInput,
-  options: TransactionOptions = {},
-) {
-  const email = input.contact.email
-    ? normalizeEmail(input.contact.email)
-    : null;
+export async function createLead(input: CreateLeadInput, options: TransactionOptions = {}) {
+  const email = input.contact.email ? normalizeEmail(input.contact.email) : null;
 
   const write = async (tx: Transaction) => {
     const contactValues = {
@@ -109,10 +100,7 @@ export async function createLead(
         .where(
           and(
             eq(landingSessions.schoolId, input.school.id),
-            eq(
-              landingSessions.sessionKeyHash,
-              hashToken(input.source.landingSessionToken),
-            ),
+            eq(landingSessions.sessionKeyHash, hashToken(input.source.landingSessionToken)),
           ),
         )
         .limit(1);

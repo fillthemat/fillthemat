@@ -34,9 +34,7 @@ describe("reply provenance", () => {
         },
       }),
     ).not.toBe(original);
-    expect(
-      await platformInstructionsHash({ list_offerings: definition }),
-    ).not.toBe(original);
+    expect(await platformInstructionsHash({ list_offerings: definition })).not.toBe(original);
     expect(await platformInstructionsHash({})).not.toBe(original);
   });
 

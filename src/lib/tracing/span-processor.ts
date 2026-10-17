@@ -1,4 +1,3 @@
-import { isDefaultExportSpan, LangfuseSpanProcessor } from "@langfuse/otel";
 import type { Attributes, AttributeValue, Context } from "@opentelemetry/api";
 import type {
   ReadableSpan,
@@ -6,6 +5,7 @@ import type {
   SpanExporter,
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+import { isDefaultExportSpan, LangfuseSpanProcessor } from "@langfuse/otel";
 
 /**
  * The span processor that exports traces to Langfuse, with email addresses
@@ -83,9 +83,7 @@ function maskAttributes(attributes: Attributes | undefined): void {
   }
 }
 
-function maskAttributeValue(
-  value: AttributeValue | undefined,
-): AttributeValue | undefined {
+function maskAttributeValue(value: AttributeValue | undefined): AttributeValue | undefined {
   if (typeof value === "string") return maskString(value);
   if (Array.isArray(value)) {
     return value.map((item) =>
@@ -119,10 +117,7 @@ export function maskContactFields(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(maskContactFields);
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        maskText(key),
-        maskContactFields(item),
-      ]),
+      Object.entries(value).map(([key, item]) => [maskText(key), maskContactFields(item)]),
     );
   }
   return value;
@@ -176,15 +171,11 @@ function readsAsDateOrRange(groups: string[]): boolean {
   }
   if (shape === "2-2-2-2") {
     const [startHour, startMinute, endHour, endMinute] = groups;
-    return (
-      isClockTime(`${startHour}${startMinute}`) &&
-      isClockTime(`${endHour}${endMinute}`)
-    );
+    return isClockTime(`${startHour}${startMinute}`) && isClockTime(`${endHour}${endMinute}`);
   }
   return false;
 }
 
 const isYear = (digits: string) => /^(?:19|20)\d\d$/.test(digits);
 
-const isClockTime = (hhmm: string) =>
-  Number(hhmm.slice(0, 2)) < 24 && Number(hhmm.slice(2)) < 60;
+const isClockTime = (hhmm: string) => Number(hhmm.slice(0, 2)) < 24 && Number(hhmm.slice(2)) < 60;

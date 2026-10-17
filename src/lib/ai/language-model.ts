@@ -5,16 +5,12 @@ import { hasGatewayToken } from "./gateway-token";
 type LanguageModelV4 = Extract<LanguageModel, { specificationVersion: "v4" }>;
 type Prompt = Parameters<LanguageModelV4["doGenerate"]>[0]["prompt"];
 type StreamPart =
-  Awaited<
-    ReturnType<LanguageModelV4["doStream"]>
-  >["stream"] extends ReadableStream<infer Part>
+  Awaited<ReturnType<LanguageModelV4["doStream"]>>["stream"] extends ReadableStream<infer Part>
     ? Part
     : never;
 
 function gatewayLanguageModel(): LanguageModelV4 {
-  return gateway(
-    process.env.BOOKING_AGENT_MODEL || "anthropic/claude-sonnet-4.6",
-  );
+  return gateway(process.env.BOOKING_AGENT_MODEL || "anthropic/claude-sonnet-4.6");
 }
 
 /**

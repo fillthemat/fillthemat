@@ -84,12 +84,7 @@ export async function findBookingByIdempotencyKey(
   const [booking] = await getDb()
     .select()
     .from(bookings)
-    .where(
-      and(
-        eq(bookings.schoolId, schoolId),
-        eq(bookings.idempotencyKey, idempotencyKey),
-      ),
-    )
+    .where(and(eq(bookings.schoolId, schoolId), eq(bookings.idempotencyKey, idempotencyKey)))
     .limit(1);
   return booking ?? null;
 }
@@ -106,9 +101,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
   const db = getDb();
   // WhatsApp no-email contacts pass `null` through (decision B / D8). Web always
   // has an email, so the normalize path is unchanged for existing flows.
-  const email = input.contact.email
-    ? normalizeEmail(input.contact.email)
-    : null;
+  const email = input.contact.email ? normalizeEmail(input.contact.email) : null;
   const participantName = input.participant.name.trim();
   const normalizedName = normalizePersonName(participantName);
 
@@ -307,10 +300,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
           .where(
             and(
               eq(landingSessions.schoolId, input.school.id),
-              eq(
-                landingSessions.sessionKeyHash,
-                hashToken(input.landingSessionToken),
-              ),
+              eq(landingSessions.sessionKeyHash, hashToken(input.landingSessionToken)),
             ),
           )
           .limit(1);
@@ -344,11 +334,9 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
         );
       }
 
-      const locationParts = [
-        input.school.address,
-        input.school.city,
-        input.school.country,
-      ].filter(Boolean);
+      const locationParts = [input.school.address, input.school.city, input.school.country].filter(
+        Boolean,
+      );
       const instructionParts = [
         input.school.accessNotes,
         input.school.parkingNotes,
@@ -444,11 +432,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
     return { ok: true, booking: booking.row, idempotent: booking.idempotent };
   } catch (error) {
     const code = (error as { code?: string }).code;
-    if (
-      code === "ineligible" ||
-      code === "invalid_slot" ||
-      code === "slot_unavailable"
-    ) {
+    if (code === "ineligible" || code === "invalid_slot" || code === "slot_unavailable") {
       return { ok: false, code };
     }
     if (isUniqueViolation(error)) {
@@ -526,11 +510,7 @@ export async function cancelBooking({
       .returning();
 
     if (!updated) {
-      const [again] = await tx
-        .select()
-        .from(bookings)
-        .where(eq(bookings.id, booking.id))
-        .limit(1);
+      const [again] = await tx.select().from(bookings).where(eq(bookings.id, booking.id)).limit(1);
       if (again?.status === "cancelled") {
         return { ok: true, booking: again, replay: true };
       }

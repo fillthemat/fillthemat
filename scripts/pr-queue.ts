@@ -33,11 +33,8 @@ export function queuePullRequest(args: string[]) {
       id: z.string().min(1),
       state: z.enum(["OPEN", "CLOSED", "MERGED"]),
     })
-    .parse(
-      JSON.parse(runGh(["pr", "view", number, "--json", "id,state"]).stdout),
-    );
-  if (pr.state !== "OPEN")
-    throw new Error(`PR #${number} is ${pr.state.toLowerCase()}.`);
+    .parse(JSON.parse(runGh(["pr", "view", number, "--json", "id,state"]).stdout));
+  if (pr.state !== "OPEN") throw new Error(`PR #${number} is ${pr.state.toLowerCase()}.`);
   const current = z
     .object({
       data: z.object({
@@ -57,10 +54,7 @@ export function queuePullRequest(args: string[]) {
       `PR #${number} is already queued (position ${current.position}, state ${current.state}).`,
     );
   // gh 2.102 --json exits 0 even for pending checks; buckets decide (1/8 are fallbacks).
-  const result = runGh(
-    ["pr", "checks", number, "--required", "--json", "name,bucket"],
-    [0, 1, 8],
-  );
+  const result = runGh(["pr", "checks", number, "--required", "--json", "name,bucket"], [0, 1, 8]);
   const checks = z
     .array(
       z.object({
@@ -88,8 +82,7 @@ export function queuePullRequest(args: string[]) {
           enqueuePullRequest: z.object({ mergeQueueEntry: queueEntry }),
         }),
       })
-      .parse(JSON.parse(enqueued.stdout)).data.enqueuePullRequest
-      .mergeQueueEntry;
+      .parse(JSON.parse(enqueued.stdout)).data.enqueuePullRequest.mergeQueueEntry;
   } catch {
     throw new Error("Enqueue request sent; verify queue state.");
   }

@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  MAX_REQUEST_BYTES,
-  MAX_USER_MESSAGE_CHARS,
-} from "@/lib/security/limits";
+import { MAX_REQUEST_BYTES, MAX_USER_MESSAGE_CHARS } from "@/lib/security/limits";
 import { loadWebTranscript, startWebTurn } from "@/lib/web-chat/web-chat";
 import { GET, maxDuration, POST } from "./route";
 
@@ -23,9 +20,7 @@ const validBody = {
 };
 
 function post(body: string, headers: HeadersInit = {}) {
-  return POST(
-    new Request("http://localhost/api/chat", { method: "POST", body, headers }),
-  );
+  return POST(new Request("http://localhost/api/chat", { method: "POST", body, headers }));
 }
 
 beforeEach(() => vi.resetAllMocks());
@@ -35,10 +30,7 @@ describe("chat request parsing", () => {
     const message = {
       ...validBody.message,
       metadata: { source: "browser" },
-      parts: [
-        { type: "text", text: "Hi", state: "done" },
-        { type: "step-start" },
-      ],
+      parts: [{ type: "text", text: "Hi", state: "done" }, { type: "step-start" }],
     };
     vi.mocked(startWebTurn).mockImplementation(async (input) => ({
       ok: true,
@@ -98,21 +90,18 @@ describe("chat request parsing", () => {
     expect(startWebTurn).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, true])(
-    "returns the streamed reply with preview=%s",
-    async (preview) => {
-      vi.mocked(startWebTurn).mockResolvedValue({
-        ok: true,
-        response: new Response("data: reply\n\n", {
-          headers: { "content-type": "text/event-stream" },
-        }),
-      });
-      const response = await post(JSON.stringify({ ...validBody, preview }));
-      expect(response.status).toBe(200);
-      expect(response.headers.get("content-type")).toBe("text/event-stream");
-      expect(await response.text()).toBe("data: reply\n\n");
-    },
-  );
+  it.each([undefined, true])("returns the streamed reply with preview=%s", async (preview) => {
+    vi.mocked(startWebTurn).mockResolvedValue({
+      ok: true,
+      response: new Response("data: reply\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    });
+    const response = await post(JSON.stringify({ ...validBody, preview }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    expect(await response.text()).toBe("data: reply\n\n");
+  });
 });
 
 describe("chat refusal statuses", () => {
@@ -131,17 +120,13 @@ describe("chat refusal statuses", () => {
 });
 
 describe("transcript request parsing and status mapping", () => {
-  it.each([
-    "",
-    "?slug=test-school",
-    "?resumeToken=resume-token",
-    "?slug=&resumeToken=x",
-  ])("returns 400 for missing required query parameters", async (query) => {
-    expect(
-      (await GET(new Request(`http://localhost/api/chat${query}`))).status,
-    ).toBe(400);
-    expect(loadWebTranscript).not.toHaveBeenCalled();
-  });
+  it.each(["", "?slug=test-school", "?resumeToken=resume-token", "?slug=&resumeToken=x"])(
+    "returns 400 for missing required query parameters",
+    async (query) => {
+      expect((await GET(new Request(`http://localhost/api/chat${query}`))).status).toBe(400);
+      expect(loadWebTranscript).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([false, true])(
     "passes parsed query parameters with preview=%s and returns the messages",
@@ -175,9 +160,7 @@ describe("transcript request parsing and status mapping", () => {
       reason: "not_found",
     });
     const response = await GET(
-      new Request(
-        "http://localhost/api/chat?slug=test-school&resumeToken=resume-token",
-      ),
+      new Request("http://localhost/api/chat?slug=test-school&resumeToken=resume-token"),
     );
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "not_found" });

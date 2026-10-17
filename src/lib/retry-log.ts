@@ -42,13 +42,9 @@ export function logDeadTransition(event: {
       queue: event.queue,
       id: event.id,
       schoolId: event.schoolId,
-      reason: /^[a-z][a-z_]{0,79}$/.test(event.reason)
-        ? event.reason
-        : "unknown_failure",
+      reason: /^[a-z][a-z_]{0,79}$/.test(event.reason) ? event.reason : "unknown_failure",
       terminalCause: event.terminalCause,
-      ...(event.code != null && Number.isInteger(event.code)
-        ? { code: event.code }
-        : {}),
+      ...(event.code != null && Number.isInteger(event.code) ? { code: event.code } : {}),
       executions: event.executions,
       runId: event.runId,
     }),

@@ -6,11 +6,7 @@ import { requireUser, type VerifiedUser } from "./current-user";
 
 export async function getOwnedSchool(userId: string): Promise<School | null> {
   const db = getDb();
-  const [school] = await db
-    .select()
-    .from(schools)
-    .where(eq(schools.ownerUserId, userId))
-    .limit(1);
+  const [school] = await db.select().from(schools).where(eq(schools.ownerUserId, userId)).limit(1);
   return school ?? null;
 }
 

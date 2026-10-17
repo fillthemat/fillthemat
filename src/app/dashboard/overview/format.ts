@@ -25,9 +25,7 @@ export function formatBookingConversion(
   }
   const rate = (convertedSessions / eligibleSessions) * 100;
   const rounded = Math.round(rate * 10) / 10;
-  const display = Number.isInteger(rounded)
-    ? `${rounded}%`
-    : `${rounded.toFixed(1)}%`;
+  const display = Number.isInteger(rounded) ? `${rounded}%` : `${rounded.toFixed(1)}%`;
   return {
     value: display,
     evidence: `${convertedSessions} of ${eligibleSessions} eligible sessions · All time`,

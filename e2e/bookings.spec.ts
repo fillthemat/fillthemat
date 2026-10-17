@@ -16,9 +16,7 @@ test.beforeEach(async ({ page }) => {
   await signIn(page);
 });
 
-test("booking filters are URL-backed links with selected state", async ({
-  page,
-}) => {
+test("booking filters are URL-backed links with selected state", async ({ page }) => {
   await page.goto("/dashboard/bookings");
   const filters = page.getByRole("navigation", { name: "Booking filters" });
   await expect(filters.getByRole("link", { name: "Upcoming" })).toHaveAttribute(
@@ -28,10 +26,7 @@ test("booking filters are URL-backed links with selected state", async ({
 
   await filters.getByRole("link", { name: "Past" }).click();
   await expect(page).toHaveURL(/filter=past/);
-  await expect(filters.getByRole("link", { name: "Past" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  await expect(filters.getByRole("link", { name: "Past" })).toHaveAttribute("aria-current", "page");
 
   await filters.getByRole("link", { name: "All" }).click();
   await expect(page).toHaveURL(/filter=all/);
@@ -44,11 +39,9 @@ test("booked-only is an optional removable filter", async ({ page }) => {
   await expect(page).toHaveURL(/filter=upcoming/);
   await expect(page).not.toHaveURL(/status=booked/);
   await expect(
-    page
-      .getByRole("navigation", { name: "Booking filters" })
-      .getByRole("link", {
-        name: "Upcoming",
-      }),
+    page.getByRole("navigation", { name: "Booking filters" }).getByRole("link", {
+      name: "Upcoming",
+    }),
   ).toHaveAttribute("aria-current", "page");
 });
 

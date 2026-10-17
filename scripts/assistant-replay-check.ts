@@ -1,19 +1,14 @@
+import { gateway, wrapLanguageModel } from "ai";
 import { writeFile } from "node:fs/promises";
 import { setTimeout } from "node:timers/promises";
-import { gateway, wrapLanguageModel } from "ai";
-import {
-  completedReply,
-  type ReplyFinish,
-  streamedReply,
-} from "../src/lib/ai/assistant";
+import { completedReply, type ReplyFinish, streamedReply } from "../src/lib/ai/assistant";
 import { assistantContext } from "../src/test/assistant-context";
 import { legacyAssistantHistory } from "../src/test/assistant-legacy-history";
 
 // Isolated real-Gateway probe: no app, DB, mutations, Langfuse or local fallback.
 const modelId = "google/gemini-2.5-flash";
 const out = process.argv[2];
-if (!out)
-  throw new Error("Usage: assistant-replay-check.ts /private/path/report.json");
+if (!out) throw new Error("Usage: assistant-replay-check.ts /private/path/report.json");
 const calls: {
   mode: string;
   registeredNames: string[];
@@ -61,9 +56,7 @@ try {
   });
   await response.text();
   const streamedText =
-    finish?.reply.parts
-      .flatMap((part) => (part.type === "text" ? [part.text] : []))
-      .join("") ?? "";
+    finish?.reply.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") ?? "";
   const passed =
     completed.text.length > 0 &&
     finish?.completion === "complete" &&
@@ -72,9 +65,7 @@ try {
       calls.some(
         (call) =>
           call.mode === kind &&
-          ["list_trial_slots", "capture_lead"].every((name) =>
-            call.replayedNames.includes(name),
-          ) &&
+          ["list_trial_slots", "capture_lead"].every((name) => call.replayedNames.includes(name)) &&
           !call.registeredNames.includes("list_trial_slots") &&
           !call.registeredNames.includes("capture_lead"),
       ),

@@ -68,9 +68,7 @@ it.each([
   "Set-Cookie: session=secret; HttpOnly",
   '\\"cookie\\":\\"session=secret; other=value\\"',
 ])("redacts contact details and credentials: %s", (secret) => {
-  expect(redact(`SQL error 42703 ${secret}`)).toBe(
-    "SQL error 42703 [redacted]",
-  );
+  expect(redact(`SQL error 42703 ${secret}`)).toBe("SQL error 42703 [redacted]");
 });
 
 it("keeps useful diagnostics, timestamps and request IDs", () => {

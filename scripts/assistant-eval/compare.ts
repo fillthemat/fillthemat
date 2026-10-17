@@ -23,9 +23,7 @@ export const reportSchema = z.object({
 export type RunReport = z.infer<typeof reportSchema>;
 
 function hasDuplicateCases(report: RunReport): boolean {
-  return (
-    new Set(report.cases.map((row) => row.caseId)).size !== report.cases.length
-  );
+  return new Set(report.cases.map((row) => row.caseId)).size !== report.cases.length;
 }
 export function requireCompleteBaseline(
   report: RunReport,
@@ -35,12 +33,7 @@ export function requireCompleteBaseline(
     throw new Error("Incomplete/duplicate baseline case set");
   for (const item of required) {
     const actual = report.cases.find((row) => row.caseId === item.caseId);
-    if (
-      !actual ||
-      item.scores.some(
-        (name) => !actual.scores.some((score) => score.name === name),
-      )
-    )
+    if (!actual || item.scores.some((name) => !actual.scores.some((score) => score.name === name)))
       throw new Error(`Incomplete baseline: ${item.caseId}`);
   }
 }
@@ -51,21 +44,12 @@ export type Regression = {
   candidate: number | null;
 };
 
-export function compareRuns(
-  baseline: RunReport,
-  candidate: RunReport,
-): Regression[] {
+export function compareRuns(baseline: RunReport, candidate: RunReport): Regression[] {
   for (const report of [baseline, candidate]) {
     if (hasDuplicateCases(report)) throw new Error("Duplicate case ID");
   }
-  for (const field of [
-    "model",
-    "judgeModel",
-    "judgeHash",
-    "datasetHash",
-  ] as const) {
-    if (baseline[field] !== candidate[field])
-      throw new Error(`Cannot compare different ${field}`);
+  for (const field of ["model", "judgeModel", "judgeHash", "datasetHash"] as const) {
+    if (baseline[field] !== candidate[field]) throw new Error(`Cannot compare different ${field}`);
   }
   return baseline.cases.flatMap((oldCase) =>
     oldCase.scores.flatMap((score) => {

@@ -1,14 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import {
-  getDb,
-  type Transaction,
-  type TransactionOptions,
-  withTransaction,
-} from "@/db";
-import {
-  type WhatsAppBookingIntent,
-  whatsappBookingIntents,
-} from "@/db/schema";
+import { getDb, type Transaction, type TransactionOptions, withTransaction } from "@/db";
+import { type WhatsAppBookingIntent, whatsappBookingIntents } from "@/db/schema";
 
 /** How long a prepared booking stays confirmable before it needs re-picking. */
 export const WHATSAPP_BOOKING_INTENT_TTL_MS = 30 * 60 * 1000;
@@ -131,17 +123,12 @@ export async function getPendingBookingIntentById(
 }
 
 /** Transition a pending intent to confirmed once `bookSlot` succeeds. */
-export async function markBookingIntentConfirmed(
-  intentId: string,
-): Promise<void> {
+export async function markBookingIntentConfirmed(intentId: string): Promise<void> {
   const db = getDb();
   await db
     .update(whatsappBookingIntents)
     .set({ state: "confirmed", updatedAt: new Date() })
     .where(
-      and(
-        eq(whatsappBookingIntents.id, intentId),
-        eq(whatsappBookingIntents.state, "pending"),
-      ),
+      and(eq(whatsappBookingIntents.id, intentId), eq(whatsappBookingIntents.state, "pending")),
     );
 }

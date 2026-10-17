@@ -30,8 +30,7 @@ async function main() {
 
   loadEnvLocal();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  if (!siteUrl)
-    fail("NEXT_PUBLIC_SITE_URL is not set. Run bun run setup first.");
+  if (!siteUrl) fail("NEXT_PUBLIC_SITE_URL is not set. Run bun run setup first.");
 
   const secret = whatsappAppSecret();
   if (!secret) {
@@ -41,9 +40,7 @@ async function main() {
   const fixturePath = resolve("src/test/fixtures/whatsapp", fixture);
   if (!existsSync(fixturePath)) fail(`fixture not found: ${fixturePath}`);
   const body = readFileSync(fixturePath, "utf8");
-  const signature = `sha256=${createHmac("sha256", secret)
-    .update(body)
-    .digest("hex")}`;
+  const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
 
   const url = `${siteUrl.replace(/\/+$/, "")}/api/webhooks/whatsapp`;
   const response = await fetch(url, {

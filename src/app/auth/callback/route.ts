@@ -17,8 +17,7 @@ export async function GET(request: Request) {
     .find((part) => part.startsWith("fillthemat_next="))
     ?.slice("fillthemat_next=".length);
   const next = safeNext(
-    url.searchParams.get("next") ??
-      (cookieNext ? decodeURIComponent(cookieNext) : null),
+    url.searchParams.get("next") ?? (cookieNext ? decodeURIComponent(cookieNext) : null),
   );
 
   if (!code) {

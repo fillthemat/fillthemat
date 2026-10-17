@@ -7,9 +7,7 @@ export function legacyAssistantHistory(): UIMessage[] {
     {
       id: "legacy-question",
       role: "user",
-      parts: [
-        { type: "text", text: "What trials are available for Sam, age 5?" },
-      ],
+      parts: [{ type: "text", text: "What trials are available for Sam, age 5?" }],
     },
     {
       id: "legacy-occurrences",
@@ -38,9 +36,7 @@ export function legacyAssistantHistory(): UIMessage[] {
     {
       id: "legacy-contact-question",
       role: "user",
-      parts: [
-        { type: "text", text: "Please ask the school to contact me instead." },
-      ],
+      parts: [{ type: "text", text: "Please ask the school to contact me instead." }],
     },
     {
       id: "legacy-contact",

@@ -2,22 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createFaqAction, deleteFaqAction, updateFaqAction } from "../actions";
 import type { SettingsFormState } from "../form-state";
+import { createFaqAction, deleteFaqAction, updateFaqAction } from "../actions";
 import { LIMITS } from "../schemas";
 import { Callout, EmptyState, FieldGroup } from "../ui/controls";
-import {
-  DiscardEditsDialog,
-  useRecordEditor,
-  useTimedAnnouncement,
-} from "../ui/editor-lifecycle";
+import { DiscardEditsDialog, useRecordEditor, useTimedAnnouncement } from "../ui/editor-lifecycle";
 import { FaqFields } from "../ui/faq-fields";
-import {
-  ItemActionForm,
-  SaveBar,
-  type SaveSuccessMeta,
-  useSettingsForm,
-} from "../ui/section-form";
+import { ItemActionForm, SaveBar, type SaveSuccessMeta, useSettingsForm } from "../ui/section-form";
 
 export type FaqItem = {
   id: string;
@@ -63,11 +54,7 @@ export function FaqsSection({ faqs }: { faqs: FaqItem[] }) {
     if (id) setFocusId(id);
   };
 
-  const onEditSuccess = (
-    id: string,
-    state: SettingsFormState,
-    meta: SaveSuccessMeta,
-  ) => {
+  const onEditSuccess = (id: string, state: SettingsFormState, meta: SaveSuccessMeta) => {
     if (state.message) setAnnouncement(state.message);
     if (meta.preservedEdits) return;
     editor.closeImmediate();
@@ -94,8 +81,8 @@ export function FaqsSection({ faqs }: { faqs: FaqItem[] }) {
 
         {faqs.length === 0 ? (
           <EmptyState title="No questions yet">
-            Without FAQs your agent still answers from school details, trial
-            classes, schedule, and pricing.
+            Without FAQs your agent still answers from school details, trial classes, schedule, and
+            pricing.
           </EmptyState>
         ) : (
           <ul className="divide-y divide-border border-y border-border">
@@ -127,8 +114,8 @@ export function FaqsSection({ faqs }: { faqs: FaqItem[] }) {
 
       {atLimit ? (
         <Callout tone="warning">
-          You have reached the limit of {LIMITS.faqCount} questions. You can
-          still edit the ones you have. Delete one to make room for another.
+          You have reached the limit of {LIMITS.faqCount} questions. You can still edit the ones you
+          have. Delete one to make room for another.
         </Callout>
       ) : editor.isCreating ? (
         <div ref={addRef}>
@@ -206,9 +193,7 @@ function FaqRow({
   return (
     <li id={`faq-${faq.id}`} className="flex flex-col gap-3 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <h4 className="min-w-0 text-sm font-medium text-pretty">
-          {faq.question}
-        </h4>
+        <h4 className="min-w-0 text-sm font-medium text-pretty">{faq.question}</h4>
         <div className="flex flex-wrap items-start gap-2 sm:justify-end">
           <Button
             ref={editRef}
@@ -232,12 +217,7 @@ function FaqRow({
             className="items-end"
             confirm={{
               title: "Delete this question?",
-              body: (
-                <>
-                  Your agent will stop using this answer. Deleting cannot be
-                  undone.
-                </>
-              ),
+              body: <>Your agent will stop using this answer. Deleting cannot be undone.</>,
               confirmLabel: "Delete Question",
             }}
           />
@@ -259,7 +239,7 @@ function FaqRow({
               <span className="hidden group-open:inline">Hide answer</span>
             </span>
           </summary>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed break-words text-muted-foreground whitespace-pre-wrap">
+          <p className="mt-2 max-w-prose text-sm leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
             {faq.answer}
           </p>
         </details>
@@ -281,33 +261,20 @@ function CreateFaqForm({
   onSuccess: (state: SettingsFormState, meta: SaveSuccessMeta) => void;
   onPendingChange: (pending: boolean) => void;
 }) {
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    errorFor,
-  } = useSettingsForm({
-    action: createFaqAction,
-    initialValues: { question: initialQuestion, answer: "" },
-    dirtyKey: "faqs:new",
-    clearOnSuccess: true,
-    onSuccess,
-    onPendingChange,
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, errorFor } =
+    useSettingsForm({
+      action: createFaqAction,
+      initialValues: { question: initialQuestion, answer: "" },
+      dirtyKey: "faqs:new",
+      clearOnSuccess: true,
+      onSuccess,
+      onPendingChange,
+    });
 
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-5">
       <FieldGroup title="Add a question">
-        <FaqFields
-          values={values}
-          setField={setField}
-          errorFor={errorFor}
-          disabled={pending}
-        />
+        <FaqFields values={values} setField={setField} errorFor={errorFor} disabled={pending} />
       </FieldGroup>
       <SaveBar
         saveLabel="Add Question"
@@ -336,26 +303,18 @@ function EditFaqForm({
   onSuccess: (state: SettingsFormState, meta: SaveSuccessMeta) => void;
   onPendingChange: (pending: boolean) => void;
 }) {
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    errorFor,
-  } = useSettingsForm({
-    action: updateFaqAction,
-    initialValues: {
-      question: faq.question,
-      answer: faq.answer,
-      updatedAt: faq.updatedAt,
-    },
-    dirtyKey: `faqs:edit:${faq.id}`,
-    onSuccess,
-    onPendingChange,
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, errorFor } =
+    useSettingsForm({
+      action: updateFaqAction,
+      initialValues: {
+        question: faq.question,
+        answer: faq.answer,
+        updatedAt: faq.updatedAt,
+      },
+      dirtyKey: `faqs:edit:${faq.id}`,
+      onSuccess,
+      onPendingChange,
+    });
 
   return (
     <form
@@ -367,12 +326,7 @@ function EditFaqForm({
       <input type="hidden" name="id" value={faq.id} />
       <input type="hidden" name="updatedAt" value={values.updatedAt} />
       <FieldGroup title="Edit question">
-        <FaqFields
-          values={values}
-          setField={setField}
-          errorFor={errorFor}
-          disabled={pending}
-        />
+        <FaqFields values={values} setField={setField} errorFor={errorFor} disabled={pending} />
       </FieldGroup>
       <SaveBar
         saveLabel="Save Changes"

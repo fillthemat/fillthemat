@@ -21,10 +21,7 @@ describe("the assistant's default language model", () => {
 
     const model = defaultLanguageModel();
 
-    expect([model.provider, model.modelId]).toEqual([
-      "gateway",
-      "anthropic/claude-sonnet-4.6",
-    ]);
+    expect([model.provider, model.modelId]).toEqual(["gateway", "anthropic/claude-sonnet-4.6"]);
   });
 
   it.each(["VERCEL_OIDC_TOKEN", "AI_GATEWAY_API_KEY"])(
@@ -35,10 +32,7 @@ describe("the assistant's default language model", () => {
 
       const model = defaultLanguageModel();
 
-      expect([model.provider, model.modelId]).toEqual([
-        "gateway",
-        "google/gemini-2.5-flash",
-      ]);
+      expect([model.provider, model.modelId]).toEqual(["gateway", "google/gemini-2.5-flash"]);
     },
   );
 

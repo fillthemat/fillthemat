@@ -6,8 +6,7 @@
  * (returns `null`, which the route maps to HTTP 500 "unconfigured").
  */
 export const WHATSAPP_STUB_APP_SECRET = "fillthemat-local-whatsapp-app-secret";
-export const WHATSAPP_STUB_VERIFY_TOKEN =
-  "fillthemat-local-whatsapp-verify-token";
+export const WHATSAPP_STUB_VERIFY_TOKEN = "fillthemat-local-whatsapp-verify-token";
 
 /** Inbound webhook size cap, matching the Resend webhook (`route.ts`). */
 export const WHATSAPP_MAX_BODY_BYTES = 64_000;
@@ -38,7 +37,5 @@ export function whatsappApiVersion(): string {
 }
 
 export function whatsappGraphBase(): string {
-  return (
-    process.env.WHATSAPP_GRAPH_BASE || "https://graph.facebook.com"
-  ).replace(/\/+$/, "");
+  return (process.env.WHATSAPP_GRAPH_BASE || "https://graph.facebook.com").replace(/\/+$/, "");
 }

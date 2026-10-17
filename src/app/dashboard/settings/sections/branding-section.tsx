@@ -24,21 +24,12 @@ export function BrandingSection({
   welcomeMessage: string;
 }) {
   const hexId = useId();
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    reset,
-    errorFor,
-  } = useSettingsForm({
-    action: updateBrandingAction,
-    initialValues: { logoUrl, primaryColor },
-    dirtyKey: "branding:settings",
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
+    useSettingsForm({
+      action: updateBrandingAction,
+      initialValues: { logoUrl, primaryColor },
+      dirtyKey: "branding:settings",
+    });
 
   const colorError = errorFor("primaryColor");
   const pickerValue = /^#[0-9A-Fa-f]{6}$/.test(values.primaryColor)
@@ -47,14 +38,9 @@ export function BrandingSection({
 
   return (
     <div className="grid gap-6 xl:grid-cols-(--settings-page-columns)">
-      <form
-        ref={formRef}
-        action={formAction}
-        className="flex min-w-0 flex-col gap-5"
-      >
+      <form ref={formRef} action={formAction} className="flex min-w-0 flex-col gap-5">
         <Callout>
-          File uploads are not available yet. Paste a public https:// image
-          address.
+          File uploads are not available yet. Paste a public https:// image address.
         </Callout>
 
         <FieldGroup title="Logo and color">
@@ -78,18 +64,14 @@ export function BrandingSection({
                 type="color"
                 aria-label="Choose accent color with a color picker"
                 value={pickerValue}
-                onChange={(event) =>
-                  setField("primaryColor", event.target.value.toUpperCase())
-                }
+                onChange={(event) => setField("primaryColor", event.target.value.toUpperCase())}
                 className="h-11 w-12 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-1 md:h-9"
               />
               <Input
                 id={hexId}
                 name="primaryColor"
                 value={values.primaryColor}
-                onChange={(event) =>
-                  setField("primaryColor", event.target.value)
-                }
+                onChange={(event) => setField("primaryColor", event.target.value)}
                 spellCheck={false}
                 autoComplete="off"
                 maxLength={7}
@@ -103,10 +85,7 @@ export function BrandingSection({
               6-digit hex, such as #1E3A8A. Blank uses the default dark accent.
             </p>
             {colorError ? (
-              <p
-                id={`${hexId}-error`}
-                className="text-xs font-medium text-destructive"
-              >
+              <p id={`${hexId}-error`} className="text-xs font-medium text-destructive">
                 {colorError}
               </p>
             ) : null}

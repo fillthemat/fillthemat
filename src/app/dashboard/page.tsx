@@ -20,11 +20,7 @@ export default async function DashboardPage({
     <main id="main-content" className="flex flex-col gap-6">
       <PageHeader title="Overview" />
       <Suspense fallback={<OverviewSkeleton />}>
-        <OverviewBody
-          school={school}
-          errorParam={params.error}
-          headerList={headerList}
-        />
+        <OverviewBody school={school} errorParam={params.error} headerList={headerList} />
       </Suspense>
     </main>
   );

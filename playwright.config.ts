@@ -36,9 +36,7 @@ export default defineConfig({
     video: isCI ? "retain-on-failure" : "off",
   },
   webServer: {
-    command: isCI
-      ? `bun run --bun next start --hostname 127.0.0.1 --port ${port}`
-      : "bun run dev",
+    command: isCI ? `bun run --bun next start --hostname 127.0.0.1 --port ${port}` : "bun run dev",
     url: baseURL,
     reuseExistingServer: !isCI,
     timeout: 120_000,

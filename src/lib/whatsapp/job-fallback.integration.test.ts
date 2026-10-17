@@ -1,22 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { whatsappDeliveries, whatsappJobs } from "@/db/schema";
 import { findOrCreateConversation } from "@/lib/conversations/conversation-store";
-import {
-  authSql,
-  loadLocalEnv,
-  whileSavingMessages,
-} from "@/test/integration-env";
+import { authSql, loadLocalEnv, whileSavingMessages } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import type { WhatsAppTransport } from "./dependencies";
@@ -43,21 +31,16 @@ beforeAll(async () => {
 });
 afterEach(async () => {
   vi.restoreAllMocks();
-  if (jobIds.length)
-    await db.delete(whatsappJobs).where(inArray(whatsappJobs.id, jobIds));
+  if (jobIds.length) await db.delete(whatsappJobs).where(inArray(whatsappJobs.id, jobIds));
   jobIds.length = 0;
-  await db
-    .delete(whatsappDeliveries)
-    .where(eq(whatsappDeliveries.schoolId, schoolId));
+  await db.delete(whatsappDeliveries).where(eq(whatsappDeliveries.schoolId, schoolId));
 });
 afterAll(async () => {
   await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
 
-async function insertJob(
-  values: Partial<typeof whatsappJobs.$inferInsert> = {},
-) {
+async function insertJob(values: Partial<typeof whatsappJobs.$inferInsert> = {}) {
   const wamid = randomUUID();
   const [job] = await db
     .insert(whatsappJobs)
@@ -83,10 +66,7 @@ async function insertJob(
 }
 
 async function deliveries() {
-  return db
-    .select()
-    .from(whatsappDeliveries)
-    .where(eq(whatsappDeliveries.schoolId, schoolId));
+  return db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.schoolId, schoolId));
 }
 
 function recordingTransport(
@@ -200,13 +180,8 @@ describe("prospect apology after WhatsApp job exhaustion", () => {
         `create trigger ${name} before insert on app.whatsapp_deliveries for each row when (new.provider_idempotency_key = 'job-fallback/${job.id}') execute function public.${name}()`,
       );
       try {
-        await expect(
-          runWhatsAppWorkerOnce(randomUUID(), overrides),
-        ).rejects.toThrow();
-        const [row] = await db
-          .select()
-          .from(whatsappJobs)
-          .where(eq(whatsappJobs.id, job.id));
+        await expect(runWhatsAppWorkerOnce(randomUUID(), overrides)).rejects.toThrow();
+        const [row] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, job.id));
         expect(row).toMatchObject({
           state: "claimed",
           attempts: 5,
@@ -276,10 +251,7 @@ describe("prospect apology after WhatsApp job exhaustion", () => {
     expect(runs.reduce((total, run) => total + run.jobs.dead, 0)).toBe(1);
     expect(sent).toHaveLength(1);
     expect(await deliveries()).toHaveLength(1);
-    const [row] = await db
-      .select()
-      .from(whatsappJobs)
-      .where(eq(whatsappJobs.id, job.id));
+    const [row] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, job.id));
     expect(row).toMatchObject({
       state: "dead",
       attempts: 5,
@@ -327,10 +299,7 @@ describe("prospect apology after WhatsApp job exhaustion", () => {
       now: () => receivedAt,
       transport: recordingTransport(sent),
     });
-    const [row] = await db
-      .select()
-      .from(whatsappJobs)
-      .where(eq(whatsappJobs.id, job.id));
+    const [row] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, job.id));
     expect(row).toMatchObject({
       state: "dead",
       terminalCause: "permanent",
@@ -370,10 +339,7 @@ describe("prospect apology after WhatsApp job exhaustion", () => {
           },
           transport,
         });
-        const [row] = await db
-          .select()
-          .from(whatsappJobs)
-          .where(eq(whatsappJobs.id, job.id));
+        const [row] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, job.id));
         expect(row).toMatchObject({ attempts: 5, state: "dead" });
         expect(result.jobs).toMatchObject({ claimed: 5, retrying: 4, dead: 1 });
       },

@@ -1,15 +1,10 @@
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function encodeSlotId(windowId: string, startAt: Date): string {
-  return Buffer.from(`${windowId}|${startAt.toISOString()}`, "utf8").toString(
-    "base64url",
-  );
+  return Buffer.from(`${windowId}|${startAt.toISOString()}`, "utf8").toString("base64url");
 }
 
-export function parseSlotId(
-  slotId: string,
-): { windowId: string; startAt: Date } | null {
+export function parseSlotId(slotId: string): { windowId: string; startAt: Date } | null {
   try {
     const decoded = Buffer.from(slotId, "base64url").toString("utf8");
     const separator = decoded.indexOf("|");

@@ -1,27 +1,14 @@
-import { randomUUID } from "node:crypto";
-import { inspect } from "node:util";
 import { hrTimeToMilliseconds } from "@opentelemetry/core";
 import { addDays } from "date-fns";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { inspect } from "node:util";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { hashToken } from "@/lib/crypto";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
-import {
-  authSql,
-  loadLocalEnv,
-  requireRow,
-  whileSavingMessages,
-} from "@/test/integration-env";
+import { authSql, loadLocalEnv, requireRow, whileSavingMessages } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
   exportedSpans,
@@ -78,10 +65,7 @@ async function conversationFor(resumeToken: string) {
     .select()
     .from(conversations)
     .where(
-      and(
-        eq(conversations.resumeTokenHash, hashToken(resumeToken)),
-        isNull(conversations.endedAt),
-      ),
+      and(eq(conversations.resumeTokenHash, hashToken(resumeToken)), isNull(conversations.endedAt)),
     )
     .limit(1);
   return requireRow(conversation, "conversation");
@@ -189,9 +173,7 @@ describe("a web chat turn with no AI Gateway token", () => {
       role: "assistant",
       parts: [{ type: "legacy-part", value: "Old reply" }],
     });
-    expect(
-      await loadWebTranscript({ slug, preview: false, resumeToken }),
-    ).toEqual({
+    expect(await loadWebTranscript({ slug, preview: false, resumeToken })).toEqual({
       ok: true,
       messages: [
         {
@@ -215,13 +197,11 @@ describe("a web chat turn with no AI Gateway token", () => {
       .update(conversations)
       .set({ endedAt: new Date(), endReason: "message_limit" })
       .where(eq(conversations.id, conversationId));
-    expect(
-      await loadWebTranscript({ slug, preview: false, resumeToken }),
-    ).toEqual({ ok: true, messages: [] });
-    expect(await savedMessageIds(conversationId)).toEqual([
-      "question-1",
-      "reply-1",
-    ]);
+    expect(await loadWebTranscript({ slug, preview: false, resumeToken })).toEqual({
+      ok: true,
+      messages: [],
+    });
+    expect(await savedMessageIds(conversationId)).toEqual(["question-1", "reply-1"]);
   });
   it("slides the inactivity deadline on an accepted message, but not a duplicate refusal", async () => {
     const { resumeToken, conversationId } = await existingConversation({
@@ -231,19 +211,13 @@ describe("a web chat turn with no AI Gateway token", () => {
     await (await sendMessage(resumeToken, "question-1", "Hi!")).text();
     const accepted = await conversationFor(resumeToken);
     expect(accepted.id).toBe(conversationId);
-    expect(accepted.expiresAt.getTime()).toBeGreaterThanOrEqual(
-      addDays(before, 30).getTime(),
-    );
-    expect(accepted.expiresAt.getTime()).toBeLessThanOrEqual(
-      addDays(new Date(), 30).getTime(),
-    );
+    expect(accepted.expiresAt.getTime()).toBeGreaterThanOrEqual(addDays(before, 30).getTime());
+    expect(accepted.expiresAt.getTime()).toBeLessThanOrEqual(addDays(new Date(), 30).getTime());
     expect(await startMessage(resumeToken, "question-1", "Hi!")).toEqual({
       ok: false,
       reason: "duplicate",
     });
-    expect((await conversationFor(resumeToken)).expiresAt).toEqual(
-      accepted.expiresAt,
-    );
+    expect((await conversationFor(resumeToken)).expiresAt).toEqual(accepted.expiresAt);
   });
   it("loads the saved transcript for this school and token, or an empty list for an unknown token", async () => {
     const resumeToken = randomUUID();
@@ -277,11 +251,7 @@ describe("a web chat turn with no AI Gateway token", () => {
   it("saves the user message and a reply that lists the school's trial offerings, then releases the conversation lock", async () => {
     const resumeToken = randomUUID();
 
-    const response = await sendMessage(
-      resumeToken,
-      "question-1",
-      "What can my son try?",
-    );
+    const response = await sendMessage(resumeToken, "question-1", "What can my son try?");
     expect(response.status).toBe(200);
     // The stream only ends once the reply has been saved.
     const stream = await response.text();
@@ -304,9 +274,7 @@ describe("a web chat turn with no AI Gateway token", () => {
             type: "tool-list_trial_offerings",
             state: "output-available",
             output: {
-              offerings: [
-                expect.objectContaining({ id: kidsBjjId, name: "Kids BJJ" }),
-              ],
+              offerings: [expect.objectContaining({ id: kidsBjjId, name: "Kids BJJ" })],
               noMatch: false,
             },
           }),
@@ -325,11 +293,7 @@ describe("a web chat turn with no AI Gateway token", () => {
     const resumeToken = randomUUID();
     await (await sendMessage(resumeToken, "question-1", "Hi!")).text();
 
-    const response = await sendMessage(
-      resumeToken,
-      "question-2",
-      "And for adults?",
-    );
+    const response = await sendMessage(resumeToken, "question-2", "And for adults?");
     expect(response.status).toBe(200);
     await response.text();
 
@@ -354,25 +318,18 @@ describe("a web chat turn's trace", () => {
   it("is one trace in the conversation's session, for the school, tagged web, with the message as input and the reply as output", async () => {
     const resumeToken = randomUUID();
 
-    const response = await sendMessage(
-      resumeToken,
-      "question-1",
-      "What can my son try?",
-    );
+    const response = await sendMessage(resumeToken, "question-1", "What can my son try?");
     await response.text();
 
     const conversation = await conversationFor(resumeToken);
     const traces = await exportedTraces();
-    expect(
-      traces.filter(({ sessionId }) => sessionId === conversation.id),
-    ).toEqual([
+    expect(traces.filter(({ sessionId }) => sessionId === conversation.id)).toEqual([
       expect.objectContaining({
         sessionId: conversation.id,
         userId: schoolId,
         tags: ["web"],
         input: "What can my son try?",
-        output:
-          "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
+        output: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
       }),
     ]);
   });
@@ -380,25 +337,16 @@ describe("a web chat turn's trace", () => {
   it("nests the assistant's model calls and tool calls under the turn", async () => {
     const resumeToken = randomUUID();
 
-    await (
-      await sendMessage(resumeToken, "question-1", "What can my son try?")
-    ).text();
+    await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
 
     const conversation = await conversationFor(resumeToken);
-    expect((await exportedTraces()).map(({ sessionId }) => sessionId)).toEqual([
-      conversation.id,
-    ]);
+    expect((await exportedTraces()).map(({ sessionId }) => sessionId)).toEqual([conversation.id]);
     const spans = await exportedSpans();
     const root = spans.find(isRoot);
     const assistantRun = spans.find(isAssistantRun);
-    expect(assistantRun?.parentSpanContext?.spanId).toBe(
-      root?.spanContext().spanId,
-    );
+    expect(assistantRun?.parentSpanContext?.spanId).toBe(root?.spanContext().spanId);
     expect(spans.map(({ name }) => name)).toEqual(
-      expect.arrayContaining([
-        "chat scripted-local",
-        "execute_tool list_trial_offerings",
-      ]),
+      expect.arrayContaining(["chat scripted-local", "execute_tool list_trial_offerings"]),
     );
   });
 
@@ -415,27 +363,19 @@ describe("a web chat turn's trace", () => {
     );
 
     const spans = await exportedSpans();
-    const traces = [
-      ...Map.groupBy(spans, (span) => span.spanContext().traceId).values(),
-    ].map((traceSpans) => {
-      const question = String(
-        traceSpans.find(isRoot)?.attributes["langfuse.observation.input"],
-      );
-      return {
-        question,
-        sessions: [
-          ...new Set(traceSpans.map((span) => span.attributes["session.id"])),
-        ],
-        assistantRunsThatSawIt: traceSpans
-          .filter(isAssistantRun)
-          .map((span) =>
-            String(span.attributes["gen_ai.input.messages"]).includes(question),
-          ),
-      };
-    });
-    expect(
-      traces.toSorted((a, b) => a.question.localeCompare(b.question)),
-    ).toEqual(
+    const traces = [...Map.groupBy(spans, (span) => span.spanContext().traceId).values()].map(
+      (traceSpans) => {
+        const question = String(traceSpans.find(isRoot)?.attributes["langfuse.observation.input"]);
+        return {
+          question,
+          sessions: [...new Set(traceSpans.map((span) => span.attributes["session.id"]))],
+          assistantRunsThatSawIt: traceSpans
+            .filter(isAssistantRun)
+            .map((span) => String(span.attributes["gen_ai.input.messages"]).includes(question)),
+        };
+      },
+    );
+    expect(traces.toSorted((a, b) => a.question.localeCompare(b.question))).toEqual(
       await Promise.all(
         turns.map(async ({ resumeToken, question }) => ({
           question,
@@ -449,9 +389,7 @@ describe("a web chat turn's trace", () => {
   it("records the saved message ids, how the reply ended, the model, and a short hash of the platform instructions", async () => {
     const resumeToken = randomUUID();
 
-    await (
-      await sendMessage(resumeToken, "question-1", "What can my son try?")
-    ).text();
+    await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
 
     const conversation = await conversationFor(resumeToken);
     const saved = await db
@@ -475,9 +413,7 @@ describe("a web chat turn's trace", () => {
       sql,
       { conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
       async () => {
-        await (
-          await sendMessage(resumeToken, "question-1", "What can my son try?")
-        ).text();
+        await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
       },
     );
 
@@ -487,8 +423,7 @@ describe("a web chat turn's trace", () => {
     if (!root || !assistantRun) throw new Error("missing turn spans");
     // The assistant was done half a second before its reply was saved.
     expect(
-      hrTimeToMilliseconds(root.endTime) -
-        hrTimeToMilliseconds(assistantRun.endTime),
+      hrTimeToMilliseconds(root.endTime) - hrTimeToMilliseconds(assistantRun.endTime),
     ).toBeGreaterThan(400);
   });
 
@@ -505,9 +440,7 @@ describe("a web chat turn's trace", () => {
         statement: "raise exception 'disk full'",
       },
       async () => {
-        await (
-          await sendMessage(resumeToken, "question-1", "What can my son try?")
-        ).text();
+        await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
       },
     );
 
@@ -548,16 +481,10 @@ describe("a web chat turn's trace", () => {
         coachEmail,
       ]),
     ).toEqual([]);
-    const listing = spans.find(
-      ({ name }) => name === "execute_tool list_trial_offerings",
-    );
-    expect(listing?.attributes["gen_ai.tool.call.result"]).toContain(
-      "Questions? Email [email]",
-    );
+    const listing = spans.find(({ name }) => name === "execute_tool list_trial_offerings");
+    expect(listing?.attributes["gen_ai.tool.call.result"]).toContain("Questions? Email [email]");
     const assistantRun = spans.find(isAssistantRun);
-    expect(assistantRun?.attributes["gen_ai.system_instructions"]).toContain(
-      "[phone]",
-    );
+    expect(assistantRun?.attributes["gen_ai.system_instructions"]).toContain("[phone]");
   });
 });
 
@@ -569,11 +496,7 @@ describe("a web chat turn whose browser disconnects mid-reply", () => {
       sql,
       { conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
       async () => {
-        const response = await sendMessage(
-          resumeToken,
-          "question-1",
-          "What can my son try?",
-        );
+        const response = await sendMessage(resumeToken, "question-1", "What can my son try?");
         const body = response.body?.getReader();
         await body?.read();
         await body?.cancel();
@@ -581,19 +504,14 @@ describe("a web chat turn whose browser disconnects mid-reply", () => {
         // The browser left before the reply was saved.
         expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
         await vi.waitFor(
-          async () =>
-            expect(
-              (await conversationFor(resumeToken)).generatingAt,
-            ).toBeNull(),
+          async () => expect((await conversationFor(resumeToken)).generatingAt).toBeNull(),
           { timeout: 5_000 },
         );
       },
     );
 
     const [, reply] = await savedMessages(conversationId);
-    expect(reply).toEqual(
-      expect.objectContaining({ role: "assistant", completion: "complete" }),
-    );
+    expect(reply).toEqual(expect.objectContaining({ role: "assistant", completion: "complete" }));
     expect(reply?.parts).toContainEqual(
       expect.objectContaining({
         type: "text",
@@ -604,8 +522,7 @@ describe("a web chat turn whose browser disconnects mid-reply", () => {
       expect(await exportedTraces()).toEqual([
         expect.objectContaining({
           sessionId: conversationId,
-          output:
-            "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
+          output: "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.",
         }),
       ]),
     );
@@ -618,11 +535,7 @@ describe("a web chat turn whose trace can't be exported", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const resumeToken = randomUUID();
 
-    const response = await sendMessage(
-      resumeToken,
-      "question-1",
-      "What can my son try?",
-    );
+    const response = await sendMessage(resumeToken, "question-1", "What can my son try?");
     expect(response.status).toBe(200);
     await response.text();
 
@@ -657,9 +570,7 @@ describe("a rejected web chat message", () => {
       resumeToken,
     });
     if (!transcript.ok) throw new Error(transcript.reason);
-    expect(transcript.messages).toHaveLength(
-      MAX_CHAT_MESSAGES_PER_CONVERSATION,
-    );
+    expect(transcript.messages).toHaveLength(MAX_CHAT_MESSAGES_PER_CONVERSATION);
   });
   it("refuses a resume token belonging to another school and never returns its transcript", async () => {
     const { resumeToken, conversationId } = await existingConversation({
@@ -678,10 +589,7 @@ describe("a rejected web chat message", () => {
       }),
     ).toEqual({ ok: false, reason: "invalid_conversation" });
     expect(await loadWebTranscript(input)).toEqual({ ok: true, messages: [] });
-    expect(await savedMessageIds(conversationId)).toEqual([
-      "question-1",
-      "reply-1",
-    ]);
+    expect(await savedMessageIds(conversationId)).toEqual(["question-1", "reply-1"]);
     expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
     expect(await exportedTraces()).toEqual([]);
   });
@@ -732,10 +640,7 @@ describe("a rejected web chat message", () => {
     const result = await startMessage(resumeToken, "question-1", "Hello?");
 
     expect(result).toEqual({ ok: false, reason: "duplicate" });
-    expect(await savedMessageIds(conversationId)).toEqual([
-      "question-1",
-      "reply-1",
-    ]);
+    expect(await savedMessageIds(conversationId)).toEqual(["question-1", "reply-1"]);
     expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
     expect(await exportedTraces()).toEqual([]);
   });
@@ -752,9 +657,7 @@ describe("a rejected web chat message", () => {
     const result = await startMessage(resumeToken, "one-more", "Hello?");
 
     expect(result).toEqual({ ok: false, reason: "message_limit" });
-    expect(await savedMessageIds(conversationId)).toEqual(
-      messageIds.toSorted(),
-    );
+    expect(await savedMessageIds(conversationId)).toEqual(messageIds.toSorted());
     const [ended] = await db
       .select()
       .from(conversations)
@@ -763,21 +666,18 @@ describe("a rejected web chat message", () => {
     expect(ended?.endReason).toBe("message_limit");
     expect(ended?.generatingAt).toBeNull();
     expect(await exportedTraces()).toEqual([]);
-    expect(
-      await loadWebTranscript({ slug, preview: false, resumeToken }),
-    ).toEqual({ ok: true, messages: [] });
+    expect(await loadWebTranscript({ slug, preview: false, resumeToken })).toEqual({
+      ok: true,
+      messages: [],
+    });
 
-    await (
-      await sendMessage(resumeToken, "fresh-question", "Hello again")
-    ).text();
+    await (await sendMessage(resumeToken, "fresh-question", "Hello again")).text();
     const current = await conversationFor(resumeToken);
     expect(current.id).not.toBe(conversationId);
     expect(current.generatingAt).toBeNull();
     expect(await savedMessageIds(current.id)).toContain("fresh-question");
     expect(await savedMessages(current.id)).toHaveLength(2);
-    expect(await savedMessageIds(conversationId)).toEqual(
-      messageIds.toSorted(),
-    );
+    expect(await savedMessageIds(conversationId)).toEqual(messageIds.toSorted());
     const transcript = await loadWebTranscript({
       slug,
       preview: false,
@@ -794,9 +694,10 @@ describe("a rejected web chat message", () => {
       expiresAt: new Date(Date.now() - 60_000),
     });
 
-    expect(
-      await loadWebTranscript({ slug, preview: false, resumeToken }),
-    ).toEqual({ ok: true, messages: [] });
+    expect(await loadWebTranscript({ slug, preview: false, resumeToken })).toEqual({
+      ok: true,
+      messages: [],
+    });
     await (await sendMessage(resumeToken, "question-2", "Hello?")).text();
     const current = await conversationFor(resumeToken);
     expect(current.id).not.toBe(conversationId);
@@ -825,9 +726,7 @@ describe("a web chat turn that fails before its reply starts", () => {
     const resumeToken = randomUUID();
 
     // Postgres cannot store a NUL character, so saving this message fails.
-    await expect(
-      sendMessage(resumeToken, "question-1", "Hello\u0000"),
-    ).rejects.toThrow();
+    await expect(sendMessage(resumeToken, "question-1", "Hello\u0000")).rejects.toThrow();
 
     const conversation = await conversationFor(resumeToken);
     expect(conversation.generatingAt).toBeNull();

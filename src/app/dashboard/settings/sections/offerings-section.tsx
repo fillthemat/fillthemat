@@ -3,28 +3,15 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  createOfferingAction,
-  toggleOfferingAction,
-  updateOfferingAction,
-} from "../actions";
 import type { SettingsFormState } from "../form-state";
+import { createOfferingAction, toggleOfferingAction, updateOfferingAction } from "../actions";
 import { nullToEmpty } from "../form-utils";
 import { formatAgeRange, formatCount } from "../format";
 import { sectionHref } from "../sections";
 import { Badge, Callout, EmptyState, FieldGroup } from "../ui/controls";
-import {
-  DiscardEditsDialog,
-  useRecordEditor,
-  useTimedAnnouncement,
-} from "../ui/editor-lifecycle";
+import { DiscardEditsDialog, useRecordEditor, useTimedAnnouncement } from "../ui/editor-lifecycle";
 import { OfferingFields } from "../ui/offering-fields";
-import {
-  ItemActionForm,
-  SaveBar,
-  type SaveSuccessMeta,
-  useSettingsForm,
-} from "../ui/section-form";
+import { ItemActionForm, SaveBar, type SaveSuccessMeta, useSettingsForm } from "../ui/section-form";
 
 export type OfferingItem = {
   id: string;
@@ -89,11 +76,7 @@ export function OfferingsSection({ offerings }: { offerings: OfferingItem[] }) {
     if (id) setFocusId(id);
   };
 
-  const onEditSuccess = (
-    id: string,
-    state: SettingsFormState,
-    meta: SaveSuccessMeta,
-  ) => {
+  const onEditSuccess = (id: string, state: SettingsFormState, meta: SaveSuccessMeta) => {
     if (state.message) setAnnouncement(state.message);
     if (meta.preservedEdits) return;
     editor.closeImmediate();
@@ -103,8 +86,7 @@ export function OfferingsSection({ offerings }: { offerings: OfferingItem[] }) {
   return (
     <div className="flex flex-col gap-6">
       <Callout>
-        Age ranges decide who can book. A child outside every range is told they
-        are not eligible.
+        Age ranges decide who can book. A child outside every range is told they are not eligible.
       </Callout>
 
       {announcement ? (
@@ -129,12 +111,7 @@ export function OfferingsSection({ offerings }: { offerings: OfferingItem[] }) {
           <EmptyState
             title="No trial classes yet"
             action={
-              <Button
-                type="button"
-                variant="outline"
-                onClick={openAdd}
-                disabled={editor.saving}
-              >
+              <Button type="button" variant="outline" onClick={openAdd} disabled={editor.saving}>
                 Add a Trial Class
               </Button>
             }
@@ -155,9 +132,7 @@ export function OfferingsSection({ offerings }: { offerings: OfferingItem[] }) {
                 }}
                 onIdleClose={editor.closeImmediate}
                 onDirtyClose={() => editor.requestCancel(true)}
-                onSuccess={(state, meta) =>
-                  onEditSuccess(offering.id, state, meta)
-                }
+                onSuccess={(state, meta) => onEditSuccess(offering.id, state, meta)}
                 onPendingChange={editor.setSaving}
                 editRef={(node) => {
                   if (node && focusId === offering.id) {
@@ -182,12 +157,7 @@ export function OfferingsSection({ offerings }: { offerings: OfferingItem[] }) {
         </div>
       ) : (
         <div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={openAdd}
-            disabled={editor.saving}
-          >
+          <Button type="button" variant="outline" onClick={openAdd} disabled={editor.saving}>
             Add a Trial Class
           </Button>
         </div>
@@ -236,39 +206,29 @@ function OfferingRow({
             ) : (
               <Badge tone="muted">Not offered</Badge>
             )}
-            <Badge>
-              {formatAgeRange(offering.minimumAge, offering.maximumAge)}
-            </Badge>
+            <Badge>{formatAgeRange(offering.minimumAge, offering.maximumAge)}</Badge>
           </div>
           {offering.description ? (
-            <p className="line-clamp-3 max-w-prose text-sm leading-relaxed text-muted-foreground text-pretty">
+            <p className="line-clamp-3 max-w-prose text-sm leading-relaxed text-pretty text-muted-foreground">
               {offering.description}
             </p>
           ) : null}
           {offering.attire ? (
-            <p className="text-xs text-muted-foreground">
-              What to wear: {offering.attire}
-            </p>
+            <p className="text-xs text-muted-foreground">What to wear: {offering.attire}</p>
           ) : null}
           {offering.active && offering.activeWindowCount === 0 ? (
-            <p className="text-xs text-muted-foreground text-pretty">
+            <p className="text-xs text-pretty text-muted-foreground">
               Offered, but not bookable yet — add a weekly class time.{" "}
-              <Link
-                href={sectionHref("schedule")}
-                className="underline-offset-4 hover:underline"
-              >
+              <Link href={sectionHref("schedule")} className="underline-offset-4 hover:underline">
                 Add a class time
               </Link>
             </p>
           ) : bookable ? (
             <p className="text-xs text-muted-foreground">
-              {formatCount(offering.activeWindowCount, "weekly class time")}{" "}
-              available to book
+              {formatCount(offering.activeWindowCount, "weekly class time")} available to book
             </p>
           ) : offering.windowCount === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No weekly class times yet.
-            </p>
+            <p className="text-xs text-muted-foreground">No weekly class times yet.</p>
           ) : (
             <p className="text-xs text-muted-foreground">
               Turned off, so its class times are not offered.
@@ -284,9 +244,7 @@ function OfferingRow({
             onClick={onEdit}
             disabled={categorySaving}
             aria-expanded={editing}
-            aria-controls={
-              editing ? `offering-editor-${offering.id}` : undefined
-            }
+            aria-controls={editing ? `offering-editor-${offering.id}` : undefined}
           >
             Edit
           </Button>
@@ -304,8 +262,8 @@ function OfferingRow({
                     title: `Stop offering “${offering.name}”?`,
                     body: (
                       <>
-                        Families will no longer be able to book it. Trials
-                        already booked are not cancelled.
+                        Families will no longer be able to book it. Trials already booked are not
+                        cancelled.
                       </>
                     ),
                     confirmLabel: "Stop Offering",
@@ -339,23 +297,15 @@ function CreateOfferingForm({
   onSuccess: (state: SettingsFormState, meta: SaveSuccessMeta) => void;
   onPendingChange: (pending: boolean) => void;
 }) {
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    errorFor,
-  } = useSettingsForm({
-    action: createOfferingAction,
-    initialValues: BLANK,
-    dirtyKey: "offerings:new",
-    clearOnSuccess: true,
-    onSuccess,
-    onPendingChange,
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, errorFor } =
+    useSettingsForm({
+      action: createOfferingAction,
+      initialValues: BLANK,
+      dirtyKey: "offerings:new",
+      clearOnSuccess: true,
+      onSuccess,
+      onPendingChange,
+    });
 
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-5">
@@ -394,22 +344,14 @@ function EditOfferingForm({
   onSuccess: (state: SettingsFormState, meta: SaveSuccessMeta) => void;
   onPendingChange: (pending: boolean) => void;
 }) {
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    errorFor,
-  } = useSettingsForm({
-    action: updateOfferingAction,
-    initialValues: offeringValues(offering),
-    dirtyKey: `offerings:edit:${offering.id}`,
-    onSuccess,
-    onPendingChange,
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, errorFor } =
+    useSettingsForm({
+      action: updateOfferingAction,
+      initialValues: offeringValues(offering),
+      dirtyKey: `offerings:edit:${offering.id}`,
+      onSuccess,
+      onPendingChange,
+    });
 
   return (
     <form
@@ -422,8 +364,8 @@ function EditOfferingForm({
       <input type="hidden" name="updatedAt" value={values.updatedAt} />
       <FieldGroup title={`Edit “${offering.name}”`}>
         <Callout>
-          Bookings already made keep the class name, ages, and instructions from
-          when they were booked. New bookings use these settings.
+          Bookings already made keep the class name, ages, and instructions from when they were
+          booked. New bookings use these settings.
         </Callout>
         <OfferingFields
           values={values}

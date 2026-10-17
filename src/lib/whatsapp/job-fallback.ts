@@ -1,11 +1,6 @@
 import { and, desc, eq, lte, sql } from "drizzle-orm";
 import type { Database } from "@/db";
-import {
-  schools,
-  type WhatsAppJob,
-  whatsappDeliveries,
-  whatsappJobs,
-} from "@/db/schema";
+import { schools, type WhatsAppJob, whatsappDeliveries, whatsappJobs } from "@/db/schema";
 import { jobRecipientWaId } from "./parse";
 
 /** Enqueue in the job-death transaction: a crash cannot strand a dead job without its apology. */
@@ -41,9 +36,7 @@ export async function enqueueJobFallback(
     .orderBy(desc(whatsappJobs.createdAt))
     .limit(1);
   if (!inbound) return;
-  const windowExpiresAt = new Date(
-    inbound.receivedAt.getTime() + 24 * 60 * 60_000,
-  );
+  const windowExpiresAt = new Date(inbound.receivedAt.getTime() + 24 * 60 * 60_000);
   if (windowExpiresAt <= now) return;
   const [school] = await db
     .select({ id: schools.id })

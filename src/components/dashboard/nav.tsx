@@ -21,9 +21,7 @@ export function DashboardNav({ schoolName }: { schoolName: string }) {
 
   return (
     <header className="border-b border-border md:flex md:min-h-dvh md:w-52 md:shrink-0 md:flex-col md:self-stretch md:border-r md:border-b-0">
-      <p className="truncate px-4 py-3 text-sm font-medium md:px-4 md:pt-5 md:pb-3">
-        {schoolName}
-      </p>
+      <p className="truncate px-4 py-3 text-sm font-medium md:px-4 md:pt-5 md:pb-3">{schoolName}</p>
       <nav aria-label="Dashboard" className="px-2 pb-2 md:px-3 md:pb-4">
         <ul className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
           {LINKS.map((link) => {
@@ -35,9 +33,7 @@ export function DashboardNav({ schoolName }: { schoolName: string }) {
                   aria-current={current ? "page" : undefined}
                   className={cn(
                     "block rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70",
-                    current
-                      ? "bg-muted font-medium text-foreground"
-                      : "text-muted-foreground",
+                    current ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
                   )}
                 >
                   {link.label}

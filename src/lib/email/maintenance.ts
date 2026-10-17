@@ -4,10 +4,7 @@ import { bookings, cronRuns, emailDeliveries } from "@/db/schema";
 import { endInactiveConversations } from "@/lib/conversations/conversation-store";
 import { shouldCreateReminder } from "@/lib/schedule/reminders";
 import { runEmailSendOnce } from "./deliveries";
-import {
-  type EmailSendDependencies,
-  emailSendDependencies,
-} from "./dependencies";
+import { type EmailSendDependencies, emailSendDependencies } from "./dependencies";
 
 export async function createDueReminderDeliveries(now = new Date()) {
   const db = getDb();
@@ -50,15 +47,10 @@ export async function createDueReminderDeliveries(now = new Date()) {
   return created;
 }
 
-export async function runMaintenance(
-  overrides: Partial<EmailSendDependencies> = {},
-) {
+export async function runMaintenance(overrides: Partial<EmailSendDependencies> = {}) {
   const dependencies = emailSendDependencies(overrides);
   const db = getDb();
-  const [run] = await db
-    .insert(cronRuns)
-    .values({ startedAt: dependencies.now() })
-    .returning();
+  const [run] = await db.insert(cronRuns).values({ startedAt: dependencies.now() }).returning();
   if (!run) throw new Error("failed to create cron run");
 
   try {
@@ -66,9 +58,7 @@ export async function runMaintenance(
     const sends = await runEmailSendOnce(run.id, dependencies);
     const sentCount = sends.sent;
     const failedCount = sends.retrying + sends.dead;
-    const endedConversationCount = await endInactiveConversations(
-      dependencies.now(),
-    );
+    const endedConversationCount = await endInactiveConversations(dependencies.now());
     const [updated] = await db
       .update(cronRuns)
       .set({
@@ -83,8 +73,7 @@ export async function runMaintenance(
       .returning();
     return updated ?? run;
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "maintenance_failed";
+    const message = error instanceof Error ? error.message : "maintenance_failed";
     await db
       .update(cronRuns)
       .set({

@@ -1,9 +1,5 @@
 import { expect, it } from "vitest";
-import {
-  compareRuns,
-  type RunReport,
-  requireCompleteBaseline,
-} from "./compare";
+import { compareRuns, type RunReport, requireCompleteBaseline } from "./compare";
 
 const baseline: RunReport = {
   model: "same-model",
@@ -41,15 +37,8 @@ it("reports per-case lower or missing scores, including missing cases, without a
   ]);
 });
 it("rejects runs with different models, cases or judge configurations", () => {
-  for (const field of [
-    "model",
-    "judgeModel",
-    "judgeHash",
-    "datasetHash",
-  ] as const) {
-    expect(() =>
-      compareRuns(baseline, { ...baseline, [field]: "different" }),
-    ).toThrow(field);
+  for (const field of ["model", "judgeModel", "judgeHash", "datasetHash"] as const) {
+    expect(() => compareRuns(baseline, { ...baseline, [field]: "different" })).toThrow(field);
   }
 });
 it("does not allow duplicated candidate cases to hide a failing result", () => {
@@ -70,15 +59,13 @@ it("cannot use a baseline with missing metrics, wrong or repeated case IDs as a 
   ];
   expect(() => requireCompleteBaseline(baseline, required)).toThrow("faq");
   expect(() =>
-    requireCompleteBaseline(
-      { ...baseline, cases: [baseline.cases[0], baseline.cases[0]] },
-      [{ caseId: "faq", scores: ["reply-rules"] }],
-    ),
+    requireCompleteBaseline({ ...baseline, cases: [baseline.cases[0], baseline.cases[0]] }, [
+      { caseId: "faq", scores: ["reply-rules"] },
+    ]),
   ).toThrow();
   expect(() =>
-    requireCompleteBaseline(
-      { ...baseline, cases: [{ caseId: "other", scores: [] }] },
-      [{ caseId: "faq", scores: ["reply-rules"] }],
-    ),
+    requireCompleteBaseline({ ...baseline, cases: [{ caseId: "other", scores: [] }] }, [
+      { caseId: "faq", scores: ["reply-rules"] },
+    ]),
   ).toThrow();
 });

@@ -3,11 +3,8 @@ import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 
 export function buildArgs(filters: string[]): string[] {
-  if (filters.length === 1 && filters[0] === "--help")
-    return ["logs", "--help"];
-  const flags = new Set(
-    "--since --until --request-id --status-code --query --limit".split(" "),
-  );
+  if (filters.length === 1 && filters[0] === "--help") return ["logs", "--help"];
+  const flags = new Set("--since --until --request-id --status-code --query --limit".split(" "));
   for (let i = 0; i < filters.length; i += 2) {
     if (!flags.has(filters[i]) || !filters[i + 1]?.match(/^[^-]/)) {
       throw new Error("Invalid filters; see bun run logs:prod --help.");
@@ -38,9 +35,7 @@ export function needsLogin(output: string): boolean {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   try {
-    const command = "run --silent vercel"
-      .split(" ")
-      .concat(buildArgs(process.argv.slice(2)));
+    const command = "run --silent vercel".split(" ").concat(buildArgs(process.argv.slice(2)));
     // A non-Git CLI cwd avoids implicit worktree branch filters and stale links.
     command.push("--cwd", tmpdir());
     const result = spawnSync("bun", command, { encoding: "utf8" });

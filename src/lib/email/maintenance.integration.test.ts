@@ -1,14 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
-import {
-  conversations,
-  cronRuns,
-  messages,
-  whatsappBookingIntents,
-} from "@/db/schema";
+import { conversations, cronRuns, messages, whatsappBookingIntents } from "@/db/schema";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { runMaintenance } from "./maintenance";
@@ -83,15 +78,9 @@ describe("maintenance", () => {
     runIds.push(run.id);
     expect(run.result).toBe("success");
     expect(run.endedConversationCount).toBe(2);
-    const [recordedRun] = await db
-      .select()
-      .from(cronRuns)
-      .where(eq(cronRuns.id, run.id));
+    const [recordedRun] = await db.select().from(cronRuns).where(eq(cronRuns.id, run.id));
     expect(recordedRun?.endedConversationCount).toBe(2);
-    const kept = await db
-      .select()
-      .from(conversations)
-      .where(eq(conversations.schoolId, schoolId));
+    const kept = await db.select().from(conversations).where(eq(conversations.schoolId, schoolId));
     expect(kept).toHaveLength(3);
     for (const id of [inactive.id, abandoned.id]) {
       const ended = kept.find((row) => row.id === id);
@@ -100,10 +89,7 @@ describe("maintenance", () => {
     }
     expect(kept.find(({ id }) => id === active.id)?.endedAt).toBeNull();
     for (const message of saved) {
-      const [keptMessage] = await db
-        .select()
-        .from(messages)
-        .where(eq(messages.id, message.id));
+      const [keptMessage] = await db.select().from(messages).where(eq(messages.id, message.id));
       expect(keptMessage?.parts).toEqual(content);
     }
     const [expired] = await db
@@ -115,10 +101,7 @@ describe("maintenance", () => {
     runIds.push(again.id);
     expect(again.endedConversationCount).toBe(0);
     expect(
-      await db
-        .select()
-        .from(conversations)
-        .where(eq(conversations.schoolId, schoolId)),
+      await db.select().from(conversations).where(eq(conversations.schoolId, schoolId)),
     ).toEqual(kept);
   });
 });

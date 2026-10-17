@@ -20,9 +20,7 @@ type Offering = {
 function isMessageLimitRefusal(error: Error | undefined): boolean {
   if (!APICallError.isInstance(error) || error.statusCode !== 429) return false;
   try {
-    return (
-      JSON.parse(error.responseBody ?? "{}").error === CHAT_ERRORS.messageLimit
-    );
+    return JSON.parse(error.responseBody ?? "{}").error === CHAT_ERRORS.messageLimit;
   } catch {
     return false;
   }
@@ -30,9 +28,7 @@ function isMessageLimitRefusal(error: Error | undefined): boolean {
 
 // The trial offering and slot of the assistant's last Booking Intent, handed
 // to Book Trial.
-function lastProposedTrial(
-  messages: AssistantUIMessage[],
-): ProposedTrial | null {
+function lastProposedTrial(messages: AssistantUIMessage[]): ProposedTrial | null {
   let proposedTrial: ProposedTrial | null = null;
   for (const message of messages) {
     for (const part of message.parts) {
@@ -114,23 +110,16 @@ export function BookingChat({
   }, [resumeToken, slug, preview, setMessages]);
 
   const messageLimitReached = isMessageLimitRefusal(error);
-  const proposedTrial = messageLimitReached
-    ? null
-    : lastProposedTrial(messages);
+  const proposedTrial = messageLimitReached ? null : lastProposedTrial(messages);
   const showBook = bookRequested || proposedTrial !== null;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex min-h-80 flex-col rounded-2xl border border-page-200 bg-white">
         <div className="flex-1 space-y-3 overflow-y-auto p-4 text-sm">
-          {welcomeMessage ? (
-            <p className="text-page-600">{welcomeMessage}</p>
-          ) : null}
+          {welcomeMessage ? <p className="text-page-600">{welcomeMessage}</p> : null}
           {messages.map((message) => (
-            <div
-              key={message.id}
-              className={message.role === "user" ? "text-right" : ""}
-            >
+            <div key={message.id} className={message.role === "user" ? "text-right" : ""}>
               {message.parts.some((part) => part.type === "text") ? (
                 <p>
                   {message.parts
@@ -143,10 +132,7 @@ export function BookingChat({
           ))}
           {status === "streaming" ? <p className="text-page-400">…</p> : null}
           {messageLimitReached ? (
-            <p
-              role="status"
-              className="rounded-xl bg-page-50 p-3 text-page-600"
-            >
+            <p role="status" className="rounded-xl bg-page-50 p-3 text-page-600">
               {CONVERSATION_LIMIT_NOTICE}
             </p>
           ) : null}
@@ -156,9 +142,7 @@ export function BookingChat({
           onSubmit={(event) => {
             event.preventDefault();
             const form = event.currentTarget;
-            const input = form.elements.namedItem(
-              "message",
-            ) as HTMLInputElement;
+            const input = form.elements.namedItem("message") as HTMLInputElement;
             const text = input.value.trim();
             if (!text) return;
             // The server ended this conversation. Keep its notice visible until
@@ -173,10 +157,7 @@ export function BookingChat({
             placeholder="Ask about classes or times"
             className="flex-1 rounded-full border border-page-300 px-4 py-2 text-sm"
           />
-          <button
-            type="submit"
-            className="rounded-full bg-page-950 px-4 text-sm text-white"
-          >
+          <button type="submit" className="rounded-full bg-page-950 px-4 text-sm text-white">
             Send
           </button>
         </form>

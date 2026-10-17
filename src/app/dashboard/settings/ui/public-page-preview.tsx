@@ -28,17 +28,13 @@ export function PublicPagePreview({
   const accent = /^#[0-9A-Fa-f]{6}$/.test(accentColor ?? "")
     ? (accentColor as string)
     : "var(--color-page-accent-default)";
-  const validLogo =
-    showBranding && logoUrl?.startsWith("https://") && !logoFailed
-      ? logoUrl
-      : null;
+  const validLogo = showBranding && logoUrl?.startsWith("https://") && !logoFailed ? logoUrl : null;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-page-800 bg-white text-page-950">
       <div className="flex flex-col gap-4 p-5">
         {showBranding ? (
           validLogo ? (
-            // biome-ignore lint/performance/noImgElement: tenant logos are arbitrary HTTPS URLs
             <img
               src={validLogo}
               alt={`${schoolName} logo`}
@@ -50,20 +46,14 @@ export function PublicPagePreview({
             />
           ) : (
             <div className="flex h-10 items-center rounded-md border border-dashed border-page-300 px-3 text-xs text-page-500">
-              {logoUrl && logoFailed
-                ? "That image did not load"
-                : "No logo yet"}
+              {logoUrl && logoFailed ? "That image did not load" : "No logo yet"}
             </div>
           )
         ) : null}
 
         <div className="min-w-0">
-          <p className="truncate text-lg font-semibold tracking-tight">
-            {schoolName}
-          </p>
-          {location ? (
-            <p className="truncate text-sm text-page-600">{location}</p>
-          ) : null}
+          <p className="truncate text-lg font-semibold tracking-tight">{schoolName}</p>
+          {location ? <p className="truncate text-sm text-page-600">{location}</p> : null}
         </div>
 
         <div className="rounded-2xl bg-page-100 px-4 py-3 text-sm leading-relaxed text-page-800">

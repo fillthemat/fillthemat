@@ -39,10 +39,7 @@ export function assistantInstructions(school: SchoolPromptInput): string {
     school.faqs.length === 0
       ? "(none)"
       : school.faqs
-          .map(
-            (faq, index) =>
-              `Q${index + 1}: ${faq.question}\nA${index + 1}: ${faq.answer}`,
-          )
+          .map((faq, index) => `Q${index + 1}: ${faq.question}\nA${index + 1}: ${faq.answer}`)
           .join("\n\n");
 
   return [

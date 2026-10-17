@@ -10,10 +10,7 @@ import { bookSlot } from "@/lib/schedule/book-slot";
 import { whatsappBookingQuotaExceeded } from "@/lib/security/limits";
 import { bookingConfirmationIdempotencyKey } from "./confirmation";
 import { enqueueAndAttemptWhatsAppDelivery } from "./deliveries";
-import {
-  type WhatsAppWorkerDependencies,
-  whatsappWorkerDependencies,
-} from "./dependencies";
+import { type WhatsAppWorkerDependencies, whatsappWorkerDependencies } from "./dependencies";
 import { markBookingIntentConfirmed } from "./intents";
 
 /**
@@ -101,11 +98,7 @@ export async function confirmWhatsAppBooking(
   const now = dependencies.now();
   const windowExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const db = getDb();
-  const [school] = await db
-    .select()
-    .from(schools)
-    .where(eq(schools.id, schoolId))
-    .limit(1);
+  const [school] = await db.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
   // The school was deleted mid-turn, and its conversation with it.
   if (!school) throw new InternalFailure("school_missing");
 
@@ -140,8 +133,7 @@ export async function confirmWhatsAppBooking(
     return { status: "incomplete", reply };
   }
 
-  const participantName =
-    (intent.participantName ?? profileName ?? "").trim() || "Guest";
+  const participantName = (intent.participantName ?? profileName ?? "").trim() || "Guest";
   const result = await bookSlot({
     school,
     offeringId: intent.offeringId,
@@ -175,11 +167,7 @@ export async function confirmWhatsAppBooking(
   await markBookingIntentConfirmed(intent.id);
 
   const booking = result.booking;
-  const when = formatInTimeZone(
-    booking.startAt,
-    school.timezone,
-    "EEEE MMM d 'at' h:mm a",
-  );
+  const when = formatInTimeZone(booking.startAt, school.timezone, "EEEE MMM d 'at' h:mm a");
   const transcript =
     `Booked! ${booking.participantNameSnapshot}'s trial for ${booking.offeringNameSnapshot} is ${when}. ` +
     `${school.name} will see you there.`;

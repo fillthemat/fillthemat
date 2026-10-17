@@ -43,10 +43,9 @@ export type RetryFailure =
 // Meta matrix in docs/decisions/whatsapp-retry-limits-research.md §1.
 // Unknown codes deliberately remain bounded retries, not an allowlist of retries.
 const permanentMetaCodes = new Set([
-  131047, 131026, 0, 3, 10, 190, 131005, 33, 100, 131008, 131009, 131021,
-  131051, 135000, 132000, 132001, 132005, 132007, 132012, 132015, 132016, 368,
-  130497, 131031, 131037, 131042, 131045, 133010, 130403, 131050, 131048,
-  131064, 131049, 131063, 130472,
+  131047, 131026, 0, 3, 10, 190, 131005, 33, 100, 131008, 131009, 131021, 131051, 135000, 132000,
+  132001, 132005, 132007, 132012, 132015, 132016, 368, 130497, 131031, 131037, 131042, 131045,
+  133010, 130403, 131050, 131048, 131064, 131049, 131063, 130472,
 ]);
 
 function permanentFailure(failure: RetryFailure): boolean {
@@ -119,10 +118,7 @@ function retryDecision(
   now: Date,
   backoff: (executions: number) => number,
 ): RetryDecision {
-  if (
-    failure.kind === "internal" &&
-    failure.reason === "booking_confirmation_stale"
-  ) {
+  if (failure.kind === "internal" && failure.reason === "booking_confirmation_stale") {
     return { action: "stop", cause: "stale" };
   }
   if (permanentFailure(failure)) {
@@ -140,12 +136,7 @@ export function whatsappRetryDecision(
   executions: number,
   now: Date,
 ): RetryDecision {
-  return retryDecision(
-    failure,
-    executions,
-    now,
-    (count) => 10_000 * 2 ** Math.max(0, count - 1),
-  );
+  return retryDecision(failure, executions, now, (count) => 10_000 * 2 ** Math.max(0, count - 1));
 }
 
 export function emailRetryDecision(
