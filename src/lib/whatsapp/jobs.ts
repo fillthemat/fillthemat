@@ -1,14 +1,4 @@
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  lt,
-  lte,
-  notInArray,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, lte, notInArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { type WhatsAppJob, whatsappJobs } from "@/db/schema";
 import {
@@ -24,8 +14,8 @@ import {
   type RetryFailure,
   whatsappRetryDecision as retryDecision,
 } from "@/lib/retry-policy";
-import { enqueueJobFallback } from "./job-fallback";
 import type { InboundWhatsAppMessage } from "./parse";
+import { enqueueJobFallback } from "./job-fallback";
 
 /** A claim is fenced by owner, timestamp and execution count, not just row ID. */
 function ownedClaim(job: WhatsAppJob) {
@@ -36,9 +26,7 @@ function ownedClaim(job: WhatsAppJob) {
  * Enqueue one `whatsapp_jobs` row per inbound message. `dedupe_key` is the
  * inbound wamid, so a Meta retry of the same webhook creates at most one job.
  */
-export async function enqueueInboundJobs(
-  messages: InboundWhatsAppMessage[],
-): Promise<number> {
+export async function enqueueInboundJobs(messages: InboundWhatsAppMessage[]): Promise<number> {
   const db = getDb();
   let enqueued = 0;
   for (const message of messages) {
@@ -87,12 +75,8 @@ export async function claimDueWhatsAppJobs(
               opts?.phoneNumberIds
                 ? inArray(whatsappJobs.phoneNumberId, opts.phoneNumberIds)
                 : undefined,
-              fresh
-                ? eq(whatsappJobs.attempts, 0)
-                : gt(whatsappJobs.attempts, 0),
-              excludedIds.length
-                ? notInArray(whatsappJobs.id, excludedIds)
-                : undefined,
+              fresh ? eq(whatsappJobs.attempts, 0) : gt(whatsappJobs.attempts, 0),
+              excludedIds.length ? notInArray(whatsappJobs.id, excludedIds) : undefined,
             ),
           )
           .orderBy(asc(whatsappJobs.createdAt), asc(whatsappJobs.id))
@@ -121,11 +105,7 @@ export async function claimDueWhatsAppJobs(
 }
 
 /** Future retries only: already-due locked rows must not cause a busy loop. */
-export async function nextWhatsAppJobRetryAt(
-  now: Date,
-  before: Date,
-  phoneNumberIds?: string[],
-) {
+export async function nextWhatsAppJobRetryAt(now: Date, before: Date, phoneNumberIds?: string[]) {
   if (phoneNumberIds?.length === 0) return null;
   const [row] = await getDb()
     .select({ at: whatsappJobs.nextAttemptAt })
@@ -136,9 +116,7 @@ export async function nextWhatsAppJobRetryAt(
         gt(whatsappJobs.attempts, 0),
         gt(whatsappJobs.nextAttemptAt, now),
         lt(whatsappJobs.nextAttemptAt, before),
-        phoneNumberIds
-          ? inArray(whatsappJobs.phoneNumberId, phoneNumberIds)
-          : undefined,
+        phoneNumberIds ? inArray(whatsappJobs.phoneNumberId, phoneNumberIds) : undefined,
       ),
     )
     .orderBy(asc(whatsappJobs.nextAttemptAt))
@@ -215,9 +193,7 @@ export async function failJob(
   });
   if (rows.length === 0) return "deferred";
   if (decision.action === "stop") {
-    logDeadTransition(
-      deadEventFrom(rows[0], "whatsapp_job", job.claimedBy ?? "unknown"),
-    );
+    logDeadTransition(deadEventFrom(rows[0], "whatsapp_job", job.claimedBy ?? "unknown"));
   }
   return decision.action === "stop" ? "dead" : "retrying";
 }
@@ -274,22 +250,13 @@ export async function recoverStuckWhatsAppJobs(
         and(
           eq(whatsappJobs.state, "claimed"),
           lt(whatsappJobs.claimedAt, new Date(now.getTime() - staleBeforeMs)),
-          phoneNumberIds
-            ? inArray(whatsappJobs.phoneNumberId, phoneNumberIds)
-            : undefined,
+          phoneNumberIds ? inArray(whatsappJobs.phoneNumberId, phoneNumberIds) : undefined,
         ),
       )
       .for("update", { skipLocked: true });
     return recoverClaimedRows(stale, async (job) => {
-      const reason = internalFailureReasonFrom(
-        job.failureReason,
-        "worker_crashed",
-      );
-      const decision = retryDecision(
-        { kind: "internal", reason },
-        job.attempts,
-        now,
-      );
+      const reason = internalFailureReasonFrom(job.failureReason, "worker_crashed");
+      const decision = retryDecision({ kind: "internal", reason }, job.attempts, now);
       const [row] = await tx
         .update(whatsappJobs)
         .set({
@@ -299,13 +266,9 @@ export async function recoverStuckWhatsAppJobs(
           updatedAt: now,
           // Keep the previous diagnostic; crash recovery must not erase it.
           failureReason:
-            decision.action === "stop"
-              ? (job.failureReason ?? reason)
-              : job.failureReason,
+            decision.action === "stop" ? (job.failureReason ?? reason) : job.failureReason,
           lastError:
-            decision.action === "stop"
-              ? (job.lastError ?? "worker_crashed")
-              : job.lastError,
+            decision.action === "stop" ? (job.lastError ?? "worker_crashed") : job.lastError,
           terminalCause: decision.action === "stop" ? decision.cause : null,
         })
         .where(ownedClaim(job))

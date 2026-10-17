@@ -1,7 +1,7 @@
+import { inArray } from "drizzle-orm";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
-import { inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
 import { whatsappDeliveries, whatsappJobs } from "@/db/schema";
@@ -32,12 +32,9 @@ beforeAll(async () => {
   schoolId = seeded.schoolId;
 });
 afterEach(async () => {
-  if (jobIds.length)
-    await db.delete(whatsappJobs).where(inArray(whatsappJobs.id, jobIds));
+  if (jobIds.length) await db.delete(whatsappJobs).where(inArray(whatsappJobs.id, jobIds));
   if (deliveryIds.length)
-    await db
-      .delete(whatsappDeliveries)
-      .where(inArray(whatsappDeliveries.id, deliveryIds));
+    await db.delete(whatsappDeliveries).where(inArray(whatsappDeliveries.id, deliveryIds));
   jobIds.length = 0;
   deliveryIds.length = 0;
 });
@@ -63,9 +60,7 @@ async function job(values: Partial<typeof whatsappJobs.$inferInsert> = {}) {
   return row;
 }
 
-async function delivery(
-  values: Partial<typeof whatsappDeliveries.$inferInsert> = {},
-) {
+async function delivery(values: Partial<typeof whatsappDeliveries.$inferInsert> = {}) {
   const [row] = await db
     .insert(whatsappDeliveries)
     .values({
@@ -122,8 +117,7 @@ const queues = [
 
 describe.each(queues)("$name lane behavior", (queue) => {
   it("claims a lone fresh row ahead of more retries than a full batch", async () => {
-    for (let i = 0; i < queue.limit + 1; i++)
-      await queue.insert({ attempts: 3 });
+    for (let i = 0; i < queue.limit + 1; i++) await queue.insert({ attempts: 3 });
     const fresh = await queue.insert();
     const claimed = await queue.claim("fresh-in-backlog");
     expect(claimed).toHaveLength(queue.limit);
@@ -134,8 +128,7 @@ describe.each(queues)("$name lane behavior", (queue) => {
   it.each([0, 2])(
     "fills a full batch from an otherwise empty lane (executions %i)",
     async (attempts) => {
-      for (let i = 0; i < queue.limit + 1; i++)
-        await queue.insert({ attempts });
+      for (let i = 0; i < queue.limit + 1; i++) await queue.insert({ attempts });
       const claimed = await queue.claim("empty-lane");
       expect(claimed).toHaveLength(queue.limit);
       expect(claimed.every((row) => row.attempts === attempts)).toBe(true);
@@ -242,21 +235,17 @@ describe.each(queues)("$name lane behavior", (queue) => {
     });
     const fresh = await queue.insert();
     const retry = await queue.insert({ attempts: 2 });
-    const table =
-      queue.name === "jobs" ? "app.whatsapp_jobs" : "app.whatsapp_deliveries";
+    const table = queue.name === "jobs" ? "app.whatsapp_jobs" : "app.whatsapp_deliveries";
     await sql.begin(async (tx) => {
-      await tx.unsafe(
-        `select id from ${table} where id in ($1, $2) for update`,
-        [lockedFresh.id, lockedRetry.id],
-      );
+      await tx.unsafe(`select id from ${table} where id in ($1, $2) for update`, [
+        lockedFresh.id,
+        lockedRetry.id,
+      ]);
       const claimed = await queue.claim("skip-locked");
       expect(claimed.map((row) => row.id)).toEqual([fresh.id, retry.id]);
     });
     const remaining = await queue.claim("released-lock");
-    expect(remaining.map((row) => row.id)).toEqual([
-      lockedFresh.id,
-      lockedRetry.id,
-    ]);
+    expect(remaining.map((row) => row.id)).toEqual([lockedFresh.id, lockedRetry.id]);
   });
 });
 
@@ -265,9 +254,7 @@ it("inline explicit IDs never claim unrelated rows or broaden an empty list", as
     createdAt: new Date(now.getTime() - 1_000),
   });
   const inside = await delivery();
-  expect(
-    await claimDueWhatsAppDeliveries("empty-ids", { now, ids: [] }),
-  ).toEqual([]);
+  expect(await claimDueWhatsAppDeliveries("empty-ids", { now, ids: [] })).toEqual([]);
   const claimed = await claimDueWhatsAppDeliveries("inline", {
     now,
     ids: [inside.id],
@@ -288,17 +275,14 @@ describe("WhatsApp fresh-first claim lanes", () => {
         state: "pending",
         createdAt: new Date(now.getTime() - 1_000),
       });
-    for (let i = 0; i < 25; i++)
-      await delivery({ attempts: 0, state: "failed" });
+    for (let i = 0; i < 25; i++) await delivery({ attempts: 0, state: "failed" });
     const claimed = await claimDueWhatsAppDeliveries("delivery-lanes", {
       now,
       phoneNumberIds: [phoneNumberId],
     });
     expect(claimed).toHaveLength(25);
     expect(claimed.slice(0, 20).every((row) => row.attempts === 0)).toBe(true);
-    expect(claimed.slice(20).map((row) => row.attempts)).toEqual([
-      2, 2, 2, 2, 2,
-    ]);
+    expect(claimed.slice(20).map((row) => row.attempts)).toEqual([2, 2, 2, 2, 2]);
     for (const row of claimed)
       expect(row).toMatchObject({
         state: "claimed",
@@ -320,9 +304,7 @@ describe("WhatsApp fresh-first claim lanes", () => {
       phoneNumberIds: [phoneNumberId],
     });
     expect(claimed).toHaveLength(10);
-    expect(claimed.map((row) => row.attempts)).toEqual([
-      0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
-    ]);
+    expect(claimed.map((row) => row.attempts)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 1, 1]);
     for (const row of claimed)
       expect(row).toMatchObject({
         state: "claimed",

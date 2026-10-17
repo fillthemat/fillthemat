@@ -19,24 +19,17 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ section?: string }>;
 }) {
-  const [{ school }, params] = await Promise.all([
-    requireOwnedSchool(),
-    searchParams,
-  ]);
+  const [{ school }, params] = await Promise.all([requireOwnedSchool(), searchParams]);
   const section: SectionId = resolveSection(params.section);
   const meta = sectionMeta(section);
-  const location =
-    [school.address, school.city].filter(Boolean).join(", ") || null;
+  const location = [school.address, school.city].filter(Boolean).join(", ") || null;
 
   return (
     <main id="main-content" className="flex max-w-6xl flex-col gap-5">
       <PageHeader title="Settings" />
 
       <SettingsShell activeSection={section}>
-        <section
-          className="flex flex-col gap-5"
-          aria-labelledby="section-title"
-        >
+        <section className="flex flex-col gap-5" aria-labelledby="section-title">
           <h2 id="section-title" className="text-lg font-semibold">
             {meta.title}
           </h2>
@@ -104,9 +97,7 @@ async function SectionContent({
           expectations: offering.expectations,
           active: offering.active,
           updatedAt: serializeTimestamp(offering.updatedAt),
-          windowCount: windows.filter(
-            (window) => window.trialOfferingId === offering.id,
-          ).length,
+          windowCount: windows.filter((window) => window.trialOfferingId === offering.id).length,
           activeWindowCount: windows.filter(
             (window) => window.trialOfferingId === offering.id && window.active,
           ).length,

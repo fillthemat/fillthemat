@@ -20,8 +20,7 @@ export const config: VercelConfig = {
   // skip). See docs/decisions/vercel-gh-pages-deployments.md. Check in the shell
   // first: the report branch has no package.json or scripts/.
   // Other branches use the docs-only Preview skip; Production/uncertainty build.
-  ignoreCommand:
-    '[ "$VERCEL_GIT_COMMIT_REF" = "gh-pages" ] || bun run vercel:ignore-build',
+  ignoreCommand: '[ "$VERCEL_GIT_COMMIT_REF" = "gh-pages" ] || bun run vercel:ignore-build',
   crons: [
     { path: "/api/cron/maintenance", schedule: "0 14 * * *" },
     // Hobby-safe: Vercel's free tier only allows daily cron intervals. The

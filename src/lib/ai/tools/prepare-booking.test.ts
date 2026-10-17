@@ -8,21 +8,18 @@ import {
 import { prepareBooking } from "./prepare-booking";
 
 describe("prepare a Booking Intent", () => {
-  it.each([0, 4, 13])(
-    "rejects age %s outside the offering's range",
-    async (participantAge) => {
-      const result = await prepareBooking(assistantContext()).execute?.(
-        {
-          offeringId: kidsOffering.id,
-          slotId: openSlotId,
-          participantAge,
-        },
-        toolExecutionOptions,
-      );
+  it.each([0, 4, 13])("rejects age %s outside the offering's range", async (participantAge) => {
+    const result = await prepareBooking(assistantContext()).execute?.(
+      {
+        offeringId: kidsOffering.id,
+        slotId: openSlotId,
+        participantAge,
+      },
+      toolExecutionOptions,
+    );
 
-      expect(result).toEqual({ ok: false, reason: "ineligible_age" });
-    },
-  );
+    expect(result).toEqual({ ok: false, reason: "ineligible_age" });
+  });
 
   it.each([5, 12, undefined])(
     "accepts age %s at the inclusive bounds or leaves it for confirmation when missing",

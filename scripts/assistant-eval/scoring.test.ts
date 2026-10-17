@@ -60,10 +60,9 @@ describe("intent scoring", () => {
 describe("tool-call scoring", () => {
   it("fails both a missing required call and a forbidden call, with independent scores", () => {
     expect(
-      scoreToolCalls(
-        { called: ["list_trial_offerings"], notCalled: ["prepare_booking"] },
-        ["prepare_booking"],
-      ),
+      scoreToolCalls({ called: ["list_trial_offerings"], notCalled: ["prepare_booking"] }, [
+        "prepare_booking",
+      ]),
     ).toEqual([
       { name: "tool:list_trial_offerings:called", value: 0 },
       { name: "tool:prepare_booking:not-called", value: 0 },

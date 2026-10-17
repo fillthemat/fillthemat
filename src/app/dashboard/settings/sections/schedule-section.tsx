@@ -9,22 +9,10 @@ import {
   deleteWindowAction,
   updateWindowCapacityAction,
 } from "../actions";
-import {
-  DAY_NAMES,
-  formatCount,
-  formatDuration,
-  formatTimeRange,
-  WEEK_ORDER,
-} from "../format";
+import { DAY_NAMES, formatCount, formatDuration, formatTimeRange, WEEK_ORDER } from "../format";
 import { LIMITS } from "../schemas";
 import { sectionHref } from "../sections";
-import {
-  Badge,
-  EmptyState,
-  FieldGroup,
-  SelectField,
-  TextField,
-} from "../ui/controls";
+import { Badge, EmptyState, FieldGroup, SelectField, TextField } from "../ui/controls";
 import { ItemActionForm, SaveBar, useSettingsForm } from "../ui/section-form";
 
 export type ScheduleWindowItem = {
@@ -75,22 +63,13 @@ export function ScheduleSection({
     label: "",
   };
 
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    reset,
-    errorFor,
-  } = useSettingsForm({
-    action: createWindowAction,
-    initialValues: blank,
-    dirtyKey: "schedule:new",
-    clearOnSuccess: true,
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
+    useSettingsForm({
+      action: createWindowAction,
+      initialValues: blank,
+      dirtyKey: "schedule:new",
+      clearOnSuccess: true,
+    });
 
   const openAddForm = () => {
     setAdding(true);
@@ -116,9 +95,7 @@ export function ScheduleSection({
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-muted-foreground">
-        Times are in {timezoneLabel}.
-      </p>
+      <p className="text-sm text-muted-foreground">Times are in {timezoneLabel}.</p>
 
       <section className="flex flex-col gap-4" aria-labelledby="schedule-list">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -147,22 +124,22 @@ export function ScheduleSection({
           </EmptyState>
         ) : (
           <div className="flex flex-col gap-5">
-            {WEEK_ORDER.filter((day) =>
-              windows.some((item) => item.dayOfWeek === day),
-            ).map((day) => (
-              <section key={day} className="flex flex-col gap-1">
-                <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                  {DAY_NAMES[day]}
-                </h4>
-                <ul className="divide-y divide-border border-y border-border">
-                  {windows
-                    .filter((item) => item.dayOfWeek === day)
-                    .map((item) => (
-                      <WindowRow key={item.id} item={item} />
-                    ))}
-                </ul>
-              </section>
-            ))}
+            {WEEK_ORDER.filter((day) => windows.some((item) => item.dayOfWeek === day)).map(
+              (day) => (
+                <section key={day} className="flex flex-col gap-1">
+                  <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    {DAY_NAMES[day]}
+                  </h4>
+                  <ul className="divide-y divide-border border-y border-border">
+                    {windows
+                      .filter((item) => item.dayOfWeek === day)
+                      .map((item) => (
+                        <WindowRow key={item.id} item={item} />
+                      ))}
+                  </ul>
+                </section>
+              ),
+            )}
           </div>
         )}
       </section>
@@ -180,9 +157,7 @@ export function ScheduleSection({
                 error={errorFor("trialOfferingId")}
                 options={offerings.map((offering) => ({
                   value: offering.id,
-                  label: offering.active
-                    ? offering.name
-                    : `${offering.name} (not offered)`,
+                  label: offering.active ? offering.name : `${offering.name} (not offered)`,
                 }))}
               />
               <div className="grid gap-3 sm:grid-cols-2">
@@ -275,16 +250,10 @@ function WindowRow({ item }: { item: ScheduleWindowItem }) {
           <span className="text-xs text-muted-foreground">
             {formatDuration(item.durationMinutes)}
           </span>
-          {item.active ? (
-            <Badge tone="active">Open</Badge>
-          ) : (
-            <Badge tone="muted">Turned off</Badge>
-          )}
-          {item.hasUpcomingBooking ? (
-            <Badge tone="warning">Upcoming bookings</Badge>
-          ) : null}
+          {item.active ? <Badge tone="active">Open</Badge> : <Badge tone="muted">Turned off</Badge>}
+          {item.hasUpcomingBooking ? <Badge tone="warning">Upcoming bookings</Badge> : null}
         </div>
-        <p className="text-sm text-muted-foreground text-pretty">
+        <p className="text-sm text-pretty text-muted-foreground">
           {item.offeringName}
           {item.offeringActive ? "" : " · trial class is not offered"}
           {item.label ? ` · ${item.label}` : ""}
@@ -297,11 +266,7 @@ function WindowRow({ item }: { item: ScheduleWindowItem }) {
         </p>
       </div>
 
-      <CapacityForm
-        id={item.id}
-        capacity={item.capacity}
-        minimum={item.maxUpcomingBooked}
-      />
+      <CapacityForm id={item.id} capacity={item.capacity} minimum={item.maxUpcomingBooked} />
 
       <div className="flex flex-wrap items-start gap-2">
         {item.active ? (
@@ -314,25 +279,23 @@ function WindowRow({ item }: { item: ScheduleWindowItem }) {
               title: "Turn off this class time?",
               body: (
                 <>
-                  Families will stop seeing it. Existing bookings stay, and it
-                  cannot be turned back on from settings yet — add a new class
-                  time instead.
+                  Families will stop seeing it. Existing bookings stay, and it cannot be turned back
+                  on from settings yet — add a new class time instead.
                 </>
               ),
               confirmLabel: "Turn It Off",
             }}
           />
         ) : (
-          <p className="text-xs text-muted-foreground text-pretty">
-            Turned off. Reopening is not available yet — add a new class time
-            with the same day and time.
+          <p className="text-xs text-pretty text-muted-foreground">
+            Turned off. Reopening is not available yet — add a new class time with the same day and
+            time.
           </p>
         )}
 
         {item.onCalendar ? (
-          <p className="max-w-prose text-xs text-muted-foreground text-pretty">
-            Already on your calendar, so it cannot be deleted. Turn it off to
-            stop offering it.
+          <p className="max-w-prose text-xs text-pretty text-muted-foreground">
+            Already on your calendar, so it cannot be deleted. Turn it off to stop offering it.
           </p>
         ) : (
           <ItemActionForm
@@ -345,8 +308,8 @@ function WindowRow({ item }: { item: ScheduleWindowItem }) {
               title: "Delete this class time?",
               body: (
                 <>
-                  It disappears from your weekly schedule. Nobody has booked it
-                  yet. This cannot be undone.
+                  It disappears from your weekly schedule. Nobody has booked it yet. This cannot be
+                  undone.
                 </>
               ),
               confirmLabel: "Delete Class Time",
@@ -367,21 +330,12 @@ function CapacityForm({
   capacity: number;
   minimum: number;
 }) {
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    reset,
-    errorFor,
-  } = useSettingsForm({
-    action: updateWindowCapacityAction,
-    initialValues: { capacity: String(capacity) },
-    dirtyKey: `schedule:capacity:${id}`,
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
+    useSettingsForm({
+      action: updateWindowCapacityAction,
+      initialValues: { capacity: String(capacity) },
+      dirtyKey: `schedule:capacity:${id}`,
+    });
 
   return (
     <form

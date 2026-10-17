@@ -1,9 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import type {
-  BookingIntent,
-  CompletedReply,
-  LeadRequest,
-} from "../../src/lib/ai/assistant";
+import type { BookingIntent, CompletedReply, LeadRequest } from "../../src/lib/ai/assistant";
 import type { assistantTools } from "../../src/lib/ai/tools";
 
 export type Score = { name: string; value: number; comment?: string };
@@ -29,9 +25,7 @@ export function scoreIntents(
   return [
     {
       name: "bookingIntent",
-      value: Number(
-        isDeepStrictEqual(expected.bookingIntent, reply.bookingIntent),
-      ),
+      value: Number(isDeepStrictEqual(expected.bookingIntent, reply.bookingIntent)),
     },
     {
       name: "leadRequest",
@@ -51,10 +45,7 @@ function canonicalTool(name: string): string {
   );
 }
 
-export function scoreToolCalls(
-  expected: ToolExpectations,
-  calls: string[],
-): Score[] {
+export function scoreToolCalls(expected: ToolExpectations, calls: string[]): Score[] {
   calls = calls.map(canonicalTool);
   return [
     ...expected.called.map((name) => ({

@@ -7,6 +7,7 @@
 Give the owner dashboard a cohesive, approachable design using one small design system. This is a presentation and interaction-polish pass, not a product rebuild.
 
 **User priorities, in order:**
+
 1. Simplicity and clarity.
 2. Consistency across the dashboard.
 3. Compact, useful layouts: less unnecessary whitespace.
@@ -21,12 +22,14 @@ The result should feel like a practical tool for a martial arts school owner, no
 **Recommended choice: shadcn/ui using Radix primitives, Tailwind v4, and the existing Geist fonts.** Adopt its component source and semantic tokens, not a prebuilt dashboard block. Confirm current official installation guidance and compatibility before installing; do not blindly execute the older commands in `docs/v1-plan.md`.
 
 Why this choice:
+
 - Fits the existing React 19 / Next.js 16 / Tailwind v4 stack without replacing the styling approach.
 - Supplies consistent controls and accessible interaction primitives while leaving density and copy under our control.
 - Matches the original architecture's intended kit; neither shadcn nor Radix is installed today.
 - Lets us migrate incrementally while preserving settings' existing form logic.
 
 Alternatives considered:
+
 - **Mantine/MUI:** capable, but introduce a larger parallel styling/component model for a small existing Tailwind app.
 - **Continue with bespoke components:** smallest immediate dependency change, but leaves us maintaining every interaction and visual convention ourselves.
 
@@ -66,19 +69,20 @@ Start with Button, Input, Textarea, Label, Badge, Separator, Table, and AlertDia
 
 Use a **quiet, compact, softened-dark dashboard** for this pass. Keep the current dark-mode direction; replace inconsistent near-black boxes and zinc class strings with a coherent token system. Approachability should come from readable contrast, plain language, predictable controls, and less clutter—not illustration, oversized cards, or a new theme preference system.
 
-| Element | Starting specification |
-| --- | --- |
-| Color | Charcoal canvas, subtly raised surfaces, readable muted text, restrained borders. Neutral primary action; semantic success/warning/destructive colors only where meaningful. |
-| Tokens | Background, foreground, surface/card, muted, muted-foreground, border/input, primary, secondary, accent, destructive, ring, and status variants. Pages must not invent new palettes. |
-| Typography | Existing Geist Sans; 14px default UI text, 12px secondary metadata, 22–24px page title, 16–18px section heading. Never shrink essential content to decorative microtype. |
-| Spacing | 4px base scale; 8px within tight groups, 12–16px between related controls/rows, 20–24px between sections. Usually 16px mobile and 24px desktop page padding. |
-| Controls | Roughly 36–40px tall on pointer-oriented desktop layouts; comfortable approximately 44px touch targets on mobile. Maintain spacing and WCAG target-size requirements. |
-| Shape | Consistent modest radii (roughly 6–8px controls, 8–12px panels). Pills reserved for badges/segmented navigation, not every button. |
-| Layout | Stable desktop navigation rail around 200px. Compact mobile top navigation; avoid a tall stacked menu before every page. No unnecessary collapsed-rail state. |
-| Width | Let operational lists use the available width. Cap long text/form lines where it improves reading; do not stretch a single input just to eliminate all empty space. |
-| Motion | Brief color/focus feedback only; honor reduced motion. No decorative entrance sequences. |
+| Element    | Starting specification                                                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Color      | Charcoal canvas, subtly raised surfaces, readable muted text, restrained borders. Neutral primary action; semantic success/warning/destructive colors only where meaningful.         |
+| Tokens     | Background, foreground, surface/card, muted, muted-foreground, border/input, primary, secondary, accent, destructive, ring, and status variants. Pages must not invent new palettes. |
+| Typography | Existing Geist Sans; 14px default UI text, 12px secondary metadata, 22–24px page title, 16–18px section heading. Never shrink essential content to decorative microtype.             |
+| Spacing    | 4px base scale; 8px within tight groups, 12–16px between related controls/rows, 20–24px between sections. Usually 16px mobile and 24px desktop page padding.                         |
+| Controls   | Roughly 36–40px tall on pointer-oriented desktop layouts; comfortable approximately 44px touch targets on mobile. Maintain spacing and WCAG target-size requirements.                |
+| Shape      | Consistent modest radii (roughly 6–8px controls, 8–12px panels). Pills reserved for badges/segmented navigation, not every button.                                                   |
+| Layout     | Stable desktop navigation rail around 200px. Compact mobile top navigation; avoid a tall stacked menu before every page. No unnecessary collapsed-rail state.                        |
+| Width      | Let operational lists use the available width. Cap long text/form lines where it improves reading; do not stretch a single input just to eliminate all empty space.                  |
+| Motion     | Brief color/focus feedback only; honor reduced motion. No decorative entrance sequences.                                                                                             |
 
 Additional rules:
+
 - One clear page heading. Section headings only where they divide real tasks.
 - No default page subtitle. Remove explanatory text that restates a heading or label.
 - Prefer separators and alignment over nested cards. Avoid card → card → fieldset stacks.
@@ -93,6 +97,7 @@ Additional rules:
 For every subtitle/helper/callout, ask: **Does this add a fact the owner needs here that the label does not already convey?** If not, remove it. If yes, place one concise explanation next to the relevant decision.
 
 Concrete targets:
+
 - Remove the settings intro: “Teach your agent about your school and manage the trial-booking experience.”
 - Remove navigation hints such as “Name, contact, arrival” under “School.”
 - Remove blanket section-purpose paragraphs beginning “Your agent uses…”; move only necessary constraints to their relevant controls.
@@ -186,6 +191,7 @@ Files: `src/app/dashboard/settings/{page.tsx,settings-shell.tsx,sections.ts,sect
 **Owns:** `package.json`, `bun.lock`, `components.json`, shared utilities, `src/app/globals.css`, any unavoidable root-layout changes, `src/components/ui/*`, `src/components/dashboard/*`, dashboard layout, and `settings/ui/controls.tsx`.
 
 Deliver:
+
 - Validated kit choice and minimal installation.
 - Semantic theme, compact component variants, shell/navigation.
 - Compatible settings control adapter.
@@ -197,18 +203,21 @@ Deliver:
 ### Phase 2 — parallel implementation
 
 **Agent B: operational screens**
+
 - Owns overview, bookings and leads page files, plus new screen-specific components outside A's shared directories.
 - Implements section 4's operational-screen work using A's components.
 - Does not edit server actions, queries' semantics, auth, schemas, or shared tokens. Escalate a required behavior change rather than expanding scope.
 - Delivers screenshots, changed-copy notes, and interaction checks.
 
 **Agent C: settings simplification**
+
 - Owns settings page, settings shell, `sections.ts`, `sections/*`, and `ui/*` **except `controls.tsx`**.
 - Removes redundant copy and nesting, standardizes save areas/dialogs, and compacts previews and forms.
 - Preserves form-state mechanics and the documented settings contracts; request adapter changes from A.
 - Delivers screenshots of every category and explicit checks of save/validation/unsaved behavior.
 
 **Agent D: QA and consistency review**
+
 - Owns `e2e/*` changes and test-only fixtures/support files; coordinates any test configuration change through director.
 - Can prepare test scenarios in parallel, but runs mutation-heavy suites sequentially against shared data.
 - Reviews A/B/C against one visual standard. Reports defects to the owner of the affected files rather than doing competing cosmetic edits.
@@ -223,6 +232,7 @@ All agents return: changed paths, summary, screenshots, commands/results, known 
 ### Worktree operations
 
 Follow the existing contract, not a new setup process:
+
 - Create `.worktrees/<name>` using `git worktree add`; run `bun run setup` there and use its printed origin.
 - Do not pass `--port`, manually edit `NEXT_PUBLIC_SITE_URL`, or pick another port after a collision; stop and report it.
 - Do not stop/recreate Supabase from a child worktree. Have director coordinate any machine-level stack problem.
@@ -254,6 +264,7 @@ Follow the existing contract, not a new setup process:
 ### Verification commands and evidence
 
 Run on the integrated branch:
+
 - `bun run check`
 - `bun run test`
 - `bunx tsc --noEmit`

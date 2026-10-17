@@ -1,24 +1,16 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import {
-  bookings,
-  emailDeliveries,
-  schools,
-  type WhatsAppDelivery,
-} from "@/db/schema";
+import { bookings, emailDeliveries, schools, type WhatsAppDelivery } from "@/db/schema";
 
 type Database = ReturnType<typeof getDb>;
-export type DeliveryTransaction = Parameters<
-  Parameters<Database["transaction"]>[0]
->[0];
+export type DeliveryTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export async function bookingConfirmationIsStale(
   delivery: WhatsAppDelivery,
   now: Date,
   db: Database | DeliveryTransaction = getDb(),
 ): Promise<boolean> {
-  if (!delivery.bookingId || delivery.templateName !== "booking_confirmation")
-    return false;
+  if (!delivery.bookingId || delivery.templateName !== "booking_confirmation") return false;
   const [booking] = await db
     .select({ startAt: bookings.startAt })
     .from(bookings)

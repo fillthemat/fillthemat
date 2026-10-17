@@ -23,12 +23,12 @@ Related: `docs/v1-deploy-current.md` (what production needs), `docs/whatsapp-pha
 
 ## 1. Target identity (already true)
 
-| Item | Value |
-| --- | --- |
-| Operator mailbox | `admin@fillthemat.com` |
-| Domain | `fillthemat.com` (Porkbun nameservers; MX already `smtp.google.com`) |
-| Public origin to keep | `https://www.fillthemat.com` |
-| Bank | company account (connect as each vendor’s payment method) |
+| Item                  | Value                                                                |
+| --------------------- | -------------------------------------------------------------------- |
+| Operator mailbox      | `admin@fillthemat.com`                                               |
+| Domain                | `fillthemat.com` (Porkbun nameservers; MX already `smtp.google.com`) |
+| Public origin to keep | `https://www.fillthemat.com`                                         |
+| Bank                  | company account (connect as each vendor’s payment method)            |
 
 Workspace is the root of identity. Every new vendor login should be **Google sign-in with `admin@fillthemat.com`** where the vendor supports it, or a password in the company password manager with 2FA.
 
@@ -38,20 +38,20 @@ Workspace is the root of identity. Every new vendor login should be **Google sig
 
 Snapshot from the founder-alpha era. Confirm in each dashboard before you touch it; names drift.
 
-| Vendor | Personal owner (as of 2026-09) | What production uses | Move? |
-| --- | --- | --- | --- |
-| Google Workspace | — | `admin@fillthemat.com` already | Done |
-| Porkbun | personal login | registrar + DNS for `fillthemat.com` | Yes (account or ownership + billing) |
-| Vercel | user `jakegoodmandev-3440`, team `jakegoodmandev-3440s-projects` (Hobby) | project `fillthemat`, domain `fillthemat.com`, env, crons, AI Gateway **$25/mo project budget**, OIDC | Yes — **new team + new project** |
-| Vercel domain `cosmikmuffin.com` | same team | unrelated | **No** |
-| Supabase | org “jakegoodmandev's Org”, project `fillthemat` (`uhhabpnpfypjtnjyohwb`, `us-east-2`) | Auth + Postgres (`app` schema) | Yes — **new org + new project** |
-| Resend | personal | `RESEND_API_KEY`, webhook, `RESEND_FROM` (was `onboarding@resend.dev` until the company mailbox) | Yes — **new account** |
-| Cloudflare Turnstile | personal | site + secret keys on Vercel | Yes — **new account + new widgets** |
-| Google Cloud OAuth | personal GCP project | Web client for hosted Supabase Google sign-in (and local callback) | Yes — **new GCP project under Workspace** |
-| GitHub | user `jakegoodmandev`, repo `fillthemat` (public) | git deploys, Actions, Pages reports | Yes — **org + transfer repo** |
-| Meta / WhatsApp | personal (Phase 6; tokens already on Vercel) | Cloud API app, WABA, system user token | Yes if you keep WA; otherwise leave unset on the new Vercel until Phase 6 |
-| OpenCode Zen | personal | dev only | Optional |
-| Bank / cards | personal | Vercel/Supabase/Resend invoices | Yes |
+| Vendor                           | Personal owner (as of 2026-09)                                                         | What production uses                                                                                  | Move?                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Google Workspace                 | —                                                                                      | `admin@fillthemat.com` already                                                                        | Done                                                                      |
+| Porkbun                          | personal login                                                                         | registrar + DNS for `fillthemat.com`                                                                  | Yes (account or ownership + billing)                                      |
+| Vercel                           | user `jakegoodmandev-3440`, team `jakegoodmandev-3440s-projects` (Hobby)               | project `fillthemat`, domain `fillthemat.com`, env, crons, AI Gateway **$25/mo project budget**, OIDC | Yes — **new team + new project**                                          |
+| Vercel domain `cosmikmuffin.com` | same team                                                                              | unrelated                                                                                             | **No**                                                                    |
+| Supabase                         | org “jakegoodmandev's Org”, project `fillthemat` (`uhhabpnpfypjtnjyohwb`, `us-east-2`) | Auth + Postgres (`app` schema)                                                                        | Yes — **new org + new project**                                           |
+| Resend                           | personal                                                                               | `RESEND_API_KEY`, webhook, `RESEND_FROM` (was `onboarding@resend.dev` until the company mailbox)      | Yes — **new account**                                                     |
+| Cloudflare Turnstile             | personal                                                                               | site + secret keys on Vercel                                                                          | Yes — **new account + new widgets**                                       |
+| Google Cloud OAuth               | personal GCP project                                                                   | Web client for hosted Supabase Google sign-in (and local callback)                                    | Yes — **new GCP project under Workspace**                                 |
+| GitHub                           | user `jakegoodmandev`, repo `fillthemat` (public)                                      | git deploys, Actions, Pages reports                                                                   | Yes — **org + transfer repo**                                             |
+| Meta / WhatsApp                  | personal (Phase 6; tokens already on Vercel)                                           | Cloud API app, WABA, system user token                                                                | Yes if you keep WA; otherwise leave unset on the new Vercel until Phase 6 |
+| OpenCode Zen                     | personal                                                                               | dev only                                                                                              | Optional                                                                  |
+| Bank / cards                     | personal                                                                               | Vercel/Supabase/Resend invoices                                                                       | Yes                                                                       |
 
 GitHub homepage metadata still says `https://fillthemat.vercel.app`; production origin is `https://www.fillthemat.com`.
 
@@ -78,7 +78,7 @@ M. Decommission personal projects (after ≥7 days of clean prod)
 N. Update this repo's deploy docs so they name the new team
 ```
 
-**Freeze window (H–J):** 30–90 minutes where Google login and outbound email can break. Do not run a school demo that day. DNS for `fillthemat.com` should **not** need to change if Porkbun NS stay as they are and you only move the Vercel *domain assignment*.
+**Freeze window (H–J):** 30–90 minutes where Google login and outbound email can break. Do not run a school demo that day. DNS for `fillthemat.com` should **not** need to change if Porkbun NS stay as they are and you only move the Vercel _domain assignment_.
 
 ---
 
@@ -145,6 +145,7 @@ Hosted sign-in is Google OAuth through Supabase. Local still uses a separate cli
    ```
 
    or `bookings@mail.fillthemat.com` if that is the verified From. **From must be on the verified domain.** `admin@` is fine for operator mail; a dedicated `bookings@` / `noreply@` is cleaner for prospects.
+
 6. `RESEND_WEBHOOK_SECRET=` from the webhook.
 7. Send a test to a non-Workspace inbox before decommissioning the personal Resend account.
 8. Delete `onboarding@resend.dev` from production env. Personal Resend can stay for local experiments.
@@ -168,6 +169,7 @@ Create **new**, do not “transfer project” across orgs (painful and still tie
    ```
 
    against the **new** `DIRECT_URL` only. Confirm `app.schools` exists.
+
 6. Auth: Site URL `https://www.fillthemat.com`. Redirects: `/auth/callback`, preview `https://<new-vercel>/**` if you use previews, plus local callbacks if this project is also used from the laptop (prefer not to — local Docker stays local).
 7. Enable Google; paste the new GCP client id/secret from D. Add the new callback URI on the GCP client.
 8. **Data:** founder-alpha hosted data is not sacred. Prefer **recreate the school in the new dashboard** (onboarding → Studio `approved_at` → publish). Dump/restore only if you have real bookings you cannot lose. Auth user ids will not match a naive SQL copy; if you restore `app.*` without `auth.users`, FKs break.
@@ -187,6 +189,7 @@ The current team is Hobby, personal, `planIteration: legacy`. You want a **new t
    ```
 
    This rewrites local `.vercel/project.json` (gitignored). Old team link is gone from this checkout.
+
 4. Git: connect the **org** repo. Confirm `gh-pages` is not deployed (`vercel.ts` already disables it; set the same Ignored Build Step on the new project).
 5. Env: set every key from `.env.example` for Production (and Preview if used). **New values** from G/F/E. Do not copy personal `DATABASE_URL` / Resend / Turnstile / WhatsApp tokens.
 
@@ -218,14 +221,14 @@ The current team is Hobby, personal, `planIteration: legacy`. You want a **new t
 
 Same public origin (`www.fillthemat.com`) if DNS did not change. Still re-check:
 
-| Place | Must match new stack |
-| --- | --- |
+| Place                              | Must match new stack                                     |
+| ---------------------------------- | -------------------------------------------------------- |
 | Supabase Auth Site URL + redirects | new project + `https://www.fillthemat.com/auth/callback` |
-| GCP OAuth JS origins + redirects | new Supabase callback |
-| Turnstile hostname | `www.fillthemat.com` |
-| Resend webhook | `https://www.fillthemat.com/api/webhooks/resend` |
-| Meta webhook (K) | `https://www.fillthemat.com/api/webhooks/whatsapp` |
-| `NEXT_PUBLIC_SITE_URL` | `https://www.fillthemat.com` (no trailing slash) |
+| GCP OAuth JS origins + redirects   | new Supabase callback                                    |
+| Turnstile hostname                 | `www.fillthemat.com`                                     |
+| Resend webhook                     | `https://www.fillthemat.com/api/webhooks/resend`         |
+| Meta webhook (K)                   | `https://www.fillthemat.com/api/webhooks/whatsapp`       |
+| `NEXT_PUBLIC_SITE_URL`             | `https://www.fillthemat.com` (no trailing slash)         |
 
 ### J. Smoke (same bar as `docs/v1-deploy-current.md` §6)
 
@@ -275,16 +278,16 @@ Suggested paid SKUs at first public gym (not part of identity, but do it while y
 
 Only after smoke and a quiet week:
 
-| Vendor | Action |
-| --- | --- |
-| Old Vercel project | Remove env, unlink git, delete project. Keep the personal **team** if `cosmikmuffin.com` still lives there. |
-| Old Vercel Gateway budget | Remove so a stray key cannot spend. |
-| Old Supabase project | Pause or delete after a final dump sitting in the company vault (even if empty). |
-| Old Resend | Revoke API keys; delete webhook. |
-| Old Turnstile | Delete widget. |
-| Old GCP OAuth client | Delete. |
-| Personal GitHub | Repo is gone if transferred; remove leftover deploy keys / Actions secrets. |
-| Personal Meta tokens | Revoke system user token. |
+| Vendor                    | Action                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Old Vercel project        | Remove env, unlink git, delete project. Keep the personal **team** if `cosmikmuffin.com` still lives there. |
+| Old Vercel Gateway budget | Remove so a stray key cannot spend.                                                                         |
+| Old Supabase project      | Pause or delete after a final dump sitting in the company vault (even if empty).                            |
+| Old Resend                | Revoke API keys; delete webhook.                                                                            |
+| Old Turnstile             | Delete widget.                                                                                              |
+| Old GCP OAuth client      | Delete.                                                                                                     |
+| Personal GitHub           | Repo is gone if transferred; remove leftover deploy keys / Actions secrets.                                 |
+| Personal Meta tokens      | Revoke system user token.                                                                                   |
 
 ### N. Docs in this repo (after the new names exist)
 
@@ -308,7 +311,7 @@ Do **not** commit `.vercel/`, `.env.production.local`, or keys.
 
 ---
 
-## 6. What this cutover does *not* include
+## 6. What this cutover does _not_ include
 
 - Tenant custom domains
 - Isolated preview Supabase (do it as a follow-up in the new org)

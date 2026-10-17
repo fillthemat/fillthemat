@@ -1,14 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
-import {
-  conversations,
-  messages,
-  whatsappDeliveries,
-  whatsappJobs,
-} from "@/db/schema";
+import { conversations, messages, whatsappDeliveries, whatsappJobs } from "@/db/schema";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { post, textInboundPayload } from "@/test/whatsapp-webhook";
@@ -40,9 +35,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db
-    .delete(whatsappJobs)
-    .where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
+  await db.delete(whatsappJobs).where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
   await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
@@ -63,16 +56,15 @@ describe("a WhatsApp turn with no AI Gateway token", () => {
 
     await runWhatsAppWorkerOnce(randomUUID());
 
-    const reply =
-      "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.";
+    const reply = "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.";
     const saved = await db
       .select({ role: messages.role, parts: messages.parts })
       .from(messages)
       .innerJoin(conversations, eq(messages.conversationId, conversations.id))
       .where(eq(conversations.schoolId, schoolId));
-    expect(
-      saved.filter((row) => row.role === "assistant").map((row) => row.parts),
-    ).toEqual([[{ type: "text", text: reply }]]);
+    expect(saved.filter((row) => row.role === "assistant").map((row) => row.parts)).toEqual([
+      [{ type: "text", text: reply }],
+    ]);
     const sent = await db
       .select({ body: whatsappDeliveries.body })
       .from(whatsappDeliveries)

@@ -64,8 +64,6 @@ describe("parseInboundWhatsAppMessages", () => {
         },
       ],
     };
-    expect(parseInboundWhatsAppMessages(payload)[0].text).toBe(
-      "confirm_booking:1",
-    );
+    expect(parseInboundWhatsAppMessages(payload)[0].text).toBe("confirm_booking:1");
   });
 });

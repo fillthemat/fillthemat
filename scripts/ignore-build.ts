@@ -20,11 +20,11 @@ function decision(code: 0 | 1, reason: string): 0 | 1 {
 export function ignoredBuildExitCode(
   env: Record<string, string | undefined> = process.env,
   readDiff = (base: string) =>
-    execFileSync(
-      "git",
-      ["diff", "--name-only", "--no-renames", "-z", base, "HEAD", "--"],
-      { encoding: "utf8", timeout: 5_000, stdio: "pipe" },
-    ),
+    execFileSync("git", ["diff", "--name-only", "--no-renames", "-z", base, "HEAD", "--"], {
+      encoding: "utf8",
+      timeout: 5_000,
+      stdio: "pipe",
+    }),
 ): 0 | 1 {
   const base = env.VERCEL_GIT_PREVIOUS_SHA;
   if (env.VERCEL_ENV !== "preview") return decision(1, "non-Preview");

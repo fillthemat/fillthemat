@@ -1,6 +1,6 @@
-import { createHmac, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { and, eq } from "drizzle-orm";
+import { createHmac, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
@@ -28,10 +28,7 @@ import {
 import { confirmWhatsAppBooking } from "@/lib/whatsapp/booking";
 import { WHATSAPP_STUB_APP_SECRET } from "@/lib/whatsapp/config";
 import { confirmBookingButtonId } from "@/lib/whatsapp/confirmation";
-import {
-  type BookingIntentInput,
-  upsertPendingBookingIntent,
-} from "@/lib/whatsapp/intents";
+import { type BookingIntentInput, upsertPendingBookingIntent } from "@/lib/whatsapp/intents";
 import {
   authSql,
   deleteAuthUser,
@@ -57,9 +54,7 @@ let offeringId = "";
 let windowId = "";
 
 function sign(body: string): string {
-  return `sha256=${createHmac("sha256", WHATSAPP_STUB_APP_SECRET)
-    .update(body)
-    .digest("hex")}`;
+  return `sha256=${createHmac("sha256", WHATSAPP_STUB_APP_SECRET).update(body).digest("hex")}`;
 }
 
 function buttonReplyPayload(waId: string, wamid: string, buttonId: string) {
@@ -112,12 +107,7 @@ async function makeConversation(waId: string): Promise<string> {
   const [existing] = await db
     .select({ id: conversations.id })
     .from(conversations)
-    .where(
-      and(
-        eq(conversations.schoolId, schoolId),
-        eq(conversations.waIdHash, waIdHash),
-      ),
-    )
+    .where(and(eq(conversations.schoolId, schoolId), eq(conversations.waIdHash, waIdHash)))
     .limit(1);
   if (existing) return existing.id;
   const [inserted] = await db
@@ -215,9 +205,7 @@ afterAll(async () => {
   // the school cascade (the webhook inserts them with NULL school_id). Delete
   // them by the test's phone_number_id so they cannot pollute later runs in the
   // shared local database.
-  await db
-    .delete(whatsappJobs)
-    .where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
+  await db.delete(whatsappJobs).where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
   await db.delete(users).where(eq(users.id, ownerId));
   await deleteAuthUser(sql, ownerId);
   await sql.end({ timeout: 5 });
@@ -232,10 +220,7 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       .update(conversations)
       .set({ expiresAt: addDays(new Date(), -1) })
       .where(eq(conversations.id, conversationId));
-    const before = await db
-      .select()
-      .from(bookings)
-      .where(eq(bookings.schoolId, schoolId));
+    const before = await db.select().from(bookings).where(eq(bookings.schoolId, schoolId));
     expect(
       (
         await POST(
@@ -251,17 +236,12 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     ).toBe(200);
     await runWhatsAppWorkerOnce(randomUUID());
     expect((await fetchIntent(intentId)).state).toBe("expired");
-    expect(
-      await db.select().from(bookings).where(eq(bookings.schoolId, schoolId)),
-    ).toEqual(before);
+    expect(await db.select().from(bookings).where(eq(bookings.schoolId, schoolId))).toEqual(before);
     const [notice] = await db
       .select()
       .from(whatsappDeliveries)
       .where(
-        and(
-          eq(whatsappDeliveries.schoolId, schoolId),
-          eq(whatsappDeliveries.recipientWaId, waId),
-        ),
+        and(eq(whatsappDeliveries.schoolId, schoolId), eq(whatsappDeliveries.recipientWaId, waId)),
       );
     expect(notice?.body).toBe(
       "That booking option has expired or was replaced. Please ask for available times again.",
@@ -271,15 +251,12 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
   it("confirms a reply-button booking at the message limit: row + occupancy + normal confirmation", async () => {
     const conversationId = await makeConversation(waA);
     await db.insert(messages).values(
-      Array.from(
-        { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
-        (_, index) => ({
-          conversationId,
-          messageId: `earlier-${index}`,
-          role: index % 2 === 0 ? "user" : "assistant",
-          parts: [{ type: "text", text: `Message ${index + 1}` }],
-        }),
-      ),
+      Array.from({ length: MAX_CHAT_MESSAGES_PER_CONVERSATION }, (_, index) => ({
+        conversationId,
+        messageId: `earlier-${index}`,
+        role: index % 2 === 0 ? "user" : "assistant",
+        parts: [{ type: "text", text: `Message ${index + 1}` }],
+      })),
     );
 
     const [window] = await db
@@ -299,13 +276,7 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
 
     const wamid = `wamid.book.${suffix}`;
     expect(
-      (
-        await POST(
-          post(
-            buttonReplyPayload(waA, wamid, confirmBookingButtonId(intentId)),
-          ),
-        )
-      ).status,
+      (await POST(post(buttonReplyPayload(waA, wamid, confirmBookingButtonId(intentId))))).status,
     ).toBe(200);
     const workerNow = new Date();
     await runWhatsAppWorkerOnce(randomUUID(), {
@@ -332,10 +303,7 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       },
     });
 
-    const bookingRows = await db
-      .select()
-      .from(bookings)
-      .where(eq(bookings.schoolId, schoolId));
+    const bookingRows = await db.select().from(bookings).where(eq(bookings.schoolId, schoolId));
     expect(bookingRows).toHaveLength(1);
     const booking = bookingRows[0];
     expect(booking.contactEmailSnapshot).toBeNull();
@@ -345,19 +313,12 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     const replies = await db
       .select({ parts: messages.parts })
       .from(messages)
-      .where(
-        and(
-          eq(messages.conversationId, conversationId),
-          eq(messages.role, "assistant"),
-        ),
-      );
+      .where(and(eq(messages.conversationId, conversationId), eq(messages.role, "assistant")));
     expect(replies).toContainEqual({
       parts: [
         {
           type: "text",
-          text: expect.stringMatching(
-            /^Booked! Alex's trial for Kids beginner trial/,
-          ),
+          text: expect.stringMatching(/^Booked! Alex's trial for Kids beginner trial/),
         },
       ],
     });
@@ -378,9 +339,7 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
       .select()
       .from(whatsappDeliveries)
       .where(eq(whatsappDeliveries.bookingId, booking.id));
-    const templateDelivery = deliveries.find(
-      (row) => row.templateName === "booking_confirmation",
-    );
+    const templateDelivery = deliveries.find((row) => row.templateName === "booking_confirmation");
     expect(templateDelivery).toBeTruthy();
     expect(templateDelivery?.state).toBe("sent");
     expect(templateDelivery?.recipientWaId).toBe(waA);
@@ -397,31 +356,21 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
   it("does not double-book on a duplicate wamid replay", async () => {
     const wamid = `wamid.book.${suffix}`;
 
-    const before = await db
-      .select()
-      .from(bookings)
-      .where(eq(bookings.schoolId, schoolId));
+    const before = await db.select().from(bookings).where(eq(bookings.schoolId, schoolId));
 
     // Replay the exact same confirmed button payload (same wamid → job dedupe).
     expect(
       (
         await POST(
           post(
-            buttonReplyPayload(
-              waA,
-              wamid,
-              "confirm_booking:a1b2c3d4-0000-0000-0000-000000000000",
-            ),
+            buttonReplyPayload(waA, wamid, "confirm_booking:a1b2c3d4-0000-0000-0000-000000000000"),
           ),
         )
       ).status,
     ).toBe(200);
     await runWhatsAppWorkerOnce(randomUUID());
 
-    const after = await db
-      .select()
-      .from(bookings)
-      .where(eq(bookings.schoolId, schoolId));
+    const after = await db.select().from(bookings).where(eq(bookings.schoolId, schoolId));
     expect(after).toHaveLength(before.length);
 
     const occurrences = await db
@@ -436,10 +385,7 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
     const conversationB = await makeConversation(waB);
 
     // One window per weekday so each confirmation books a distinct occurrence.
-    const windows = await db
-      .select()
-      .from(trialWindows)
-      .where(eq(trialWindows.schoolId, schoolId));
+    const windows = await db.select().from(trialWindows).where(eq(trialWindows.schoolId, schoolId));
     for (let day = 2; day <= 6; day += 1) {
       const [extra] = await db
         .insert(trialWindows)
@@ -469,10 +415,7 @@ describe("WhatsApp booking funnel (Phase 5)", () => {
         slotsPerWindow.set(slot.windowId, slot.slotId);
       }
     }
-    const slotIds = [...slotsPerWindow.values()].slice(
-      0,
-      MAX_BOOKINGS_PER_WA_ID_PER_DAY,
-    );
+    const slotIds = [...slotsPerWindow.values()].slice(0, MAX_BOOKINGS_PER_WA_ID_PER_DAY);
     expect(slotIds).toHaveLength(MAX_BOOKINGS_PER_WA_ID_PER_DAY);
 
     for (let i = 0; i < MAX_BOOKINGS_PER_WA_ID_PER_DAY; i += 1) {

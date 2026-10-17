@@ -3,10 +3,7 @@ export function isDevEmailAuthEnabled(): boolean {
 }
 
 export function allowSelfApproval(): boolean {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.ALLOW_SELF_APPROVAL === "true"
-  );
+  return process.env.NODE_ENV !== "production" && process.env.ALLOW_SELF_APPROVAL === "true";
 }
 
 export function isLocalEmailNoop(): boolean {
@@ -14,8 +11,5 @@ export function isLocalEmailNoop(): boolean {
 }
 
 export function isLocalWhatsAppNoop(): boolean {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    !process.env.WHATSAPP_SYSTEM_USER_TOKEN
-  );
+  return process.env.NODE_ENV !== "production" && !process.env.WHATSAPP_SYSTEM_USER_TOKEN;
 }

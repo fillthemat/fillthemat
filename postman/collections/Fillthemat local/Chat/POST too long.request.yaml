@@ -2,7 +2,7 @@ $kind: http-request
 id: 9265a9b248166247702292a1
 name: POST too long
 method: POST
-url: '{{baseUrl}}/api/chat'
+url: "{{baseUrl}}/api/chat"
 description: 'User text > 2000 chars. Expect 400 { error: "invalid_message" }.'
 body:
   type: json

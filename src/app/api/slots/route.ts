@@ -1,8 +1,5 @@
 import { isAgeEligible, listOpenSlots } from "@/lib/schedule/occurrences";
-import {
-  getSchoolForLandingAccess,
-  loadSchoolCatalog,
-} from "@/lib/schools/public";
+import { getSchoolForLandingAccess, loadSchoolCatalog } from "@/lib/schools/public";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -17,9 +14,7 @@ export async function GET(request: Request) {
   });
   if (!school) return Response.json({ error: "not_found" }, { status: 404 });
   const catalog = await loadSchoolCatalog(school.id);
-  const offering = catalog.offerings.find(
-    (row) => row.id === offeringId && row.active,
-  );
+  const offering = catalog.offerings.find((row) => row.id === offeringId && row.active);
   if (!offering) return Response.json({ slots: [], noMatch: true });
   const age = ageValue == null ? null : Number(ageValue);
   if (age != null && !isAgeEligible(age, offering)) {

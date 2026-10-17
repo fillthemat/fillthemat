@@ -1,14 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
-import {
-  faqs,
-  schools,
-  trialOfferings,
-  trialWindows,
-  users,
-} from "@/db/schema";
+import { faqs, schools, trialOfferings, trialWindows, users } from "@/db/schema";
 import {
   authSql,
   deleteAuthUser,
@@ -113,33 +107,21 @@ afterAll(async () => {
 
 describe("updateOffering", () => {
   it("updates the existing id and preserves hidden fields and schedule links", async () => {
-    const [before] = await db
-      .select()
-      .from(trialOfferings)
-      .where(eq(trialOfferings.id, offeringA));
+    const [before] = await db.select().from(trialOfferings).where(eq(trialOfferings.id, offeringA));
     if (!before) throw new Error("missing offering");
 
-    const result = await updateOffering(
-      db,
-      schoolA,
-      offeringA,
-      before.updatedAt,
-      {
-        name: "Kids intro class",
-        description: "Corrected description",
-        minimumAge: 6,
-        maximumAge: 11,
-        attire: "Comfortable clothes",
-        expectations: "Games and basics",
-      },
-    );
+    const result = await updateOffering(db, schoolA, offeringA, before.updatedAt, {
+      name: "Kids intro class",
+      description: "Corrected description",
+      minimumAge: 6,
+      maximumAge: 11,
+      attire: "Comfortable clothes",
+      expectations: "Games and basics",
+    });
     expect(result.status).toBe("success");
     expect(result.values?.id).toBe(offeringA);
 
-    const [after] = await db
-      .select()
-      .from(trialOfferings)
-      .where(eq(trialOfferings.id, offeringA));
+    const [after] = await db.select().from(trialOfferings).where(eq(trialOfferings.id, offeringA));
     expect(after?.name).toBe("Kids intro class");
     expect(after?.minimumAge).toBe(6);
     expect(after?.maximumAge).toBe(11);
@@ -149,12 +131,7 @@ describe("updateOffering", () => {
     const linked = await db
       .select({ id: trialWindows.id })
       .from(trialWindows)
-      .where(
-        and(
-          eq(trialWindows.id, windowA),
-          eq(trialWindows.trialOfferingId, offeringA),
-        ),
-      );
+      .where(and(eq(trialWindows.id, windowA), eq(trialWindows.trialOfferingId, offeringA)));
     expect(linked).toHaveLength(1);
   });
 
@@ -168,10 +145,7 @@ describe("updateOffering", () => {
       expectations: null,
     });
     const foreignId = requireRow(foreign.values?.id, "foreign id");
-    const [row] = await db
-      .select()
-      .from(trialOfferings)
-      .where(eq(trialOfferings.id, foreignId));
+    const [row] = await db.select().from(trialOfferings).where(eq(trialOfferings.id, foreignId));
     const result = await updateOffering(
       db,
       schoolA,
@@ -213,10 +187,7 @@ describe("updateOffering", () => {
     });
     expect(result.status).toBe("error");
     expect(result.message).toBe(STALE_EDIT);
-    const [after] = await db
-      .select()
-      .from(trialOfferings)
-      .where(eq(trialOfferings.id, offeringA));
+    const [after] = await db.select().from(trialOfferings).where(eq(trialOfferings.id, offeringA));
     expect(after?.name).not.toBe("Should not land");
   });
 });
@@ -225,10 +196,7 @@ describe("setOfferingActive", () => {
   it("uses the desired state instead of inverting", async () => {
     const first = await setOfferingActive(db, schoolA, offeringA, false);
     expect(first.status).toBe("success");
-    const [off] = await db
-      .select()
-      .from(trialOfferings)
-      .where(eq(trialOfferings.id, offeringA));
+    const [off] = await db.select().from(trialOfferings).where(eq(trialOfferings.id, offeringA));
     expect(off?.active).toBe(false);
 
     const again = await setOfferingActive(db, schoolA, offeringA, false);
@@ -248,10 +216,7 @@ describe("setOfferingActive", () => {
 
 describe("updateFaq", () => {
   it("edits in place at the 20-question limit without changing count or order", async () => {
-    const existing = await db
-      .select({ id: faqs.id })
-      .from(faqs)
-      .where(eq(faqs.schoolId, schoolA));
+    const existing = await db.select({ id: faqs.id }).from(faqs).where(eq(faqs.schoolId, schoolA));
     const toCreate = LIMITS.faqCount - existing.length;
     for (let i = 0; i < toCreate; i += 1) {
       const result = await insertFaq(db, schoolA, {
@@ -278,10 +243,7 @@ describe("updateFaq", () => {
     expect(updated.status).toBe("success");
     expect(updated.values?.id).toBe(target.id);
 
-    const after = await db
-      .select()
-      .from(faqs)
-      .where(eq(faqs.schoolId, schoolA));
+    const after = await db.select().from(faqs).where(eq(faqs.schoolId, schoolA));
     expect(after).toHaveLength(LIMITS.faqCount);
     expect(after.map((row) => row.sortOrder)).toEqual(order);
     expect(after.find((row) => row.id === target.id)?.answer).toBe(

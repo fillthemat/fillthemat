@@ -12,11 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useDirtyState } from "./dirty-context";
-import {
-  cancelEditorAction,
-  type EditorTarget,
-  nextEditorAction,
-} from "./editor-target";
+import { cancelEditorAction, type EditorTarget, nextEditorAction } from "./editor-target";
 
 export type { EditorTarget } from "./editor-target";
 
@@ -148,10 +144,7 @@ export function useTimedAnnouncement() {
 
   useEffect(() => {
     if (!announcement) return;
-    const timer = window.setTimeout(
-      () => setAnnouncement(null),
-      ANNOUNCEMENT_MS,
-    );
+    const timer = window.setTimeout(() => setAnnouncement(null), ANNOUNCEMENT_MS);
     return () => window.clearTimeout(timer);
   }, [announcement]);
 

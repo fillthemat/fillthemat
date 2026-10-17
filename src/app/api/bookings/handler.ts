@@ -1,18 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { attemptPendingForBooking } from "@/lib/email/deliveries";
-import { getRequestIp } from "@/lib/request";
 import type {
   BookSlotResult,
   bookSlot,
   findBookingByIdempotencyKey,
 } from "@/lib/schedule/book-slot";
 import type { getPublicSchoolBySlug } from "@/lib/schools/public";
-import type {
-  emailBookingQuotaExceeded,
-  recipientQuotaExceeded,
-} from "@/lib/security/limits";
-import { requestBodyTooLarge } from "@/lib/security/limits";
+import type { emailBookingQuotaExceeded, recipientQuotaExceeded } from "@/lib/security/limits";
 import type { verifyTurnstile } from "@/lib/security/turnstile";
+import { getRequestIp } from "@/lib/request";
+import { requestBodyTooLarge } from "@/lib/security/limits";
 import { bookingRequestSchema } from "@/lib/validation";
 
 export type BookingFailure = {
@@ -59,14 +56,9 @@ function databaseCode(error: unknown): string | undefined {
   const visited = new Set<object>();
   let current = error;
   for (let depth = 0; depth < 8; depth++) {
-    if (typeof current !== "object" || current === null || visited.has(current))
-      return;
+    if (typeof current !== "object" || current === null || visited.has(current)) return;
     visited.add(current);
-    if (
-      "code" in current &&
-      typeof current.code === "string" &&
-      databaseCodes.has(current.code)
-    )
+    if ("code" in current && typeof current.code === "string" && databaseCodes.has(current.code))
       return current.code;
     current = "cause" in current ? current.cause : undefined;
   }
@@ -77,12 +69,7 @@ export function createBookingHandler(dependencies: Dependencies) {
     const requestId = randomUUID();
     let operation = "validation";
     let schoolId: string | undefined;
-    const report = (
-      error: string,
-      status: number,
-      exception?: unknown,
-      degraded = false,
-    ) => {
+    const report = (error: string, status: number, exception?: unknown, degraded = false) => {
       const deployment = process.env.VERCEL_ENV;
       const diagnosticCode = databaseCode(exception);
       const record: BookingFailure = {
@@ -93,14 +80,10 @@ export function createBookingHandler(dependencies: Dependencies) {
         operation,
         status,
         error,
-        diagnostic: diagnosticCode
-          ? { kind: "database", code: diagnosticCode }
-          : "unknown",
+        diagnostic: diagnosticCode ? { kind: "database", code: diagnosticCode } : "unknown",
         ...(schoolId ? { schoolId } : {}),
         ...(diagnosticCode ? { databaseCode: diagnosticCode } : {}),
-        ...(deployment === "production" ||
-        deployment === "preview" ||
-        deployment === "development"
+        ...(deployment === "production" || deployment === "preview" || deployment === "development"
           ? { deploymentEnvironment: deployment }
           : {}),
         ...(process.env.VERCEL_DEPLOYMENT_ID
@@ -141,12 +124,7 @@ export function createBookingHandler(dependencies: Dependencies) {
       if (!school) return refuse("not_found", 404);
       schoolId = school.id;
       operation = "verification";
-      if (
-        !(await dependencies.verifyTurnstile(
-          body.turnstileToken,
-          getRequestIp(request.headers),
-        ))
-      )
+      if (!(await dependencies.verifyTurnstile(body.turnstileToken, getRequestIp(request.headers))))
         return refuse("verification_failed", 403);
       operation = "booking.idempotency_lookup";
       const existing = await dependencies.findBookingByIdempotencyKey(
@@ -158,20 +136,10 @@ export function createBookingHandler(dependencies: Dependencies) {
         result = { ok: true, booking: existing, idempotent: true };
       } else {
         operation = "email_quota";
-        if (
-          await dependencies.emailBookingQuotaExceeded(
-            school.id,
-            body.contact.email,
-          )
-        )
+        if (await dependencies.emailBookingQuotaExceeded(school.id, body.contact.email))
           return refuse("rate_limited", 429);
         operation = "recipient_quota";
-        if (
-          await dependencies.recipientQuotaExceeded(
-            school.id,
-            body.contact.email,
-          )
-        )
+        if (await dependencies.recipientQuotaExceeded(school.id, body.contact.email))
           return refuse("rate_limited", 429);
         operation = "booking.create";
         result = await dependencies.bookSlot({
@@ -186,14 +154,8 @@ export function createBookingHandler(dependencies: Dependencies) {
         });
       }
       if (!result.ok) {
-        const status =
-          result.code === "ineligible" || result.code === "invalid_slot"
-            ? 400
-            : 409;
-        return refuse(
-          result.code === "already_booked" ? "acknowledged" : result.code,
-          status,
-        );
+        const status = result.code === "ineligible" || result.code === "invalid_slot" ? 400 : 409;
+        return refuse(result.code === "already_booked" ? "acknowledged" : result.code, status);
       }
       if (!result.idempotent) {
         operation = "booking.confirmation_delivery";

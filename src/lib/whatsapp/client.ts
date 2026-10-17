@@ -1,9 +1,5 @@
 import { isLocalWhatsAppNoop } from "@/lib/dev-flags";
-import {
-  whatsappApiVersion,
-  whatsappGraphBase,
-  whatsappSystemUserToken,
-} from "./config";
+import { whatsappApiVersion, whatsappGraphBase, whatsappSystemUserToken } from "./config";
 import { whatsappTemplateComponents } from "./templates";
 
 export type WhatsAppSendFailure =
@@ -46,9 +42,7 @@ export type WhatsAppGraphDependencies = {
 export const WHATSAPP_WINDOW_CLOSED_CODE = 131047;
 
 function record(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
+  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
 function graphPost(
@@ -70,10 +64,7 @@ function graphPost(
   dependencies: WhatsAppGraphDependencies = {},
   requireMessageId = true,
 ): Promise<WhatsAppSendOutcome | WhatsAppReceiptOutcome> {
-  const token =
-    dependencies.token === undefined
-      ? whatsappSystemUserToken()
-      : dependencies.token;
+  const token = dependencies.token === undefined ? whatsappSystemUserToken() : dependencies.token;
   if (!token) {
     if (dependencies.localNoop ?? isLocalWhatsAppNoop()) {
       console.info(
@@ -118,14 +109,10 @@ function graphPost(
           ok: false as const,
           kind: "whatsapp_error" as const,
           code: typeof error.code === "number" ? error.code : null,
-          subcode:
-            typeof error.error_subcode === "number"
-              ? error.error_subcode
-              : null,
+          subcode: typeof error.error_subcode === "number" ? error.error_subcode : null,
           details: typeof details === "string" ? details : null,
           status: response.status,
-          message:
-            typeof error.message === "string" ? error.message : "graph_error",
+          message: typeof error.message === "string" ? error.message : "graph_error",
         };
       }
       if (!response.ok) {
@@ -161,9 +148,7 @@ function graphPost(
           providerId: null,
         };
       }
-      const providerId = Array.isArray(json.messages)
-        ? record(json.messages[0]).id
-        : null;
+      const providerId = Array.isArray(json.messages) ? record(json.messages[0]).id : null;
       if (typeof providerId !== "string" || !providerId.trim()) {
         return {
           ok: false as const,
@@ -315,10 +300,7 @@ export function sendWhatsAppInteractive(
             type: "reply",
             reply: {
               id: button.id.slice(0, 256),
-              title: button.title.slice(
-                0,
-                WHATSAPP_INTERACTIVE_TITLE_CHAR_LIMIT,
-              ),
+              title: button.title.slice(0, WHATSAPP_INTERACTIVE_TITLE_CHAR_LIMIT),
             },
           })),
         },

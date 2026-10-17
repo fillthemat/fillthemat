@@ -34,8 +34,8 @@ export function CancelBookingButton({ bookingId }: { bookingId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
             <AlertDialogDescription>
-              The family will be notified if a cancellation email is still
-              pending. This cannot be undone from here.
+              The family will be notified if a cancellation email is still pending. This cannot be
+              undone from here.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

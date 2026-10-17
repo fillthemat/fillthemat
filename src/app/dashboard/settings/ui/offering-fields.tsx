@@ -57,9 +57,8 @@ export function OfferingFields({
           placeholder="12…"
         />
       </div>
-      <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
-        Changing age eligibility affects who can book from now on, not existing
-        reservations.
+      <p className="text-xs leading-relaxed text-pretty text-muted-foreground">
+        Changing age eligibility affects who can book from now on, not existing reservations.
       </p>
       <TextAreaField
         label="Description"

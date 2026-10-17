@@ -9,6 +9,7 @@ Make the owner dashboard feel like a tool the school can maintain, not a one-tim
 **Remaining: Release B** — safe class-time management. This file is now the spec for B. Do not reimplement trial-class/FAQ editing or the overview metric rewrite. Reuse the inline editor (`src/app/dashboard/settings/ui/editor-lifecycle.tsx`), shared field components, and the mutation/form-state contracts already on `main`.
 
 **Priority order:**
+
 1. ~~Edit existing trial classes and FAQs without losing identity or history.~~ **Done** (#21).
 2. ~~Give overview metrics a stronger visual hierarchy and trustworthy labels.~~ **Done** (#21).
 3. Make class-time management reversible and safe for existing bookings. **Next.**
@@ -20,11 +21,11 @@ This is a follow-up to `docs/archive/dashboard-makeover-plan.md`, not a repeat o
 
 Post-#21. Line numbers below are approximate; read the files.
 
-| Evidence | Current experience | UX consequence |
-| --- | --- | --- |
-| Offerings / FAQs / overview / bookings filter | **Shipped in Release A.** Inline Edit on existing IDs; grouped overview; `/dashboard/bookings?filter=upcoming&status=booked`. | Do not reopen A. |
-| `src/app/dashboard/settings/sections/schedule-section.tsx` | Every row has a permanently expanded capacity form; other fields are not editable. Turned-off times cannot reopen. | Visual clutter for one editable field, but no natural way to change the actual schedule or reverse a mistake. |
-| `src/app/dashboard/settings/actions.ts` / `mutations.ts` | Offering/FAQ updates exist. Class times still have capacity update and deactivation only — no reopen, no structural edit, no guided replacement. | Release B needs server-side capabilities, not just new Edit buttons. |
+| Evidence                                                   | Current experience                                                                                                                               | UX consequence                                                                                                |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Offerings / FAQs / overview / bookings filter              | **Shipped in Release A.** Inline Edit on existing IDs; grouped overview; `/dashboard/bookings?filter=upcoming&status=booked`.                    | Do not reopen A.                                                                                              |
+| `src/app/dashboard/settings/sections/schedule-section.tsx` | Every row has a permanently expanded capacity form; other fields are not editable. Turned-off times cannot reopen.                               | Visual clutter for one editable field, but no natural way to change the actual schedule or reverse a mistake. |
+| `src/app/dashboard/settings/actions.ts` / `mutations.ts`   | Offering/FAQ updates exist. Class times still have capacity update and deactivation only — no reopen, no structural edit, no guided replacement. | Release B needs server-side capabilities, not just new Edit buttons.                                          |
 
 **Known A limitations (do not “fix” as part of B unless they block B):** Browser Back/Forward is not intercepted (App Router has no `router.beforePopState`; documented in `docs/settings-ux-first-pass.md`). Saving editors stay mounted until the action settles. Prefer no migration.
 
@@ -84,6 +85,7 @@ Use an **inline expanded editor under the selected row**, not a long modal or a 
 Edit: class name, youngest/oldest age, description, what to wear, and what to expect. Use the existing `offeringSchema` constraints and normalization.
 
 **Data contract:**
+
 - Update the existing offering ID; never implement Edit as delete + insert.
 - Preserve `active`, associated class-time IDs, and fields not exposed by this form, especially `waiverNotes`. Reusing create parsing must not erase hidden data with empty defaults.
 - Existing booking name/instructions/age/time/location snapshots stay unchanged. New bookings and future settings/availability reads use saved settings; a settings save must not rewrite chat transcripts or claim retroactive updates to them.
@@ -106,14 +108,14 @@ Edit: class name, youngest/oldest age, description, what to wear, and what to ex
 
 Replace the always-visible capacity form with a compact summary: day/time, trial class, spots, optional internal label, status, and visible **Edit** plus **Turn Off / Reopen**. Keep timezone context at section level and in structural-change review.
 
-| Situation | Allowed behavior |
-| --- | --- |
-| Capacity or internal label changes | Edit on the existing ID. Enforce the capacity floor against future occupancy on the server, including concurrent bookings. Apply capacity consistently to relevant future occurrences; preserve historical occurrences. |
-| Turned-off time, parent class offered | Reopen the same ID after explaining that new bookings can resume and existing occupancy still consumes spots. |
-| Parent class not offered | Explain the dependency and link to Trial Classes. Do not label the time publicly bookable or silently activate its parent. |
-| No occurrences/bookings | Allow changing trial class, weekday, start time, and duration in place, subject to normal validation and availability rules. |
-| Any occurrence or booking history | Keep structural fields protected, with a visible **Change Future Schedule** action that opens a prefilled replacement flow. Do not merely replace a disabled button with another dead-end explanation. |
-| Delete | Retain current restriction against deleting times with occurrences, enforce on the server, and confirm deletion for eligible unused times. |
+| Situation                             | Allowed behavior                                                                                                                                                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Capacity or internal label changes    | Edit on the existing ID. Enforce the capacity floor against future occupancy on the server, including concurrent bookings. Apply capacity consistently to relevant future occurrences; preserve historical occurrences. |
+| Turned-off time, parent class offered | Reopen the same ID after explaining that new bookings can resume and existing occupancy still consumes spots.                                                                                                           |
+| Parent class not offered              | Explain the dependency and link to Trial Classes. Do not label the time publicly bookable or silently activate its parent.                                                                                              |
+| No occurrences/bookings               | Allow changing trial class, weekday, start time, and duration in place, subject to normal validation and availability rules.                                                                                            |
+| Any occurrence or booking history     | Keep structural fields protected, with a visible **Change Future Schedule** action that opens a prefilled replacement flow. Do not merely replace a disabled button with another dead-end explanation.                  |
+| Delete                                | Retain current restriction against deleting times with occurrences, enforce on the server, and confirm deletion for eligible unused times.                                                                              |
 
 **Guided replacement:** review old and new schedules, explain “Existing bookings keep their original time. New bookings use the replacement schedule,” then atomically create the replacement and turn off the old time. Do not migrate, cancel, or notify existing reservations. In this release the change takes effect immediately; future effective dates and bulk rescheduling are separate features. Show old-time booking counts and link to Bookings without pretending that route already supports a window-specific filter.
 
@@ -157,15 +159,15 @@ Numbers above are illustrative only, never fallback production values.
 
 **Do not add a global date selector in this release.** Upcoming inventory and lifetime acquisition are different scopes; label each explicitly rather than pretending they share a period.
 
-| Display | Definition / behavior |
-| --- | --- |
-| Upcoming bookings | This school's bookings with `status = booked` and `startAt >= now`. Label “Scheduled from now”; no invented “this week.” |
-| Leads | Count of this school's lead records, all time. Not unique visitors, people, or “new this month.” Link to `/dashboard/leads`. |
-| Booking conversion | Distinct eligible public-page sessions with at least one confirmed booking, divided by eligible public-page sessions, all time. Count each session once. A later cancellation does not undo the fact a booking was made; disclose this definition. |
-| Eligible sessions | Existing `qualifiedAt IS NOT NULL` records. Explain that tracking excludes preview and known-bot sessions when created on an approved, published page; do not claim all bots are eliminated or call these booking-ready prospects. |
-| Converted sessions | Explicit intersection of booking-linked session IDs and eligible sessions belonging to the same school. Do not divide an unrelated session population by the eligible-session denominator. |
-| Chat-assisted bookings | Current recorded booking-confirmation events with `source = chat`; label as recorded events in definitions unless the implementation verifies/deduplicates booking identity. Not synonymous with converted sessions. |
-| Active trial classes / times | Configuration counts, not traffic/performance metrics or guaranteed available slots. Link to the corresponding settings category. |
+| Display                      | Definition / behavior                                                                                                                                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upcoming bookings            | This school's bookings with `status = booked` and `startAt >= now`. Label “Scheduled from now”; no invented “this week.”                                                                                                                           |
+| Leads                        | Count of this school's lead records, all time. Not unique visitors, people, or “new this month.” Link to `/dashboard/leads`.                                                                                                                       |
+| Booking conversion           | Distinct eligible public-page sessions with at least one confirmed booking, divided by eligible public-page sessions, all time. Count each session once. A later cancellation does not undo the fact a booking was made; disclose this definition. |
+| Eligible sessions            | Existing `qualifiedAt IS NOT NULL` records. Explain that tracking excludes preview and known-bot sessions when created on an approved, published page; do not claim all bots are eliminated or call these booking-ready prospects.                 |
+| Converted sessions           | Explicit intersection of booking-linked session IDs and eligible sessions belonging to the same school. Do not divide an unrelated session population by the eligible-session denominator.                                                         |
+| Chat-assisted bookings       | Current recorded booking-confirmation events with `source = chat`; label as recorded events in definitions unless the implementation verifies/deduplicates booking identity. Not synonymous with converted sessions.                               |
+| Active trial classes / times | Configuration counts, not traffic/performance metrics or guaranteed available slots. Link to the corresponding settings category.                                                                                                                  |
 
 The conversion intersection is an intentional query-semantic correction. Director approves the definition and fixture expectations before it ships; do not silently change public session tracking or backfill historical events. Show `—` with “No eligible sessions yet” when denominator is zero; show `0%` only when there are eligible sessions and none converted. Never clamp a broken calculation to 100% to hide mismatched cohorts.
 
@@ -200,6 +202,7 @@ Applies to every new or changed mutation:
 ### Phase 0 — baseline and decisions (`UX-00`)
 
 Director + QA:
+
 1. Read this plan, `AGENTS.md`, `skills-lock.json`, `docs/dashboard-design-system.md`, `docs/settings-ux-first-pass.md`, and `docs/local-development.md`.
 2. Restore missing locked skills and load the applicable React, web-design, Playwright, Supabase, and Postgres guidance. Before code changes, read relevant installed Next.js guides, especially `node_modules/next/dist/docs/01-app/02-guides/forms.md` and current mutation/revalidation guidance.
 3. Capture desktop/mobile baselines of overview and all seven settings categories with synthetic data. Record baseline check failures.
@@ -210,15 +213,15 @@ Director + QA:
 
 ### Work packages and ownership
 
-| ID | Owner | Deliverable / primary paths | Depends on |
-| --- | --- | --- | --- |
-| `UX-01` | A — interaction foundation | Editor lifecycle, focus, feedback and dirty protection; `settings/ui/*`, `settings/settings-shell.tsx`, necessary shared primitive/nav adjustments | `UX-00` |
-| `UX-02` | B — settings backend | Offering/FAQ update actions, desired-state activation, version checks, normalized responses; `settings/actions.ts`, `schemas.ts`, `queries.ts`, `form-state.ts`, backend tests | `UX-00`, agreed contract with A |
-| `UX-03` | C — settings UI | Reusable create/edit field groups, trial-class and FAQ rows; `settings/sections/*`, `settings/page.tsx` DTO mapping | integrated `UX-01` + `UX-02` |
-| `UX-04` | D — overview | Server metric module/tests, metric surface, states/definitions, matching Bookings filter; `dashboard/page.tsx`, new `dashboard/overview/*`, `dashboard/bookings/page.tsx` | `UX-00` |
-| `UX-05` | E — QA | Browser tests and test fixtures; `e2e/*`, coordinated test-only fixture helpers | scenario design after `UX-00`; execution after integration |
-| `UX-06` | B then C | Release-B class-time mutations/transactions and UI, using the accepted editor; `settings/actions.ts`, `schemas.ts`, `queries.ts`, `sections/schedule-section.tsx`, coordinated `src/lib/schedule/*` changes/tests | release-A gate, backend safety review |
-| `UX-07` | Director + all owners | Integrated visual review, fixes, updated current-state docs, evidence and remaining backlog | `UX-05` + `UX-06` |
+| ID      | Owner                      | Deliverable / primary paths                                                                                                                                                                                       | Depends on                                                 |
+| ------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `UX-01` | A — interaction foundation | Editor lifecycle, focus, feedback and dirty protection; `settings/ui/*`, `settings/settings-shell.tsx`, necessary shared primitive/nav adjustments                                                                | `UX-00`                                                    |
+| `UX-02` | B — settings backend       | Offering/FAQ update actions, desired-state activation, version checks, normalized responses; `settings/actions.ts`, `schemas.ts`, `queries.ts`, `form-state.ts`, backend tests                                    | `UX-00`, agreed contract with A                            |
+| `UX-03` | C — settings UI            | Reusable create/edit field groups, trial-class and FAQ rows; `settings/sections/*`, `settings/page.tsx` DTO mapping                                                                                               | integrated `UX-01` + `UX-02`                               |
+| `UX-04` | D — overview               | Server metric module/tests, metric surface, states/definitions, matching Bookings filter; `dashboard/page.tsx`, new `dashboard/overview/*`, `dashboard/bookings/page.tsx`                                         | `UX-00`                                                    |
+| `UX-05` | E — QA                     | Browser tests and test fixtures; `e2e/*`, coordinated test-only fixture helpers                                                                                                                                   | scenario design after `UX-00`; execution after integration |
+| `UX-06` | B then C                   | Release-B class-time mutations/transactions and UI, using the accepted editor; `settings/actions.ts`, `schemas.ts`, `queries.ts`, `sections/schedule-section.tsx`, coordinated `src/lib/schedule/*` changes/tests | release-A gate, backend safety review                      |
+| `UX-07` | Director + all owners      | Integrated visual review, fixes, updated current-state docs, evidence and remaining backlog                                                                                                                       | `UX-05` + `UX-06`                                          |
 
 Paths prefixed `settings/` are under `src/app/dashboard/settings/`; `dashboard/` under `src/app/dashboard/`. B owns **all** edits to shared settings actions/schemas/queries; do not split FAQ and schedule agents across that same file. C owns section components but requests shared form changes from A. A owns shared CSS/components/navigation; D keeps overview-specific components under its own directory. E owns test fixtures, while B/D own their feature unit/integration tests. Director owns package/config/migration approvals and documentation updates.
 
@@ -260,6 +263,7 @@ Shipped in #21. Back/Forward dirty protection is a documented App Router limitat
 ### Visual/accessibility gate for both releases
 
 At 1280×800 and 390×844, plus a 320px-width and 200%-zoom check:
+
 - Overview summary and compact public-page status fit comfortably in the initial desktop viewport; settings show meaningful controls without explanatory stacks.
 - No page-level horizontal scrolling, unreadably small metric labels, overlapping long names, or disappearing actions.
 - Keyboard users can open/edit/save/cancel records and traverse disclosures; focus returns correctly and error/success announcements remain available after editor closure.

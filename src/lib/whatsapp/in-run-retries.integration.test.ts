@@ -1,27 +1,15 @@
-import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { whatsappDeliveries, whatsappJobs } from "@/db/schema";
 import { findOrCreateConversation } from "@/lib/conversations/conversation-store";
-import {
-  authSql,
-  loadLocalEnv,
-  whileSavingMessages,
-} from "@/test/integration-env";
+import { authSql, loadLocalEnv, whileSavingMessages } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import type { WhatsAppSendOutcome } from "./client";
-import { enqueueWhatsAppDelivery } from "./deliveries";
 import type { WhatsAppWorkerDependencies } from "./dependencies";
+import { enqueueWhatsAppDelivery } from "./deliveries";
 import { runWhatsAppWorkerOnce as runScopedWorker } from "./worker";
 
 loadLocalEnv();
@@ -48,11 +36,8 @@ beforeAll(async () => {
 afterEach(async () => {
   vi.restoreAllMocks();
   if (schoolId)
-    await db
-      .delete(whatsappDeliveries)
-      .where(eq(whatsappDeliveries.schoolId, schoolId));
-  if (jobIds.length)
-    await db.delete(whatsappJobs).where(inArray(whatsappJobs.id, jobIds));
+    await db.delete(whatsappDeliveries).where(eq(whatsappDeliveries.schoolId, schoolId));
+  if (jobIds.length) await db.delete(whatsappJobs).where(inArray(whatsappJobs.id, jobIds));
   jobIds.length = 0;
 });
 afterAll(async () => {
@@ -123,10 +108,7 @@ async function insertJob(waId = randomUUID()) {
 }
 
 async function readDelivery(id: string) {
-  const [row] = await db
-    .select()
-    .from(whatsappDeliveries)
-    .where(eq(whatsappDeliveries.id, id));
+  const [row] = await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.id, id));
   return row;
 }
 
@@ -216,27 +198,21 @@ describe("bounded in-run WhatsApp retries", () => {
       attempts: 1,
     });
     expect(
-      (
-        await db
-          .select()
-          .from(whatsappJobs)
-          .where(eq(whatsappJobs.id, foreign.id))
-      )[0],
+      (await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, foreign.id)))[0],
     ).toMatchObject({ state: "pending", attempts: 2, claimedBy: null });
     const untouchedJobs = await db
       .select()
       .from(whatsappJobs)
       .where(inArray(whatsappJobs.id, [foreignClaim.id, foreignFuture.id]));
-    expect(
-      untouchedJobs.find((row) => row.id === foreignClaim.id),
-    ).toMatchObject({
+    expect(untouchedJobs.find((row) => row.id === foreignClaim.id)).toMatchObject({
       state: "claimed",
       attempts: 5,
       claimedBy: "foreign-worker",
     });
-    expect(
-      untouchedJobs.find((row) => row.id === foreignFuture.id),
-    ).toMatchObject({ state: "failed", attempts: 1 });
+    expect(untouchedJobs.find((row) => row.id === foreignFuture.id)).toMatchObject({
+      state: "failed",
+      attempts: 1,
+    });
     expect(await readDelivery(foreignDelivery.id)).toMatchObject({
       state: "claimed",
       attempts: 5,
@@ -305,10 +281,7 @@ describe("bounded in-run WhatsApp retries", () => {
         : { ok: true, kind: "accepted", providerId: `inline-${job.id}` };
     });
     const result = await runWhatsAppWorkerOnce(randomUUID(), fake.dependencies);
-    const [row] = await db
-      .select()
-      .from(whatsappJobs)
-      .where(eq(whatsappJobs.id, job.id));
+    const [row] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, job.id));
     expect(row).toMatchObject({ state: "done", attempts: 1 });
     const deliveries = await db
       .select()
@@ -359,10 +332,7 @@ describe("bounded in-run WhatsApp retries", () => {
       message: "outage",
     }));
     cron.advance(fake.dependencies.now().getTime() - start.getTime());
-    const continued = await runWhatsAppWorkerOnce(
-      randomUUID(),
-      cron.dependencies,
-    );
+    const continued = await runWhatsAppWorkerOnce(randomUUID(), cron.dependencies);
     expect(await readDelivery(id)).toMatchObject({
       state: "dead",
       attempts: 5,
@@ -478,10 +448,7 @@ describe("bounded in-run WhatsApp retries", () => {
   it("releases unstarted jobs and skips the delivery sweep when a job uses the budget", async () => {
     const first = await insertJob();
     const second = await insertJob();
-    await db
-      .update(whatsappJobs)
-      .set({ createdAt: start })
-      .where(eq(whatsappJobs.id, first.id));
+    await db.update(whatsappJobs).set({ createdAt: start }).where(eq(whatsappJobs.id, first.id));
     await db
       .update(whatsappJobs)
       .set({ createdAt: new Date(start.getTime() + 1) })
@@ -542,10 +509,7 @@ describe("bounded in-run WhatsApp retries", () => {
         result = await runWhatsAppWorkerOnce(randomUUID(), fake.dependencies);
       },
     );
-    const [row] = await db
-      .select()
-      .from(whatsappJobs)
-      .where(eq(whatsappJobs.id, job.id));
+    const [row] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, job.id));
     expect(row).toMatchObject({
       state: "dead",
       attempts: 5,

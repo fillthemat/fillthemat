@@ -13,27 +13,18 @@ Uniform: $60, ordered after the first month.
 Family discount: 10% off for each additional sibling.`;
 
 export function PricingSection({ pricing }: { pricing: string }) {
-  const {
-    state,
-    formAction,
-    formRef,
-    pending,
-    values,
-    setField,
-    dirty,
-    reset,
-    errorFor,
-  } = useSettingsForm({
-    action: updatePricingAction,
-    initialValues: { pricing },
-    dirtyKey: "pricing:text",
-  });
+  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
+    useSettingsForm({
+      action: updatePricingAction,
+      initialValues: { pricing },
+      dirtyKey: "pricing:text",
+    });
 
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-5">
       <Callout>
-        Your agent shares only what you write here. It will not invent discounts
-        or guess a missing price.
+        Your agent shares only what you write here. It will not invent discounts or guess a missing
+        price.
       </Callout>
 
       <TextAreaField

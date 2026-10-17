@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useActionState,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,11 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { IDLE_STATE, type SettingsFormState } from "../form-state";
-import {
-  applyCreateSuccessValues,
-  applySavedValues,
-  sameValues,
-} from "../form-utils";
+import { applyCreateSuccessValues, applySavedValues, sameValues } from "../form-utils";
 import { useDirtyRegistration } from "./dirty-context";
 
 export type SettingsAction = (
@@ -101,9 +90,7 @@ export function useSettingsForm({
     if (handledState.current === state) return;
     handledState.current = state;
     if (state.status === "error") {
-      const invalid = formRef.current?.querySelector<HTMLElement>(
-        '[aria-invalid="true"]',
-      );
+      const invalid = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
       invalid?.focus();
       return;
     }
@@ -116,9 +103,7 @@ export function useSettingsForm({
       setBaseline(blankRef.current);
     } else {
       const saved = state.values ?? submittedValues.current;
-      setValues((previous) =>
-        applySavedValues(previous, saved, typedDuringSave),
-      );
+      setValues((previous) => applySavedValues(previous, saved, typedDuringSave));
       setBaseline((previous) => ({ ...previous, ...saved }));
     }
     onSuccessRef.current?.(state, { preservedEdits });
@@ -129,15 +114,10 @@ export function useSettingsForm({
     if (!editedSinceSubmit.current.includes(name)) {
       editedSinceSubmit.current = [...editedSinceSubmit.current, name];
     }
-    setEditedFields((previous) =>
-      previous.includes(name) ? previous : [...previous, name],
-    );
+    setEditedFields((previous) => (previous.includes(name) ? previous : [...previous, name]));
   }, []);
 
-  const dirty = useMemo(
-    () => !sameValues(values, baseline),
-    [values, baseline],
-  );
+  const dirty = useMemo(() => !sameValues(values, baseline), [values, baseline]);
 
   useDirtyRegistration(dirtyKey, dirty);
 
@@ -241,12 +221,7 @@ export function SaveBar({
       {cancelLabel}
     </Button>
   ) : (
-    <Button
-      type="button"
-      variant="outline"
-      onClick={onDiscard}
-      disabled={!dirty || pending}
-    >
+    <Button type="button" variant="outline" onClick={onDiscard} disabled={!dirty || pending}>
       Discard
     </Button>
   );
@@ -254,21 +229,12 @@ export function SaveBar({
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row-reverse sm:items-center">
       <div className="flex shrink-0 gap-2">
-        <Button
-          type="submit"
-          disabled={pending}
-          aria-busy={pending || undefined}
-        >
+        <Button type="submit" disabled={pending} aria-busy={pending || undefined}>
           {pending ? savingLabel : saveLabel}
         </Button>
         {secondary}
       </div>
-      <SectionStatus
-        state={state}
-        pending={pending}
-        dirty={dirty}
-        idleHint={idleHint}
-      />
+      <SectionStatus state={state} pending={pending} dirty={dirty} idleHint={idleHint} />
     </div>
   );
 }
@@ -341,9 +307,7 @@ export function ItemActionForm({
             <AlertDialogHeader>
               <AlertDialogTitle>{confirm.title}</AlertDialogTitle>
               <AlertDialogDescription asChild>
-                <div className="text-sm text-muted-foreground text-pretty">
-                  {confirm.body}
-                </div>
+                <div className="text-sm text-pretty text-muted-foreground">{confirm.body}</div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

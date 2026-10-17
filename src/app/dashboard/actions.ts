@@ -28,21 +28,11 @@ export async function publishSchoolAction() {
     db
       .select()
       .from(trialOfferings)
-      .where(
-        and(
-          eq(trialOfferings.schoolId, school.id),
-          eq(trialOfferings.active, true),
-        ),
-      ),
+      .where(and(eq(trialOfferings.schoolId, school.id), eq(trialOfferings.active, true))),
     db
       .select()
       .from(trialWindows)
-      .where(
-        and(
-          eq(trialWindows.schoolId, school.id),
-          eq(trialWindows.active, true),
-        ),
-      ),
+      .where(and(eq(trialWindows.schoolId, school.id), eq(trialWindows.active, true))),
   ]);
 
   const ready =

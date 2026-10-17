@@ -3,11 +3,7 @@ import { requireOwnedSchool } from "@/lib/auth/current-school";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { school } = await requireOwnedSchool();
 
   return (
@@ -19,9 +15,7 @@ export default async function DashboardLayout({
         Skip to content
       </a>
       <DashboardNav schoolName={school.name} />
-      <div className="flex min-h-dvh min-w-0 flex-1 flex-col p-4 md:p-6">
-        {children}
-      </div>
+      <div className="flex min-h-dvh min-w-0 flex-1 flex-col p-4 md:p-6">{children}</div>
     </div>
   );
 }

@@ -25,9 +25,7 @@ function describedBy(
   errorId: string,
   error: string | undefined,
 ): string | undefined {
-  const ids = [helper ? helperId : null, error ? errorId : null].filter(
-    Boolean,
-  );
+  const ids = [helper ? helperId : null, error ? errorId : null].filter(Boolean);
   return ids.length > 0 ? ids.join(" ") : undefined;
 }
 
@@ -80,10 +78,7 @@ function FieldShell({
       {helper || count ? (
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           {helper ? (
-            <p
-              id={helperId}
-              className="text-xs leading-relaxed text-muted-foreground"
-            >
+            <p id={helperId} className="text-xs leading-relaxed text-muted-foreground">
               {helper}
             </p>
           ) : null}
@@ -91,13 +86,10 @@ function FieldShell({
             <p
               className={cn(
                 "text-xs tabular-nums",
-                count.value > count.max
-                  ? "text-destructive"
-                  : "text-muted-foreground",
+                count.value > count.max ? "text-destructive" : "text-muted-foreground",
               )}
             >
-              {count.value.toLocaleString("en-US")} /{" "}
-              {count.max.toLocaleString("en-US")}
+              {count.value.toLocaleString("en-US")} / {count.max.toLocaleString("en-US")}
             </p>
           ) : null}
         </div>
@@ -158,11 +150,7 @@ export function TextField({
       error={error}
       required={required}
       badge={badge}
-      count={
-        showCount && maxLength
-          ? { value: value.length, max: maxLength }
-          : undefined
-      }
+      count={showCount && maxLength ? { value: value.length, max: maxLength } : undefined}
     >
       <Input
         id={controlId}
@@ -221,11 +209,7 @@ export function TextAreaField({
       error={error}
       required={required}
       badge={badge}
-      count={
-        showCount && maxLength
-          ? { value: value.length, max: maxLength }
-          : undefined
-      }
+      count={showCount && maxLength ? { value: value.length, max: maxLength } : undefined}
     >
       <Textarea
         id={controlId}
@@ -323,12 +307,7 @@ export function Callout({
     warning: "border-warning/40 text-warning",
   } as const;
   return (
-    <div
-      className={cn(
-        "rounded-md border px-3 py-2 text-sm text-pretty",
-        tones[tone],
-      )}
-    >
+    <div className={cn("rounded-md border px-3 py-2 text-sm text-pretty", tones[tone])}>
       {title ? <p className="font-medium text-foreground">{title}</p> : null}
       <div className={title ? "mt-1" : undefined}>{children}</div>
     </div>
@@ -363,7 +342,7 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-start gap-2 py-2">
       <p className="text-sm font-medium">{title}</p>
-      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground text-pretty">
+      <p className="max-w-prose text-sm leading-relaxed text-pretty text-muted-foreground">
         {children}
       </p>
       {action}

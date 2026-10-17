@@ -46,9 +46,7 @@ it("scores tool calls and public reply intents through the real assistant withou
     doGenerate: async (params) => {
       if (params.prompt.at(-1)?.role === "tool")
         return {
-          content: [
-            { type: "text", text: "Please confirm your contact request." },
-          ],
+          content: [{ type: "text", text: "Please confirm your contact request." }],
           finishReason: { unified: "stop", raw: undefined },
           usage,
           warnings: [],
@@ -82,8 +80,7 @@ it("scores tool calls and public reply intents through the real assistant withou
   expect(contact.scores.map((s) => s.value)).toEqual([1, 1, 1, 1]);
 
   const bookingCase = cases.find((row) => row.id === "happy-booking");
-  if (!bookingCase?.expectedOutput.bookingIntent)
-    throw new Error("Missing booking case");
+  if (!bookingCase?.expectedOutput.bookingIntent) throw new Error("Missing booking case");
   const bookingModel = new MockLanguageModelV4({
     doGenerate: [
       {

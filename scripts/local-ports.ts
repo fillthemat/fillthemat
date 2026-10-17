@@ -26,21 +26,13 @@
  * `bun run dev` / `dev:stop` parse the port from it. Re-running setup with
  * that URL already set keeps the same port instead of hopping.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { tryCapture } from "./local-process";
 
 /** Allowed local Next ports. Must match `supabase/config.toml` redirect URLs. */
-export const APP_PORTS = [
-  3000, 3010, 3020, 3030, 3040, 3050, 3060, 3070, 3080, 3090,
-] as const;
+export const APP_PORTS = [3000, 3010, 3020, 3030, 3040, 3050, 3060, 3070, 3080, 3090] as const;
 
 /** Directory name under `--git-common-dir` (do not commit; it lives in `.git`). */
 const PORTS_DIR = "fillthemat-ports";
@@ -104,9 +96,7 @@ export type ClaimAppPortOptions = {
 };
 
 /** Claim a port for `toplevel` (reuse existing URL / existing claim if any). */
-export async function claimAppPort(
-  options: ClaimAppPortOptions,
-): Promise<number> {
+export async function claimAppPort(options: ClaimAppPortOptions): Promise<number> {
   const probe = options.probe ?? isListenFree;
   mkdirSync(join(options.gitCommonDir, PORTS_DIR), { recursive: true });
 
@@ -119,9 +109,7 @@ export async function claimAppPort(
 
   if (preferred === undefined) {
     for (const port of APP_PORTS) {
-      if (
-        readOwner(portFile(options.gitCommonDir, port)) === options.toplevel
-      ) {
+      if (readOwner(portFile(options.gitCommonDir, port)) === options.toplevel) {
         return port;
       }
     }
@@ -145,9 +133,7 @@ export async function claimAppPort(
         unlinkSync(file);
       } catch {
         if (preferred !== undefined) {
-          throw new Error(
-            `Port ${port} is already claimed. Retry bun run setup.`,
-          );
+          throw new Error(`Port ${port} is already claimed. Retry bun run setup.`);
         }
         continue;
       }
@@ -157,9 +143,7 @@ export async function claimAppPort(
       writeFileSync(file, `${options.toplevel}\n`, { flag: "wx" });
     } catch {
       if (preferred !== undefined) {
-        throw new Error(
-          `Port ${port} is already claimed. Retry bun run setup.`,
-        );
+        throw new Error(`Port ${port} is already claimed. Retry bun run setup.`);
       }
       continue;
     }
@@ -172,9 +156,7 @@ export async function claimAppPort(
   );
 }
 
-export async function claimAppPortForCwd(
-  existingUrl?: string,
-): Promise<number> {
+export async function claimAppPortForCwd(existingUrl?: string): Promise<number> {
   const toplevel = git(["rev-parse", "--show-toplevel"]);
   const gitCommonDirRaw = git(["rev-parse", "--git-common-dir"]);
   if (!toplevel || !gitCommonDirRaw) {

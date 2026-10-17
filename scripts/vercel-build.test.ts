@@ -28,9 +28,7 @@ function runBuild(environment: string, gateStatus = 0, migrateStatus = 0) {
 }
 
 it("provides environment-only and explicit production migration-check scripts", () => {
-  expect(scripts["db:check"]).toBe(
-    "bun --no-env-file scripts/check-migrations.ts",
-  );
+  expect(scripts["db:check"]).toBe("bun --no-env-file scripts/check-migrations.ts");
   expect(scripts["db:check:prod"]).toBe(
     "bun --no-env-file --env-file=.env.production.local scripts/check-migrations.ts",
   );
@@ -54,10 +52,7 @@ it("migrates, checks, then builds production and stops on either failure", () =>
   ]);
   const failure = runBuild("production", 1);
   expect(failure.status).toBe(1);
-  expect(failure.stdout.trim().split("\n")).toEqual([
-    "run db:migrate:deploy",
-    "run db:check",
-  ]);
+  expect(failure.stdout.trim().split("\n")).toEqual(["run db:migrate:deploy", "run db:check"]);
   const migrateFailure = runBuild("production", 0, 1);
   expect(migrateFailure.status).toBe(1);
   expect(migrateFailure.stdout.trim()).toBe("run db:migrate:deploy");

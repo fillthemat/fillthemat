@@ -1,22 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
-import {
-  contacts,
-  emailDeliveries,
-  landingSessions,
-  leads,
-  schools,
-} from "@/db/schema";
+import { contacts, emailDeliveries, landingSessions, leads, schools } from "@/db/schema";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
@@ -40,9 +26,7 @@ async function runEmailSendOnce(
     .where(eq(emailDeliveries.schoolId, schoolId));
   return runEmailWorker(runId, dependencies, {
     ...options,
-    ids: owned
-      .map((row) => row.id)
-      .filter((id) => !options?.ids || options.ids.includes(id)),
+    ids: owned.map((row) => row.id).filter((id) => !options?.ids || options.ids.includes(id)),
   });
 }
 let leadId = "";
@@ -74,17 +58,13 @@ beforeAll(async () => {
 });
 afterEach(async () => {
   vi.restoreAllMocks();
-  await db
-    .delete(emailDeliveries)
-    .where(eq(emailDeliveries.schoolId, schoolId));
+  await db.delete(emailDeliveries).where(eq(emailDeliveries.schoolId, schoolId));
 });
 afterAll(async () => {
   await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
-async function enqueue(
-  extra: Partial<typeof emailDeliveries.$inferInsert> = {},
-) {
+async function enqueue(extra: Partial<typeof emailDeliveries.$inferInsert> = {}) {
   const [row] = await db
     .insert(emailDeliveries)
     .values({
@@ -101,10 +81,7 @@ async function enqueue(
   return requireRow(row, "email");
 }
 async function stored(id: string) {
-  const [row] = await db
-    .select()
-    .from(emailDeliveries)
-    .where(eq(emailDeliveries.id, id));
+  const [row] = await db.select().from(emailDeliveries).where(eq(emailDeliveries.id, id));
   return requireRow(row, "stored email");
 }
 describe("bounded email send run", () => {
@@ -157,10 +134,7 @@ describe("bounded email send run", () => {
     });
     const blocked = await enqueue();
     vi.spyOn(console, "error").mockImplementation(() => {});
-    await db
-      .update(schools)
-      .set({ approvedAt: null })
-      .where(eq(schools.id, schoolId));
+    await db.update(schools).set({ approvedAt: null }).where(eq(schools.id, schoolId));
     try {
       expect(
         await runEmailSendOnce("unapproved", dependencies, {
@@ -175,10 +149,7 @@ describe("bounded email send run", () => {
       });
       expect(sends).toEqual([fifth.providerIdempotencyKey]);
     } finally {
-      await db
-        .update(schools)
-        .set({ approvedAt: now })
-        .where(eq(schools.id, schoolId));
+      await db.update(schools).set({ approvedAt: now }).where(eq(schools.id, schoolId));
     }
   });
   it.each([0, 1])(
@@ -308,9 +279,7 @@ describe("bounded email send run", () => {
       },
       { ids: [...fresh, retry].map((row) => row.id) },
     );
-    expect(sent).toEqual(
-      [...fresh.slice(0, 24), retry].map((row) => row.providerIdempotencyKey),
-    );
+    expect(sent).toEqual([...fresh.slice(0, 24), retry].map((row) => row.providerIdempotencyKey));
   });
   it("inline lead and ID sends obey due times and never start a sixth execution", async () => {
     const row = await enqueue({ attempts: 5, state: "failed" });
@@ -366,9 +335,7 @@ describe("bounded email send run", () => {
           createdAt: new Date(now.getTime() - 60_000 + index),
         }),
       );
-      fresh.push(
-        await enqueue({ createdAt: new Date(now.getTime() - 30_000 + index) }),
-      );
+      fresh.push(await enqueue({ createdAt: new Date(now.getTime() - 30_000 + index) }));
     }
     const sent: string[] = [];
     const counts = await runEmailSendOnce(
@@ -386,9 +353,7 @@ describe("bounded email send run", () => {
     );
     expect(counts).toMatchObject({ claimed: 25, sent: 25 });
     expect(sent).toEqual(
-      [...fresh.slice(0, 20), ...retry.slice(0, 5)].map(
-        (row) => row.providerIdempotencyKey,
-      ),
+      [...fresh.slice(0, 20), ...retry.slice(0, 5)].map((row) => row.providerIdempotencyKey),
     );
   });
   it("preserves minute backoff across runs and stops transient sends at five", async () => {
@@ -515,10 +480,7 @@ describe("bounded email send run", () => {
     expect(log).toHaveBeenCalledTimes(1);
     expect(log.mock.calls[0][0]).not.toContain("private recipient prose");
     expect(
-      await db
-        .select()
-        .from(emailDeliveries)
-        .where(eq(emailDeliveries.schoolId, schoolId)),
+      await db.select().from(emailDeliveries).where(eq(emailDeliveries.schoolId, schoolId)),
     ).toHaveLength(1);
   });
 });

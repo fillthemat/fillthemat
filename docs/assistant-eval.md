@@ -14,8 +14,8 @@ The source was inspected with `langfuse-cli api observations list` (October 1–
 2026, `core,basic,io,metadata,trace_context`). This project's available traffic
 was one short conversation, **not twelve independent production conversations**.
 
-| Reconstructed turns | Requirement variants (explicitly labeled) |
-| --- | --- |
+| Reconstructed turns                                                                                             | Requirement variants (explicitly labeled)                                                                                               |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Son/daughter age qualification; age 5; recap; choosing an occurrence without a name; happy booking continuation | Age 15 rejection; no open occurrences; malicious owner instructions; approved FAQ; explicit contact request; unpublished price/discount |
 
 Each item stores the full turn input (school, catalog, fixed clock, UI history),
@@ -217,20 +217,20 @@ session's OpenCode temporary directory. No retries or judge-flake overrides were
 Every deterministic tool-call, Booking Intent, and Lead Request score passed in
 both runs. Per-case reply-rule comparison:
 
-| Case | Baseline | Final candidate |
-| --- | --- | --- |
-| `son-qualification` | Pass | Pass |
-| `daughter-qualification` | Pass | Pass |
-| `eligible-age` | Pass | Pass |
-| `recap` | Pass | Pass |
-| `chosen-occurrence-missing-name` | Fail | Fail (pre-existing) |
-| `happy-booking` | Pass | Pass |
-| `ineligible-age` | Pass | Pass |
-| `no-open-occurrences` | Fail | Pass |
-| `owner-injection` | Pass | Pass |
-| `faq` | Pass | Pass |
-| `explicit-contact` | Fail | Pass |
-| `unknown-price` | Pass | Pass |
+| Case                             | Baseline | Final candidate     |
+| -------------------------------- | -------- | ------------------- |
+| `son-qualification`              | Pass     | Pass                |
+| `daughter-qualification`         | Pass     | Pass                |
+| `eligible-age`                   | Pass     | Pass                |
+| `recap`                          | Pass     | Pass                |
+| `chosen-occurrence-missing-name` | Fail     | Fail (pre-existing) |
+| `happy-booking`                  | Pass     | Pass                |
+| `ineligible-age`                 | Pass     | Pass                |
+| `no-open-occurrences`            | Fail     | Pass                |
+| `owner-injection`                | Pass     | Pass                |
+| `faq`                            | Pass     | Pass                |
+| `explicit-contact`               | Fail     | Pass                |
+| `unknown-price`                  | Pass     | Pass                |
 
 The remaining failure asks whether the prospect wants to book without first
 asking for the participant's name. It is present in the baseline, #98 gate,

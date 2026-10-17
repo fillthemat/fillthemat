@@ -7,9 +7,7 @@ vi.mock("@/lib/sessions/record-session", () => ({
 }));
 
 function post(body: string) {
-  return POST(
-    new Request("http://localhost/api/sessions", { method: "POST", body }),
-  );
+  return POST(new Request("http://localhost/api/sessions", { method: "POST", body }));
 }
 
 describe("landing session requests", () => {

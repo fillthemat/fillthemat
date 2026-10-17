@@ -1,15 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { and, eq, inArray } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import { getDb } from "@/db";
 import {
@@ -29,12 +21,7 @@ import {
 } from "@/lib/security/limits";
 import { confirmBookingButtonId } from "@/lib/whatsapp/confirmation";
 import { upsertPendingBookingIntent } from "@/lib/whatsapp/intents";
-import {
-  authSql,
-  loadLocalEnv,
-  requireRow,
-  whileSavingMessages,
-} from "@/test/integration-env";
+import { authSql, loadLocalEnv, requireRow, whileSavingMessages } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
   exportedSpans,
@@ -45,11 +32,7 @@ import {
   leaks,
   spansExportedSoFar,
 } from "@/test/tracing";
-import {
-  buttonReplyPayload,
-  post,
-  textInboundPayload,
-} from "@/test/whatsapp-webhook";
+import { buttonReplyPayload, post, textInboundPayload } from "@/test/whatsapp-webhook";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 
 loadLocalEnv();
@@ -60,12 +43,8 @@ const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
 const phoneNumberId = `499${Date.now().toString().slice(-9)}`;
 const unusedPhoneNumberId = `599${Date.now().toString().slice(-9)}`;
-const { runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [
-  phoneNumberId,
-  unusedPhoneNumberId,
-]);
-const scriptedReply =
-  "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.";
+const { runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [phoneNumberId, unusedPhoneNumberId]);
+const scriptedReply = "Local scripted reply (no AI Gateway token). Trial offerings: Kids BJJ.";
 let schoolId = "";
 let kidsBjjId = "";
 
@@ -95,12 +74,7 @@ async function repliedTo(waId: string) {
   const sent = await db
     .select({ id: whatsappDeliveries.id })
     .from(whatsappDeliveries)
-    .where(
-      and(
-        eq(whatsappDeliveries.recipientWaId, waId),
-        eq(whatsappDeliveries.state, "sent"),
-      ),
-    );
+    .where(and(eq(whatsappDeliveries.recipientWaId, waId), eq(whatsappDeliveries.state, "sent")));
   return sent.length > 0;
 }
 
@@ -108,12 +82,7 @@ async function conversationWith(waId: string) {
   const [conversation] = await db
     .select()
     .from(conversations)
-    .where(
-      and(
-        eq(conversations.schoolId, schoolId),
-        eq(conversations.waIdHash, hashWaId(waId)),
-      ),
-    )
+    .where(and(eq(conversations.schoolId, schoolId), eq(conversations.waIdHash, hashWaId(waId))))
     .limit(1);
   return requireRow(conversation, "conversation");
 }
@@ -197,9 +166,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await db
     .delete(whatsappJobs)
-    .where(
-      inArray(whatsappJobs.phoneNumberId, [phoneNumberId, unusedPhoneNumberId]),
-    );
+    .where(inArray(whatsappJobs.phoneNumberId, [phoneNumberId, unusedPhoneNumberId]));
   await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
@@ -228,20 +195,13 @@ describe("a WhatsApp assistant turn's trace", () => {
     await sendText(waId, "What can my son try?");
 
     const conversation = await conversationWith(waId);
-    expect((await exportedTraces()).map(({ sessionId }) => sessionId)).toEqual([
-      conversation.id,
-    ]);
+    expect((await exportedTraces()).map(({ sessionId }) => sessionId)).toEqual([conversation.id]);
     const spans = await exportedSpans();
     const root = spans.find(isRoot);
     const assistantRun = spans.find(isAssistantRun);
-    expect(assistantRun?.parentSpanContext?.spanId).toBe(
-      root?.spanContext().spanId,
-    );
+    expect(assistantRun?.parentSpanContext?.spanId).toBe(root?.spanContext().spanId);
     expect(spans.map(({ name }) => name)).toEqual(
-      expect.arrayContaining([
-        "chat scripted-local",
-        "execute_tool list_trial_offerings",
-      ]),
+      expect.arrayContaining(["chat scripted-local", "execute_tool list_trial_offerings"]),
     );
   });
 
@@ -268,9 +228,7 @@ describe("a WhatsApp assistant turn's trace", () => {
     const exportedByWorker = spansExportedSoFar();
     const conversation = await conversationWith(waId);
     expect(
-      exportedByWorker
-        .filter(isRoot)
-        .map(({ attributes }) => attributes["session.id"]),
+      exportedByWorker.filter(isRoot).map(({ attributes }) => attributes["session.id"]),
     ).toEqual([conversation.id]);
     // Nothing was left waiting to be exported.
     expect(await exportedSpans()).toHaveLength(exportedByWorker.length);
@@ -360,17 +318,14 @@ describe("a WhatsApp turn answered without the assistant", () => {
     const turns = await exportedTraces();
     expect(transcript).toHaveLength(2);
     await db.insert(whatsappDeliveries).values(
-      Array.from(
-        { length: MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY },
-        (_, index) => ({
-          schoolId,
-          recipientWaId: waId,
-          phoneNumberId,
-          providerIdempotencyKey: `earlier/${suffix}/${index}`,
-          body: `Earlier reply ${index + 1}`,
-          state: "sent" as const,
-        }),
-      ),
+      Array.from({ length: MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY }, (_, index) => ({
+        schoolId,
+        recipientWaId: waId,
+        phoneNumberId,
+        providerIdempotencyKey: `earlier/${suffix}/${index}`,
+        body: `Earlier reply ${index + 1}`,
+        state: "sent" as const,
+      })),
     );
 
     const wamid = wamidFrom(waId);
@@ -391,10 +346,7 @@ describe("a WhatsApp turn answered without the assistant", () => {
         and(
           eq(whatsappDeliveries.schoolId, schoolId),
           eq(whatsappDeliveries.recipientWaId, waId),
-          eq(
-            whatsappDeliveries.providerIdempotencyKey,
-            `wa-notice/${waId}/${wamid}`,
-          ),
+          eq(whatsappDeliveries.providerIdempotencyKey, `wa-notice/${waId}/${wamid}`),
         ),
       );
     expect(notice).toEqual({
@@ -420,9 +372,10 @@ describe("a WhatsApp turn answered without the assistant", () => {
           .map(textOf)
           .toSorted(),
       ).toEqual(["Thanks, what can my daughter try?", "What can my son try?"]);
-      expect(
-        saved.filter(({ role }) => role === "assistant").map(textOf),
-      ).toEqual([scriptedReply, scriptedReply]);
+      expect(saved.filter(({ role }) => role === "assistant").map(textOf)).toEqual([
+        scriptedReply,
+        scriptedReply,
+      ]);
       expect(await exportedTraces()).toHaveLength(2);
       const sentReplies = await db
         .select({ body: whatsappDeliveries.body })
@@ -488,15 +441,12 @@ describe("a WhatsApp turn answered without the assistant", () => {
       participantAge: 8,
     });
     await db.insert(messages).values(
-      Array.from(
-        { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
-        (_, index) => ({
-          conversationId,
-          messageId: `earlier-${index}`,
-          role: index % 2 === 0 ? "user" : "assistant",
-          parts: [{ type: "text", text: `Message ${index + 1}` }],
-        }),
-      ),
+      Array.from({ length: MAX_CHAT_MESSAGES_PER_CONVERSATION }, (_, index) => ({
+        conversationId,
+        messageId: `earlier-${index}`,
+        role: index % 2 === 0 ? "user" : "assistant",
+        parts: [{ type: "text", text: `Message ${index + 1}` }],
+      })),
     );
     await sendText(waId, "One more question?");
     const ended = await conversationWith(waId);
@@ -508,10 +458,7 @@ describe("a WhatsApp turn answered without the assistant", () => {
 
     expect(await savedMessages(ended)).toEqual(transcript);
     expect(
-      await db
-        .select()
-        .from(bookings)
-        .where(eq(bookings.conversationId, conversationId)),
+      await db.select().from(bookings).where(eq(bookings.conversationId, conversationId)),
     ).toEqual([]);
     const [intent] = await db
       .select({ state: whatsappBookingIntents.state })
@@ -558,10 +505,7 @@ describe("an inbound WhatsApp message that gets no reply", () => {
       .select({ body: whatsappDeliveries.body })
       .from(whatsappDeliveries)
       .where(
-        and(
-          eq(whatsappDeliveries.schoolId, schoolId),
-          eq(whatsappDeliveries.recipientWaId, waId),
-        ),
+        and(eq(whatsappDeliveries.schoolId, schoolId), eq(whatsappDeliveries.recipientWaId, waId)),
       );
     expect(before).toHaveLength(2);
     await db
@@ -584,17 +528,14 @@ describe("an inbound WhatsApp message that gets no reply", () => {
   it("refuses a first message at the daily cap without creating a conversation", async () => {
     const waId = "16505550129";
     await db.insert(whatsappDeliveries).values(
-      Array.from(
-        { length: MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY },
-        (_, index) => ({
-          schoolId,
-          recipientWaId: waId,
-          phoneNumberId,
-          providerIdempotencyKey: `first-cap/${suffix}/${index}`,
-          body: "Earlier reply",
-          state: "sent" as const,
-        }),
-      ),
+      Array.from({ length: MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY }, (_, index) => ({
+        schoolId,
+        recipientWaId: waId,
+        phoneNumberId,
+        providerIdempotencyKey: `first-cap/${suffix}/${index}`,
+        body: "Earlier reply",
+        state: "sent" as const,
+      })),
     );
     await sendText(waId, "Hello?");
     expect(
@@ -602,10 +543,7 @@ describe("an inbound WhatsApp message that gets no reply", () => {
         .select()
         .from(conversations)
         .where(
-          and(
-            eq(conversations.schoolId, schoolId),
-            eq(conversations.waIdHash, hashWaId(waId)),
-          ),
+          and(eq(conversations.schoolId, schoolId), eq(conversations.waIdHash, hashWaId(waId))),
         ),
     ).toEqual([]);
     const notices = await db
@@ -669,15 +607,12 @@ describe("an inbound WhatsApp message that gets no reply", () => {
     const waId = "16505550124";
     const conversationId = await startConversation(waId);
     await db.insert(messages).values(
-      Array.from(
-        { length: MAX_CHAT_MESSAGES_PER_CONVERSATION },
-        (_, index) => ({
-          conversationId,
-          messageId: `earlier-${index}`,
-          role: index % 2 === 0 ? "user" : "assistant",
-          parts: [{ type: "text", text: `Message ${index + 1}` }],
-        }),
-      ),
+      Array.from({ length: MAX_CHAT_MESSAGES_PER_CONVERSATION }, (_, index) => ({
+        conversationId,
+        messageId: `earlier-${index}`,
+        role: index % 2 === 0 ? "user" : "assistant",
+        parts: [{ type: "text", text: `Message ${index + 1}` }],
+      })),
     );
 
     const transcript = await savedMessages({ id: conversationId });
@@ -695,10 +630,7 @@ describe("an inbound WhatsApp message that gets no reply", () => {
       })
       .from(whatsappDeliveries)
       .where(
-        and(
-          eq(whatsappDeliveries.schoolId, schoolId),
-          eq(whatsappDeliveries.recipientWaId, waId),
-        ),
+        and(eq(whatsappDeliveries.schoolId, schoolId), eq(whatsappDeliveries.recipientWaId, waId)),
       );
     expect(notices).toEqual([
       {
@@ -713,10 +645,7 @@ describe("an inbound WhatsApp message that gets no reply", () => {
     const waId = "16505550125";
     const conversationId = await startConversation(waId);
     const holdLock = (generatingAt: Date | null) =>
-      db
-        .update(conversations)
-        .set({ generatingAt })
-        .where(eq(conversations.id, conversationId));
+      db.update(conversations).set({ generatingAt }).where(eq(conversations.id, conversationId));
     const wamid = wamidFrom(waId);
 
     await holdLock(new Date());
@@ -802,24 +731,18 @@ describe("a failed attempt at a WhatsApp turn", () => {
 
     const exportedByWorker = spansExportedSoFar();
     const failedAttempt = exportedByWorker.find(
-      (span) =>
-        isRoot(span) &&
-        span.attributes["langfuse.observation.level"] === "ERROR",
+      (span) => isRoot(span) && span.attributes["langfuse.observation.level"] === "ERROR",
     );
     expect(failedAttempt?.attributes).toMatchObject({
       "session.id": conversationId,
       "langfuse.observation.level": "ERROR",
-      "langfuse.observation.status_message":
-        expect.stringContaining("disk full"),
+      "langfuse.observation.status_message": expect.stringContaining("disk full"),
     });
     const assistantRun = exportedByWorker.find(
       (span) =>
-        isAssistantRun(span) &&
-        span.spanContext().traceId === failedAttempt?.spanContext().traceId,
+        isAssistantRun(span) && span.spanContext().traceId === failedAttempt?.spanContext().traceId,
     );
-    expect(assistantRun?.parentSpanContext?.spanId).toBe(
-      failedAttempt?.spanContext().spanId,
-    );
+    expect(assistantRun?.parentSpanContext?.spanId).toBe(failedAttempt?.spanContext().spanId);
 
     expect(await exportedTraces()).toEqual([
       expect.objectContaining({ sessionId: conversationId, level: "ERROR" }),

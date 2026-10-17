@@ -412,15 +412,10 @@ describe("loadOverviewMetrics", () => {
     const metrics = await loadOverviewMetrics(schoolA, now);
     expect(metrics.eligibleSessions).toBe(2);
     expect(metrics.convertedSessions).toBe(1);
-    expect(metrics.convertedSessions).toBeLessThanOrEqual(
-      metrics.eligibleSessions,
+    expect(metrics.convertedSessions).toBeLessThanOrEqual(metrics.eligibleSessions);
+    expect(formatBookingConversion(metrics.convertedSessions, metrics.eligibleSessions).value).toBe(
+      "50%",
     );
-    expect(
-      formatBookingConversion(
-        metrics.convertedSessions,
-        metrics.eligibleSessions,
-      ).value,
-    ).toBe("50%");
   });
 
   it("counts duplicate bookings per session once and keeps cancelled conversions", async () => {
@@ -479,18 +474,12 @@ describe("loadOverviewMetrics", () => {
         notificationEmail: `ovw-z-${suffix}@local.test`,
       })
       .returning({ id: schools.id });
-    const metrics = await loadOverviewMetrics(
-      requireRow(empty, "empty school").id,
-      now,
-    );
+    const metrics = await loadOverviewMetrics(requireRow(empty, "empty school").id, now);
     expect(metrics.eligibleSessions).toBe(0);
     expect(metrics.convertedSessions).toBe(0);
-    expect(
-      formatBookingConversion(
-        metrics.convertedSessions,
-        metrics.eligibleSessions,
-      ).value,
-    ).toBe("—");
+    expect(formatBookingConversion(metrics.convertedSessions, metrics.eligibleSessions).value).toBe(
+      "—",
+    );
     await deleteAuthUser(sql, emptyOwner);
   });
 });

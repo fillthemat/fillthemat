@@ -1,12 +1,12 @@
+import { LangfuseClient } from "@langfuse/client";
+import { startActiveObservation } from "@langfuse/tracing";
+import { gateway, wrapLanguageModel } from "ai";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { LangfuseClient } from "@langfuse/client";
-import { startActiveObservation } from "@langfuse/tracing";
-import { gateway, wrapLanguageModel } from "ai";
 import { z } from "zod";
 import { registerTracing } from "../src/lib/tracing/register";
 import { cases, DATASET_NAME, type EvalCase } from "./assistant-eval/cases";
@@ -36,8 +36,7 @@ function flag(name: string): string | undefined {
 }
 function required(name: string): string {
   const value = flag(name);
-  if (!value || value.startsWith("--"))
-    throw new AssistantEvalError(`Missing --${name}`);
+  if (!value || value.startsWith("--")) throw new AssistantEvalError(`Missing --${name}`);
   return value;
 }
 // Serialize dates before masking; never export Date objects as empty objects.
@@ -57,8 +56,7 @@ function cli(resource: string, action: string, body: unknown): unknown {
       encoding: "utf8",
       env: {
         ...process.env,
-        LANGFUSE_HOST:
-          process.env.LANGFUSE_BASE_URL ?? process.env.LANGFUSE_HOST,
+        LANGFUSE_HOST: process.env.LANGFUSE_BASE_URL ?? process.env.LANGFUSE_HOST,
       },
     },
   );
@@ -68,9 +66,7 @@ function cli(resource: string, action: string, body: unknown): unknown {
     );
   const result = JSON.parse(child.stdout);
   if (result.status >= 400)
-    throw new AssistantEvalError(
-      `Langfuse ${resource}/${action}: HTTP ${result.status}`,
-    );
+    throw new AssistantEvalError(`Langfuse ${resource}/${action}: HTTP ${result.status}`);
   return result.body;
 }
 
@@ -82,9 +78,7 @@ async function seed() {
     metadata: { issue: 97, datasetHash, draft: true },
   });
   for (const testCase of cases) {
-    const hex = createHash("sha256")
-      .update(`${DATASET_NAME}/${testCase.id}`)
-      .digest("hex");
+    const hex = createHash("sha256").update(`${DATASET_NAME}/${testCase.id}`).digest("hex");
     cli("dataset-items", "create", {
       id: `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`,
       datasetName: DATASET_NAME,
@@ -130,8 +124,7 @@ async function run() {
     );
   process.env.LANGFUSE_TRACING_ENVIRONMENT = "assistant-eval";
   const provider = registerTracing();
-  if (!provider)
-    throw new AssistantEvalError("Langfuse tracing could not be registered");
+  if (!provider) throw new AssistantEvalError("Langfuse tracing could not be registered");
   const client = new LangfuseClient();
   try {
     const dataset = await client.dataset.get(DATASET_NAME);
@@ -146,29 +139,20 @@ async function run() {
         !isDeepStrictEqual(safe(testCase.input), item.input) ||
         !isDeepStrictEqual(safe(testCase.expectedOutput), item.expectedOutput)
       )
-        throw new AssistantEvalError(
-          "Hosted case changed; do not compare different datasets",
-        );
+        throw new AssistantEvalError("Hosted case changed; do not compare different datasets");
     }
     const assistantPath = flag("assistant");
     const module = assistantPath
       ? await import(pathToFileURL(resolve(assistantPath)).href)
       : await import("../src/lib/ai/assistant");
     if (typeof module.completedReply !== "function")
-      throw new AssistantEvalError(
-        "Assistant module must export completedReply",
-      );
+      throw new AssistantEvalError("Assistant module must export completedReply");
     const commit = spawnSync("git", ["rev-parse", "HEAD"], {
       encoding: "utf8",
     }).stdout.trim();
     const assistantCommit = spawnSync(
       "git",
-      [
-        "-C",
-        dirname(resolve(assistantPath ?? "src/lib/ai/assistant.ts")),
-        "rev-parse",
-        "HEAD",
-      ],
+      ["-C", dirname(resolve(assistantPath ?? "src/lib/ai/assistant.ts")), "rev-parse", "HEAD"],
       { encoding: "utf8" },
     ).stdout.trim();
     const result = await dataset.runExperiment({
@@ -188,9 +172,7 @@ async function run() {
       },
       task: async (item) => {
         const testCase = caseFor(item.metadata);
-        return safe(
-          await runCase(testCase, pacedModel(modelId), module.completedReply),
-        );
+        return safe(await runCase(testCase, pacedModel(modelId), module.completedReply));
       },
       evaluators: [
         async ({ output }) => (output as CaseResult).scores,
@@ -209,11 +191,7 @@ async function run() {
                   judgeModel,
                 },
               });
-              const judged = await judgeReply(
-                testCase,
-                result.reply.text,
-                pacedModel(judgeModel),
-              );
+              const judged = await judgeReply(testCase, result.reply.text, pacedModel(judgeModel));
               span.update({ output: judged });
               return judged;
             },
@@ -265,9 +243,7 @@ async function run() {
     const incomplete =
       report.cases.length !== cases.length ||
       report.cases.some((row) =>
-        requiredScoreNames.some(
-          (name) => !row.scores.some((score) => score.name === name),
-        ),
+        requiredScoreNames.some((name) => !row.scores.some((score) => score.name === name)),
       );
     console.log(
       JSON.stringify({
@@ -299,9 +275,7 @@ async function main() {
     case "run":
       return run();
     case "compare": {
-      const baseline = reportSchema.parse(
-        JSON.parse(await readFile(required("baseline"), "utf8")),
-      );
+      const baseline = reportSchema.parse(JSON.parse(await readFile(required("baseline"), "utf8")));
       const candidate = reportSchema.parse(
         JSON.parse(await readFile(required("candidate"), "utf8")),
       );
@@ -311,9 +285,7 @@ async function main() {
           caseId: testCase.id,
           scores: [
             ...requiredScoreNames,
-            ...scoreToolCalls(testCase.expectedOutput, []).map(
-              (score) => score.name,
-            ),
+            ...scoreToolCalls(testCase.expectedOutput, []).map((score) => score.name),
           ],
         })),
       );

@@ -120,13 +120,9 @@ it("fails closed when Drizzle catches a schema load error but exits zero", () =>
   const result = check();
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("Schema drift check could not complete");
-  const diagnostic = result.stderr
-    .split("\n")
-    .find((line) => line.startsWith("{"));
+  const diagnostic = result.stderr.split("\n").find((line) => line.startsWith("{"));
   expect(diagnostic).toBeDefined();
-  expect(
-    JSON.parse(diagnostic ?? "{}").message.split("\n").length,
-  ).toBeLessThanOrEqual(5);
+  expect(JSON.parse(diagnostic ?? "{}").message.split("\n").length).toBeLessThanOrEqual(5);
 });
 
 it("reports schema drift when a rename needs an interactive answer", () => {

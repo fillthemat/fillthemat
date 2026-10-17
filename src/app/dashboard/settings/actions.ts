@@ -4,12 +4,7 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { getDb } from "@/db";
-import {
-  schools,
-  trialOccurrences,
-  trialOfferings,
-  trialWindows,
-} from "@/db/schema";
+import { schools, trialOccurrences, trialOfferings, trialWindows } from "@/db/schema";
 import { requireOwnedSchool } from "@/lib/auth/current-school";
 import { publicSchoolPath } from "@/lib/site-url";
 import {
@@ -65,9 +60,7 @@ function nullToEmpty(value: string | null | undefined): string {
  * expired session, `notFound()`, …) is implemented by throwing, so it has to be
  * re-thrown before anything is mapped to form state.
  */
-async function run(
-  work: () => Promise<SettingsFormState>,
-): Promise<SettingsFormState> {
+async function run(work: () => Promise<SettingsFormState>): Promise<SettingsFormState> {
   try {
     return await work();
   } catch (error) {
@@ -104,9 +97,7 @@ export async function updateProfileAction(
     let timezone = school.timezone;
     let publicErrors: Record<string, string> = {};
     if (!published) {
-      const address = publicAddressSchema.safeParse(
-        formValues(formData, ["slug", "timezone"]),
-      );
+      const address = publicAddressSchema.safeParse(formValues(formData, ["slug", "timezone"]));
       if (address.success) {
         slug = address.data.slug;
         timezone = address.data.timezone;
@@ -224,9 +215,7 @@ export async function updateBrandingAction(
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireOwnedSchool();
-    const parsed = brandingSchema.safeParse(
-      formValues(formData, ["logoUrl", "primaryColor"]),
-    );
+    const parsed = brandingSchema.safeParse(formValues(formData, ["logoUrl", "primaryColor"]));
     if (!parsed.success) {
       return errorState(
         "Check the highlighted fields and save again.",
@@ -286,9 +275,7 @@ export async function updateOfferingAction(
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireOwnedSchool();
-    const identity = updateOfferingSchema.safeParse(
-      formValues(formData, ["id", "updatedAt"]),
-    );
+    const identity = updateOfferingSchema.safeParse(formValues(formData, ["id", "updatedAt"]));
     const parsed = offeringSchema.safeParse({
       ...formValues(formData, OFFERING_EDITOR_FIELDS),
       waiverNotes: "",
@@ -324,18 +311,11 @@ export async function toggleOfferingAction(
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireOwnedSchool();
-    const parsed = toggleOfferingSchema.safeParse(
-      formValues(formData, ["id", "active"]),
-    );
+    const parsed = toggleOfferingSchema.safeParse(formValues(formData, ["id", "active"]));
     if (!parsed.success) {
       return errorState("That trial class no longer exists. Refresh the page.");
     }
-    const result = await setOfferingActive(
-      getDb(),
-      school.id,
-      parsed.data.id,
-      parsed.data.active,
-    );
+    const result = await setOfferingActive(getDb(), school.id, parsed.data.id, parsed.data.active);
     if (result.status === "success" && result.values?.unchanged !== "true") {
       revalidateOwnerViews(school.slug);
     }
@@ -410,16 +390,9 @@ export async function deactivateWindowAction(
     await db
       .update(trialWindows)
       .set({ active: false, updatedAt: new Date() })
-      .where(
-        and(
-          eq(trialWindows.id, parsed.data.id),
-          eq(trialWindows.schoolId, school.id),
-        ),
-      );
+      .where(and(eq(trialWindows.id, parsed.data.id), eq(trialWindows.schoolId, school.id)));
     revalidateOwnerViews(school.slug);
-    return successState(
-      "Class time turned off. Bookings families already made are unchanged.",
-    );
+    return successState("Class time turned off. Bookings families already made are unchanged.");
   });
 }
 
@@ -429,14 +402,9 @@ export async function updateWindowCapacityAction(
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireOwnedSchool();
-    const parsed = capacitySchema.safeParse(
-      formValues(formData, ["id", "capacity"]),
-    );
+    const parsed = capacitySchema.safeParse(formValues(formData, ["id", "capacity"]));
     if (!parsed.success) {
-      return errorState(
-        "Check the number of spots and try again.",
-        fieldErrorsFrom(parsed.error),
-      );
+      return errorState("Check the number of spots and try again.", fieldErrorsFrom(parsed.error));
     }
     const { id, capacity } = parsed.data;
     const db = getDb();
@@ -472,9 +440,7 @@ export async function updateWindowCapacityAction(
     await db
       .update(trialWindows)
       .set({ capacity, updatedAt: new Date() })
-      .where(
-        and(eq(trialWindows.id, id), eq(trialWindows.schoolId, school.id)),
-      );
+      .where(and(eq(trialWindows.id, id), eq(trialWindows.schoolId, school.id)));
     await db
       .update(trialOccurrences)
       .set({ capacity, updatedAt: new Date() })
@@ -487,10 +453,9 @@ export async function updateWindowCapacityAction(
         ),
       );
     revalidateOwnerViews(school.slug);
-    return successState(
-      `Saved. Upcoming classes now hold ${formatCount(capacity, "student")}.`,
-      { capacity: String(capacity) },
-    );
+    return successState(`Saved. Upcoming classes now hold ${formatCount(capacity, "student")}.`, {
+      capacity: String(capacity),
+    });
   });
 }
 
@@ -522,12 +487,7 @@ export async function deleteWindowAction(
     }
     await db
       .delete(trialWindows)
-      .where(
-        and(
-          eq(trialWindows.id, parsed.data.id),
-          eq(trialWindows.schoolId, school.id),
-        ),
-      );
+      .where(and(eq(trialWindows.id, parsed.data.id), eq(trialWindows.schoolId, school.id)));
     revalidateOwnerViews(school.slug);
     return successState("Class time deleted.");
   });
@@ -558,9 +518,7 @@ export async function updateFaqAction(
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireOwnedSchool();
-    const identity = updateFaqSchema.safeParse(
-      formValues(formData, ["id", "updatedAt"]),
-    );
+    const identity = updateFaqSchema.safeParse(formValues(formData, ["id", "updatedAt"]));
     const parsed = faqSchema.safeParse(formValues(formData, FAQ_EDITOR_FIELDS));
     if (!identity.success || !parsed.success) {
       return errorState("Check the highlighted fields and save again.", {

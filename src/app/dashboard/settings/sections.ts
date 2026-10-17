@@ -59,10 +59,7 @@ export const SECTIONS: readonly SectionMeta[] = [
 export const DEFAULT_SECTION: SectionId = "profile";
 
 export function isSectionId(value: unknown): value is SectionId {
-  return (
-    typeof value === "string" &&
-    (SECTION_IDS as readonly string[]).includes(value)
-  );
+  return typeof value === "string" && (SECTION_IDS as readonly string[]).includes(value);
 }
 
 /** Unknown or missing sections fall back to the first category. */
@@ -81,7 +78,5 @@ export function sectionMeta(id: SectionId): SectionMeta {
  * e.g. `/dashboard/settings?section=schedule`.
  */
 export function sectionHref(id: SectionId): string {
-  return id === DEFAULT_SECTION
-    ? "/dashboard/settings"
-    : `/dashboard/settings?section=${id}`;
+  return id === DEFAULT_SECTION ? "/dashboard/settings" : `/dashboard/settings?section=${id}`;
 }

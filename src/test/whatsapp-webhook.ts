@@ -53,10 +53,7 @@ export function buttonReplyPayload({
 }
 
 /** A webhook POST of `payload`, signed like Meta signs it. */
-export function post(
-  payload: unknown,
-  secret = WHATSAPP_STUB_APP_SECRET,
-): Request {
+export function post(payload: unknown, secret = WHATSAPP_STUB_APP_SECRET): Request {
   const body = JSON.stringify(payload);
   return new Request("http://127.0.0.1:3000/api/webhooks/whatsapp", {
     method: "POST",

@@ -1,8 +1,5 @@
 import { SpanStatusCode } from "@opentelemetry/api";
-import {
-  BasicTracerProvider,
-  InMemorySpanExporter,
-} from "@opentelemetry/sdk-trace-base";
+import { BasicTracerProvider, InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import { describe, expect, it } from "vitest";
 import { createTraceSpanProcessor } from "./span-processor";
 
@@ -22,9 +19,7 @@ async function exportedToLangfuse(
 describe("the span processor that exports to Langfuse", () => {
   it("masks nested JSON-looking text without reparsing or changing its formatting", async () => {
     const input = JSON.stringify({ text: '{"email": "ana@example.com"}' });
-    expect(await exportedText(input)).toBe(
-      JSON.stringify({ text: '{"email": "[email]"}' }),
-    );
+    expect(await exportedText(input)).toBe(JSON.stringify({ text: '{"email": "[email]"}' }));
   });
 
   it("masks email addresses and phone numbers in a span's name, attributes, events, links and status", async () => {
@@ -56,17 +51,13 @@ describe("the span processor that exports to Langfuse", () => {
     }).then((spans) => spans.filter(({ name }) => name !== "earlier"));
 
     expect(span?.name).toBe("execute_tool email [email]");
-    expect(
-      JSON.parse(String(span?.attributes["gen_ai.tool.call.arguments"])),
-    ).toEqual({
+    expect(JSON.parse(String(span?.attributes["gen_ai.tool.call.arguments"]))).toEqual({
       participantName: "Ana",
       participantAge: 8,
       statedNeed: "Call [phone]",
     });
     expect(span?.links[0]?.attributes).toEqual({ note: "from [email]" });
-    expect(span?.events[0]?.attributes?.["exception.message"]).toBe(
-      "No slot for [phone]",
-    );
+    expect(span?.events[0]?.attributes?.["exception.message"]).toBe("No slot for [phone]");
     expect(span?.events[0]?.attributes?.["exception.stacktrace"]).toMatch(
       /^Error: No slot for \[phone\]\n/,
     );

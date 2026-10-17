@@ -7,7 +7,7 @@ values:
     value: demo
     enabled: true
   - key: preview
-    value: 'true'
+    value: "true"
     enabled: true
   - key: resumeToken
     value: local-postman-token

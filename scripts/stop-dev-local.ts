@@ -4,11 +4,9 @@ import { portFromSiteUrl } from "./local-ports";
 import { fail } from "./local-process";
 
 function listenPids(port: number): number[] {
-  const result = spawnSync(
-    "lsof",
-    ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"],
-    { encoding: "utf8" },
-  );
+  const result = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
+    encoding: "utf8",
+  });
   if (result.error) {
     fail(`Could not list listeners on port ${port}: ${result.error.message}`);
   }
@@ -49,8 +47,6 @@ for (const pid of pids) {
         ? (error as { code?: string }).code
         : undefined;
     if (code === "ESRCH") continue;
-    fail(
-      `Could not stop pid ${pid}: ${error instanceof Error ? error.message : error}`,
-    );
+    fail(`Could not stop pid ${pid}: ${error instanceof Error ? error.message : error}`);
   }
 }

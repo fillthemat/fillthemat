@@ -5,10 +5,7 @@
  */
 export const WHATSAPP_TEXT_CHAR_LIMIT = 4096;
 
-export function splitWhatsAppText(
-  text: string,
-  limit = WHATSAPP_TEXT_CHAR_LIMIT,
-): string[] {
+export function splitWhatsAppText(text: string, limit = WHATSAPP_TEXT_CHAR_LIMIT): string[] {
   const body = text.trim();
   if (!body) return [];
   const out: string[] = [];

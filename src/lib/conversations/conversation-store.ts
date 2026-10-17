@@ -1,18 +1,6 @@
 import type { UIMessage } from "ai";
 import { addDays } from "date-fns";
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  lt,
-  lte,
-  or,
-  type SQL,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 import {
   type Database,
   getDb,
@@ -20,12 +8,7 @@ import {
   type TransactionOptions,
   withTransaction,
 } from "@/db";
-import {
-  type Conversation,
-  conversations,
-  messages,
-  whatsappBookingIntents,
-} from "@/db/schema";
+import { type Conversation, conversations, messages, whatsappBookingIntents } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
 import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
@@ -108,14 +91,10 @@ export async function findOrCreateConversation({
           ),
         )
         .limit(1);
-      if (current && current.expiresAt > now)
-        return { ok: true, conversation: current };
+      if (current && current.expiresAt > now) return { ok: true, conversation: current };
       if (current)
         await endMatchingConversations(
-          and(
-            eq(conversations.id, current.id),
-            lte(conversations.expiresAt, now),
-          ),
+          and(eq(conversations.id, current.id), lte(conversations.expiresAt, now)),
           "inactivity",
           now,
           tx,
@@ -127,8 +106,7 @@ export async function findOrCreateConversation({
           resumeTokenHash: hashToken(
             identity.channel === "web" ? identity.resumeToken : randomToken(),
           ),
-          waIdHash:
-            identity.channel === "whatsapp" ? hashWaId(identity.waId) : null,
+          waIdHash: identity.channel === "whatsapp" ? hashWaId(identity.waId) : null,
           expiresAt,
         })
         .onConflictDoNothing(
@@ -186,12 +164,7 @@ export async function endConversation(
   now = new Date(),
 ): Promise<void> {
   await getDb().transaction(async (tx) => {
-    await endMatchingConversations(
-      eq(conversations.id, conversationId),
-      reason,
-      now,
-      tx,
-    );
+    await endMatchingConversations(eq(conversations.id, conversationId), reason, now, tx);
   });
 }
 
@@ -214,17 +187,12 @@ const GENERATION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 function generationAvailable(now: Date) {
   return or(
     isNull(conversations.generatingAt),
-    lt(
-      conversations.generatingAt,
-      new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS),
-    ),
+    lt(conversations.generatingAt, new Date(now.getTime() - GENERATION_LOCK_TIMEOUT_MS)),
   );
 }
 
 /** Maintenance never interrupts a live reply, but an abandoned lock cannot retain an inactive conversation. */
-export async function endInactiveConversations(
-  now = new Date(),
-): Promise<number> {
+export async function endInactiveConversations(now = new Date()): Promise<number> {
   return getDb().transaction((tx) =>
     endMatchingConversations(
       and(lte(conversations.expiresAt, now), generationAvailable(now)),
@@ -269,12 +237,7 @@ export async function claimGeneration(
           released ??= db
             .update(conversations)
             .set({ generatingAt: null, updatedAt: new Date() })
-            .where(
-              and(
-                eq(conversations.id, conversationId),
-                eq(conversations.generatingAt, now),
-              ),
-            )
+            .where(and(eq(conversations.id, conversationId), eq(conversations.generatingAt, now)))
             .then(() => {});
           return released;
         },
@@ -287,9 +250,7 @@ export async function claimGeneration(
 
 /** Stored UI messages, oldest first. SDK validation belongs at the model boundary,
  * not on read-only transcript requests, which may include historic parts. */
-export async function loadTranscript(
-  conversationId: string,
-): Promise<UIMessage[]> {
+export async function loadTranscript(conversationId: string): Promise<UIMessage[]> {
   const rows = await getDb()
     .select()
     .from(messages)
@@ -370,12 +331,7 @@ export async function appendMessage(
           expiresAt: addDays(now, CONVERSATION_INACTIVITY_DAYS),
           updatedAt: now,
         })
-        .where(
-          and(
-            eq(conversations.id, conversationId),
-            isNull(conversations.endedAt),
-          ),
-        );
+        .where(and(eq(conversations.id, conversationId), isNull(conversations.endedAt)));
     }
     return row?.id;
   };

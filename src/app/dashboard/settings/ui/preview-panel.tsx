@@ -41,12 +41,9 @@ export function PreviewPanel({
           {open ? "Hide Preview" : "Show Preview"}
         </Button>
       </div>
-      <div
-        id={bodyId}
-        className={`flex-col gap-2 ${open ? "flex" : "hidden lg:flex"}`}
-      >
+      <div id={bodyId} className={`flex-col gap-2 ${open ? "flex" : "hidden lg:flex"}`}>
         {children}
-        <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
+        <p className="text-xs leading-relaxed text-pretty text-muted-foreground">
           {dirty ? `Showing your unsaved edits. ${note}` : note}
         </p>
       </div>

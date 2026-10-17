@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  applyCreateSuccessValues,
-  applySavedValues,
-  sameValues,
-} from "./form-utils";
+import { applyCreateSuccessValues, applySavedValues, sameValues } from "./form-utils";
 
 describe("applySavedValues", () => {
   it("writes server values except fields typed during save", () => {
@@ -21,11 +17,7 @@ describe("applyCreateSuccessValues", () => {
 
   it("clears the form when nothing was typed after submit", () => {
     expect(
-      applyCreateSuccessValues(
-        { question: "Do we need a uniform?", answer: "No." },
-        blank,
-        [],
-      ),
+      applyCreateSuccessValues({ question: "Do we need a uniform?", answer: "No." }, blank, []),
     ).toEqual(blank);
   });
 

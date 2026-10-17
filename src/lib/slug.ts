@@ -12,9 +12,5 @@ export function normalizeSlug(input: string): string {
 }
 
 export function isValidSlug(slug: string): boolean {
-  return (
-    slug.length >= SLUG_MIN &&
-    slug.length <= SLUG_MAX &&
-    SLUG_PATTERN.test(slug)
-  );
+  return slug.length >= SLUG_MIN && slug.length <= SLUG_MAX && SLUG_PATTERN.test(slug);
 }

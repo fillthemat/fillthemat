@@ -78,10 +78,7 @@ function DirtyNavigationGuard({ children }: { children: React.ReactNode }) {
         return;
       }
       if (url.origin !== window.location.origin) return;
-      if (
-        url.pathname === window.location.pathname &&
-        url.search === window.location.search
-      ) {
+      if (url.pathname === window.location.pathname && url.search === window.location.search) {
         return;
       }
       if (url.protocol !== "http:" && url.protocol !== "https:") return;
@@ -108,8 +105,7 @@ function DirtyNavigationGuard({ children }: { children: React.ReactNode }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Leave without saving?</AlertDialogTitle>
             <AlertDialogDescription>
-              You have changes that have not been saved yet. If you leave now,
-              those edits are lost.
+              You have changes that have not been saved yet. If you leave now, those edits are lost.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -138,15 +134,11 @@ function SettingsNav({ active }: { active: SectionId }) {
     const list = listRef.current;
     const current = list?.querySelector<HTMLElement>("a[aria-current='page']");
     if (!list || !current || list.scrollWidth <= list.clientWidth) return;
-    list.scrollLeft =
-      current.offsetLeft - (list.clientWidth - current.clientWidth) / 2;
+    list.scrollLeft = current.offsetLeft - (list.clientWidth - current.clientWidth) / 2;
   }, []);
 
   return (
-    <nav
-      aria-label="Settings categories"
-      className="lg:w-44 lg:shrink-0 lg:self-start"
-    >
+    <nav aria-label="Settings categories" className="lg:w-44 lg:shrink-0 lg:self-start">
       <ul
         ref={listRef}
         className="-mx-1 flex gap-1 overflow-x-auto overscroll-x-contain px-1 pb-1 lg:mx-0 lg:flex-col lg:overflow-x-visible lg:px-0 lg:pb-0"
@@ -154,8 +146,7 @@ function SettingsNav({ active }: { active: SectionId }) {
         {SECTIONS.map((section) => {
           const isActive = section.id === active;
           const href = sectionHref(section.id);
-          const dirtyHere =
-            isActive && dirtyKeys.some((key) => key.startsWith(section.id));
+          const dirtyHere = isActive && dirtyKeys.some((key) => key.startsWith(section.id));
           return (
             <li key={section.id} className="shrink-0 lg:shrink">
               <Link
@@ -172,10 +163,7 @@ function SettingsNav({ active }: { active: SectionId }) {
                   {section.label}
                   {dirtyHere ? (
                     <>
-                      <span
-                        aria-hidden="true"
-                        className="size-1.5 rounded-full bg-warning"
-                      />
+                      <span aria-hidden="true" className="size-1.5 rounded-full bg-warning" />
                       <span className="sr-only">Unsaved changes</span>
                     </>
                   ) : null}

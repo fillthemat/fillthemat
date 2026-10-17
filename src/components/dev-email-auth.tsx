@@ -33,9 +33,7 @@ export function DevEmailAuth({ next = "/dashboard" }: { next?: string }) {
         void submit("signin");
       }}
     >
-      <p className="text-xs uppercase tracking-wide text-page-500">
-        Local email auth
-      </p>
+      <p className="text-xs tracking-wide text-page-500 uppercase">Local email auth</p>
       <label className="flex flex-col gap-1 text-sm">
         Email
         <input
@@ -75,8 +73,7 @@ export function DevEmailAuth({ next = "/dashboard" }: { next?: string }) {
         </button>
       </div>
       <p className="text-xs text-page-500">
-        Seeded owner: owner@local.test / local-dev-password. Not shown in
-        production builds.
+        Seeded owner: owner@local.test / local-dev-password. Not shown in production builds.
       </p>
     </form>
   );

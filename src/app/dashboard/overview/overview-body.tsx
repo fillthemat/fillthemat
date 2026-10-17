@@ -1,8 +1,8 @@
 import Link from "next/link";
+import type { School } from "@/db/schema";
 import { formatOwnerDateTime } from "@/components/dashboard/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { School } from "@/db/schema";
 import { publicSchoolUrl } from "@/lib/site-url";
 import { markPreviewedAction, publishSchoolAction } from "../actions";
 import { sectionHref } from "../settings/sections";
@@ -21,10 +21,7 @@ export async function OverviewBody({
   const metrics = await loadOverviewMetrics(school.id);
   const published = school.publishedAt != null;
   const publicUrl = published ? publicSchoolUrl(school.slug, headerList) : null;
-  const conversion = formatBookingConversion(
-    metrics.convertedSessions,
-    metrics.eligibleSessions,
-  );
+  const conversion = formatBookingConversion(metrics.convertedSessions, metrics.eligibleSessions);
   const blockers = unpublishedBlockers({
     approved: school.approvedAt != null,
     previewed: school.previewedAt != null,
@@ -46,8 +43,8 @@ export async function OverviewBody({
     <div className="flex flex-col gap-6">
       {errorParam === "not_ready" ? (
         <p role="status" className="text-sm text-destructive">
-          Publishing needs approval, a completed preview, location and contact
-          details, and at least one active trial class and class time.
+          Publishing needs approval, a completed preview, location and contact details, and at least
+          one active trial class and class time.
         </p>
       ) : null}
 
@@ -60,9 +57,7 @@ export async function OverviewBody({
             <Badge variant={published ? "success" : "muted"}>
               {published ? "Published" : "Unpublished"}
             </Badge>
-            {school.approvedAt ? null : (
-              <Badge variant="warning">Awaiting approval</Badge>
-            )}
+            {school.approvedAt ? null : <Badge variant="warning">Awaiting approval</Badge>}
           </div>
           <div className="flex flex-wrap gap-2">
             {publicUrl ? (
@@ -71,10 +66,7 @@ export async function OverviewBody({
               </Button>
             ) : null}
             <form action={markPreviewedAction}>
-              <Button
-                type="submit"
-                variant={published ? "outline" : "secondary"}
-              >
+              <Button type="submit" variant={published ? "outline" : "secondary"}>
                 Preview
               </Button>
             </form>
@@ -87,10 +79,7 @@ export async function OverviewBody({
         </div>
         {publicUrl ? (
           <p className="text-sm">
-            <a
-              href={publicUrl}
-              className="break-all underline-offset-4 hover:underline"
-            >
+            <a href={publicUrl} className="break-all underline-offset-4 hover:underline">
               {publicUrl}
             </a>
           </p>
@@ -100,10 +89,7 @@ export async function OverviewBody({
             {blockers.map((item) => (
               <li key={item.id}>
                 {item.href ? (
-                  <Link
-                    href={item.href}
-                    className="underline-offset-4 hover:underline"
-                  >
+                  <Link href={item.href} className="underline-offset-4 hover:underline">
                     {item.label}
                   </Link>
                 ) : (
@@ -152,20 +138,17 @@ export async function OverviewBody({
           </div>
         </div>
         {emptyPublished ? (
-          <p className="mt-3 text-sm text-muted-foreground text-pretty">
+          <p className="mt-3 text-sm text-pretty text-muted-foreground">
             No public-page activity yet.{" "}
             {publicUrl ? (
-              <a
-                href={publicUrl}
-                className="underline-offset-4 hover:underline"
-              >
+              <a href={publicUrl} className="underline-offset-4 hover:underline">
                 View your public page
               </a>
             ) : null}
           </p>
         ) : null}
         {!published && metrics.upcomingBookings === 0 && metrics.leads === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground text-pretty">
+          <p className="mt-3 text-sm text-pretty text-muted-foreground">
             Counts stay at zero until families use your public page.
           </p>
         ) : null}
@@ -245,10 +228,7 @@ export async function OverviewBody({
             label="Last maintenance"
             value={
               metrics.lastMaintenanceAt
-                ? formatOwnerDateTime(
-                    metrics.lastMaintenanceAt,
-                    school.timezone,
-                  )
+                ? formatOwnerDateTime(metrics.lastMaintenanceAt, school.timezone)
                 : "Never"
             }
           />
@@ -275,7 +255,7 @@ function MetricCell({
       <p className="text-(length:--text-metric) leading-none font-semibold tabular-nums md:text-(length:--text-metric-lg)">
         {value}
       </p>
-      <p className="text-xs leading-relaxed text-muted-foreground text-pretty md:text-sm">
+      <p className="text-xs leading-relaxed text-pretty text-muted-foreground md:text-sm">
         {evidence}
       </p>
       {action ? <div>{action}</div> : null}
@@ -300,9 +280,7 @@ function Detail({
       <dd className="tabular-nums">
         {value}
         {hint ? (
-          <p className="mt-1 text-xs font-normal text-muted-foreground text-pretty">
-            {hint}
-          </p>
+          <p className="mt-1 text-xs font-normal text-pretty text-muted-foreground">{hint}</p>
         ) : null}
         {action ? <p className="mt-1">{action}</p> : null}
       </dd>

@@ -5,11 +5,8 @@ import { emailDeliveries } from "@/db/schema";
 type DeliveryEvent = { type: string; data?: object | null };
 
 /** Applies a verified provider event; unrelated events are acknowledged unchanged. */
-export async function recordResendDeliveryEvent(
-  event: DeliveryEvent,
-): Promise<void> {
-  const providerId =
-    event.data && "email_id" in event.data ? String(event.data.email_id) : null;
+export async function recordResendDeliveryEvent(event: DeliveryEvent): Promise<void> {
+  const providerId = event.data && "email_id" in event.data ? String(event.data.email_id) : null;
   if (!providerId) return;
 
   const state =
@@ -25,10 +22,5 @@ export async function recordResendDeliveryEvent(
   await getDb()
     .update(emailDeliveries)
     .set({ state, updatedAt: new Date() })
-    .where(
-      and(
-        eq(emailDeliveries.providerId, providerId),
-        ne(emailDeliveries.state, "dead"),
-      ),
-    );
+    .where(and(eq(emailDeliveries.providerId, providerId), ne(emailDeliveries.state, "dead")));
 }

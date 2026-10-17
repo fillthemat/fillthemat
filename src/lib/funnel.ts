@@ -12,8 +12,7 @@ export const FUNNEL_EVENTS = {
   chatPrepare: "chat_prepare",
 } as const;
 
-export type FunnelEventType =
-  (typeof FUNNEL_EVENTS)[keyof typeof FUNNEL_EVENTS];
+export type FunnelEventType = (typeof FUNNEL_EVENTS)[keyof typeof FUNNEL_EVENTS];
 
 export function privacySafeMetadata(
   metadata: Record<string, unknown> | null | undefined,
@@ -34,10 +33,7 @@ export function privacySafeMetadata(
   for (const [key, value] of Object.entries(metadata)) {
     if (blocked.has(key)) continue;
     if (typeof value === "string" && value.length > 200) continue;
-    if (
-      value == null ||
-      ["string", "number", "boolean"].includes(typeof value)
-    ) {
+    if (value == null || ["string", "number", "boolean"].includes(typeof value)) {
       safe[key] = value;
     }
   }

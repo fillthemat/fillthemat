@@ -1,12 +1,6 @@
 import { and, asc, eq, gt, ne, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import {
-  bookings,
-  faqs,
-  trialOccurrences,
-  trialOfferings,
-  trialWindows,
-} from "@/db/schema";
+import { bookings, faqs, trialOccurrences, trialOfferings, trialWindows } from "@/db/schema";
 
 /**
  * Server-only reads for the settings screen. Kept out of `actions.ts` so they
@@ -91,10 +85,7 @@ export async function loadWindows(schoolId: string): Promise<WindowRow[]> {
   }));
 }
 
-export async function windowHasFutureBooking(
-  schoolId: string,
-  windowId: string,
-): Promise<boolean> {
+export async function windowHasFutureBooking(schoolId: string, windowId: string): Promise<boolean> {
   const db = getDb();
   const [row] = await db
     .select({ id: bookings.id })

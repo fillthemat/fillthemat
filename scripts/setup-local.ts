@@ -1,12 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { hasGatewayToken } from "../src/lib/ai/gateway-token";
-import {
-  mergeLocalEnv,
-  parseSupabaseStatusEnv,
-  readEnvFile,
-  writeEnvFile,
-} from "./local-env";
+import { mergeLocalEnv, parseSupabaseStatusEnv, readEnvFile, writeEnvFile } from "./local-env";
 import { claimAppPortForCwd, localSiteUrl } from "./local-ports";
 import { fail, tryCapture } from "./local-process";
 
@@ -17,9 +12,7 @@ function assertBun() {
   const version = process.versions.bun;
   if (!version) fail("Run bun run setup (this script must execute under Bun).");
   if (!version.startsWith("1.4.")) {
-    console.warn(
-      `Warning: packageManager is bun@1.4.x; this shell is ${version}.`,
-    );
+    console.warn(`Warning: packageManager is bun@1.4.x; this shell is ${version}.`);
   }
 }
 
@@ -61,16 +54,14 @@ async function main() {
   });
   const status = parseSupabaseStatusEnv(statusText);
   const existing = readEnvFile(ENV_LOCAL);
-  const appPort = await claimAppPortForCwd(existing.NEXT_PUBLIC_SITE_URL).catch(
-    (error) => fail(error instanceof Error ? error.message : String(error)),
+  const appPort = await claimAppPortForCwd(existing.NEXT_PUBLIC_SITE_URL).catch((error) =>
+    fail(error instanceof Error ? error.message : String(error)),
   );
   const siteUrl = localSiteUrl(appPort);
   const generatedSecret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
   const merged = mergeLocalEnv(existing, status, generatedSecret, siteUrl);
   writeEnvFile(ENV_LOCAL, merged);
-  console.log(
-    `Wrote ${ENV_LOCAL} (existing vendor keys preserved; app ${siteUrl}).`,
-  );
+  console.log(`Wrote ${ENV_LOCAL} (existing vendor keys preserved; app ${siteUrl}).`);
 
   console.log("Applying Drizzle migrations…");
   execFileSync("bunx", ["drizzle-kit", "migrate"], {
@@ -99,9 +90,7 @@ async function main() {
     );
   }
   if (!existing.RESEND_API_KEY && !merged.RESEND_API_KEY) {
-    console.log(
-      "Optional: RESEND_API_KEY + RESEND_FROM  (real mail; local noop otherwise).",
-    );
+    console.log("Optional: RESEND_API_KEY + RESEND_FROM  (real mail; local noop otherwise).");
   }
   // seedLocal() leaves the postgres-js pool open; without this, bun never exits.
   process.exit(0);

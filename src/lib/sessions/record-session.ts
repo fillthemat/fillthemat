@@ -13,20 +13,14 @@ type LandingSessionInput = {
   userAgent: string | null;
 };
 
-type LandingSessionResult =
-  | { status: "not_found" }
-  | { status: "recorded"; qualified: boolean };
+type LandingSessionResult = { status: "not_found" } | { status: "recorded"; qualified: boolean };
 
 /** Records a landing visit; a reused key is never requalified. */
 export async function recordLandingSession(
   input: LandingSessionInput,
 ): Promise<LandingSessionResult> {
   const db = getDb();
-  const [school] = await db
-    .select()
-    .from(schools)
-    .where(eq(schools.slug, input.slug))
-    .limit(1);
+  const [school] = await db.select().from(schools).where(eq(schools.slug, input.slug)).limit(1);
   if (!school) return { status: "not_found" };
 
   const botReason = isKnownBot(input.userAgent);
@@ -37,19 +31,12 @@ export async function recordLandingSession(
     eq(landingSessions.schoolId, school.id),
     eq(landingSessions.sessionKeyHash, hash),
   );
-  const [existing] = await db
-    .select()
-    .from(landingSessions)
-    .where(identity)
-    .limit(1);
+  const [existing] = await db.select().from(landingSessions).where(identity).limit(1);
 
   let session = existing;
   if (!session) {
     const qualified =
-      !isPreview &&
-      !botReason &&
-      school.approvedAt != null &&
-      school.publishedAt != null;
+      !isPreview && !botReason && school.approvedAt != null && school.publishedAt != null;
     const [created] = await db
       .insert(landingSessions)
       .values({
@@ -72,11 +59,7 @@ export async function recordLandingSession(
       .returning();
     session = created;
     if (!session) {
-      const [again] = await db
-        .select()
-        .from(landingSessions)
-        .where(identity)
-        .limit(1);
+      const [again] = await db.select().from(landingSessions).where(identity).limit(1);
       session = again;
     } else if (session.qualifiedAt) {
       await db.insert(funnelEvents).values({

@@ -1,14 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { EmailMessage, EmailSendOutcome } from "@/lib/email/dependencies";
 import { getDb } from "@/db";
 import {
   bookings,
@@ -20,7 +13,6 @@ import {
   whatsappDeliveries,
 } from "@/db/schema";
 import { runEmailSendOnce } from "@/lib/email/deliveries";
-import type { EmailMessage, EmailSendOutcome } from "@/lib/email/dependencies";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
@@ -31,8 +23,9 @@ loadLocalEnv();
 const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
-const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } =
-  scopedWhatsAppRunner(() => [`confirmation-${ownerId}`]);
+const { runWhatsAppWorkerOnce, drainDueWhatsAppDeliveries } = scopedWhatsAppRunner(() => [
+  `confirmation-${ownerId}`,
+]);
 const classStart = new Date("2018-01-01T18:00:00Z");
 let now = classStart;
 let schoolId = "";
@@ -108,12 +101,8 @@ beforeAll(async () => {
   bookingId = requireRow(booking, "booking").id;
 });
 afterEach(async () => {
-  await db
-    .delete(whatsappDeliveries)
-    .where(eq(whatsappDeliveries.schoolId, schoolId));
-  await db
-    .delete(emailDeliveries)
-    .where(eq(emailDeliveries.schoolId, schoolId));
+  await db.delete(whatsappDeliveries).where(eq(whatsappDeliveries.schoolId, schoolId));
+  await db.delete(emailDeliveries).where(eq(emailDeliveries.schoolId, schoolId));
   now = classStart;
   vi.restoreAllMocks();
 });
@@ -121,9 +110,7 @@ afterAll(async () => {
   await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
-async function enqueue(
-  extra: Partial<typeof whatsappDeliveries.$inferInsert> = {},
-) {
+async function enqueue(extra: Partial<typeof whatsappDeliveries.$inferInsert> = {}) {
   const id = requireRow(
     await enqueueWhatsAppDelivery(
       {
@@ -132,12 +119,7 @@ async function enqueue(
         phoneNumberId: `confirmation-${ownerId}`,
         recipientWaId: "16505550086",
         templateName: "booking_confirmation",
-        templateParams: [
-          "Confirmation School",
-          "Alex Rivera",
-          "Kids BJJ",
-          "Monday",
-        ],
+        templateParams: ["Confirmation School", "Alex Rivera", "Kids BJJ", "Monday"],
         providerIdempotencyKey: randomUUID(),
       },
       { now },
@@ -145,28 +127,17 @@ async function enqueue(
     "delivery",
   );
   if (Object.keys(extra).length)
-    await db
-      .update(whatsappDeliveries)
-      .set(extra)
-      .where(eq(whatsappDeliveries.id, id));
+    await db.update(whatsappDeliveries).set(extra).where(eq(whatsappDeliveries.id, id));
   return id;
 }
 async function stored(id: string) {
   return requireRow(
-    (
-      await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.id, id))
-    )[0],
+    (await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.id, id)))[0],
     "stored delivery",
   );
 }
 async function emails() {
-  return db
-    .select()
-    .from(emailDeliveries)
-    .where(eq(emailDeliveries.schoolId, schoolId));
+  return db.select().from(emailDeliveries).where(eq(emailDeliveries.schoolId, schoolId));
 }
 function dependencies(send: () => Promise<WhatsAppSendOutcome>) {
   return {
@@ -208,10 +179,9 @@ describe("booking confirmation delivery through the worker", () => {
         now: () => now,
       });
       expect(await emails()).toHaveLength(1);
-      await applyWhatsAppStatuses(
-        [{ ...callback, status, timestamp: now.getTime() / 1000 + 1 }],
-        { now: () => now },
-      );
+      await applyWhatsAppStatuses([{ ...callback, status, timestamp: now.getTime() / 1000 + 1 }], {
+        now: () => now,
+      });
       expect(await stored(id)).toMatchObject({
         state: status,
         sendOutcome: "accepted",
@@ -357,13 +327,11 @@ describe("booking confirmation delivery through the worker", () => {
   it("notifies on the fifth transient failure but not on the four retryable failures", async () => {
     now = new Date("2018-01-01T17:00:00Z");
     const id = await enqueue();
-    const send = vi.fn(
-      async (): Promise<WhatsAppSendOutcome> => ({
-        ok: false,
-        kind: "network_error",
-        message: "network unavailable",
-      }),
-    );
+    const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+      ok: false,
+      kind: "network_error",
+      message: "network unavailable",
+    }));
     for (let execution = 1; execution <= 5; execution++) {
       // Observe each individual failure before the in-run loop can retry it.
       await drainDueWhatsAppDeliveries(randomUUID(), 25, dependencies(send));
@@ -406,13 +374,11 @@ describe("booking confirmation delivery through the worker", () => {
   it("allows a confirmation before class start to succeed, without emailing the owner", async () => {
     now = new Date("2018-01-01T17:59:59.999Z");
     const id = await enqueue({ attempts: 4 });
-    const send = vi.fn(
-      async (): Promise<WhatsAppSendOutcome> => ({
-        ok: true,
-        kind: "accepted",
-        providerId: randomUUID(),
-      }),
-    );
+    const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+      ok: true,
+      kind: "accepted",
+      providerId: randomUUID(),
+    }));
     await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
     expect(await stored(id)).toMatchObject({
       state: "sent",
@@ -458,14 +424,10 @@ describe("booking confirmation delivery through the worker", () => {
       "We couldn't confirm this booking with Alex Rivera on WhatsApp. Please contact them",
     );
     expect(sent[0].text).toContain("Kids BJJ");
-    expect(sent[0].text).toContain(
-      "Monday, January 1, 2018 at 1:00 PM (America/New_York)",
-    );
+    expect(sent[0].text).toContain("Monday, January 1, 2018 at 1:00 PM (America/New_York)");
     expect(sent[0].text).toContain("Sam Rivera");
     expect(sent[0].text).toContain("16505550086");
-    expect(sent[0].text).not.toMatch(
-      /131026|Graph|wamid|executions|retry|dead|provider/i,
-    );
+    expect(sent[0].text).not.toMatch(/131026|Graph|wamid|executions|retry|dead|provider/i);
     expect((await emails())[0]).toMatchObject({ state: "sent", attempts: 1 });
   });
   it("recovers a crashed confirmation at class start as stale, ahead of exhaustion or requeueing", async () => {
@@ -475,17 +437,12 @@ describe("booking confirmation delivery through the worker", () => {
       claimedAt: new Date("2018-01-01T17:54:00Z"),
       claimedBy: "crashed",
     });
-    const send = vi.fn(
-      async (): Promise<WhatsAppSendOutcome> => ({
-        ok: true,
-        kind: "accepted",
-        providerId: randomUUID(),
-      }),
-    );
-    const result = await runWhatsAppWorkerOnce(
-      randomUUID(),
-      dependencies(send),
-    );
+    const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+      ok: true,
+      kind: "accepted",
+      providerId: randomUUID(),
+    }));
+    const result = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
     expect(result.deliveries.dead).toBe(1);
     expect(await stored(id)).toMatchObject({
       state: "dead",
@@ -503,17 +460,12 @@ describe("booking confirmation delivery through the worker", () => {
       claimedAt: new Date("2018-01-01T16:54:00Z"),
       claimedBy: "crashed",
     });
-    const send = vi.fn(
-      async (): Promise<WhatsAppSendOutcome> => ({
-        ok: true,
-        kind: "accepted",
-        providerId: randomUUID(),
-      }),
-    );
-    const result = await runWhatsAppWorkerOnce(
-      randomUUID(),
-      dependencies(send),
-    );
+    const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+      ok: true,
+      kind: "accepted",
+      providerId: randomUUID(),
+    }));
+    const result = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
     expect(result.deliveries.dead).toBe(1);
     expect(await stored(id)).toMatchObject({
       state: "dead",
@@ -531,21 +483,16 @@ describe("booking confirmation delivery through the worker", () => {
     now = new Date("2018-01-01T17:00:00Z");
     const first = await enqueue();
     const second = await enqueue();
-    const send = vi.fn(
-      async (): Promise<WhatsAppSendOutcome> => ({
-        ok: false,
-        kind: "whatsapp_error",
-        code: 131026,
-        subcode: null,
-        details: null,
-        status: 400,
-        message: "Provider internals must not appear in owner mail",
-      }),
-    );
-    const result = await runWhatsAppWorkerOnce(
-      randomUUID(),
-      dependencies(send),
-    );
+    const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+      ok: false,
+      kind: "whatsapp_error",
+      code: 131026,
+      subcode: null,
+      details: null,
+      status: 400,
+      message: "Provider internals must not appear in owner mail",
+    }));
+    const result = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
     expect(result.deliveries.dead).toBe(2);
     expect(await stored(first)).toMatchObject({
       state: "dead",
@@ -589,17 +536,12 @@ describe("booking confirmation delivery through the worker", () => {
   });
   it("stops an unsent confirmation exactly at class start without sending or notifying the owner", async () => {
     const id = await enqueue();
-    const send = vi.fn(
-      async (): Promise<WhatsAppSendOutcome> => ({
-        ok: true,
-        kind: "accepted",
-        providerId: randomUUID(),
-      }),
-    );
-    const result = await runWhatsAppWorkerOnce(
-      randomUUID(),
-      dependencies(send),
-    );
+    const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+      ok: true,
+      kind: "accepted",
+      providerId: randomUUID(),
+    }));
+    const result = await runWhatsAppWorkerOnce(randomUUID(), dependencies(send));
     expect(result.deliveries.dead).toBe(1);
     expect(await stored(id)).toMatchObject({
       state: "dead",

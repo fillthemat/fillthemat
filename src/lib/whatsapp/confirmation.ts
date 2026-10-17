@@ -40,10 +40,7 @@ export function isAffirmativeConfirmation(text: string | null): boolean {
  * fresh `randomUUID()` on every retry. Per decision F/D7 the wamid remains the
  * webhook-layer dedupe key; this UUID is the transaction-level replay key.
  */
-export function bookingConfirmationIdempotencyKey(
-  schoolId: string,
-  wamid: string,
-): string {
+export function bookingConfirmationIdempotencyKey(schoolId: string, wamid: string): string {
   return uuidV5(`${schoolId}:${wamid}`);
 }
 
@@ -51,10 +48,7 @@ const UUID_V5_URL_NAMESPACE = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
 
 function uuidV5(name: string): string {
   const namespace = Buffer.from(UUID_V5_URL_NAMESPACE.replace(/-/g, ""), "hex");
-  const hash = createHash("sha1")
-    .update(namespace)
-    .update(name, "utf8")
-    .digest();
+  const hash = createHash("sha1").update(namespace).update(name, "utf8").digest();
   const bytes = Buffer.from(hash.subarray(0, 16));
   bytes[6] = (bytes[6] & 0x0f) | 0x50; // UUID version 5
   bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant

@@ -21,14 +21,12 @@ export default async function OnboardingPage({
     <main className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-6 px-6 py-16">
       <h1 className="text-3xl font-semibold">Create your school</h1>
       <p className="text-sm text-page-400">
-        This creates an unpublished school. Publishing happens after approval
-        and a completed preview.
+        This creates an unpublished school. Publishing happens after approval and a completed
+        preview.
       </p>
       {params.error ? (
         <p className="text-sm text-destructive">
-          {params.error === "slug"
-            ? "That public URL is taken."
-            : "Check the form and try again."}
+          {params.error === "slug" ? "That public URL is taken." : "Check the form and try again."}
         </p>
       ) : null}
       <form action={createSchoolAction} className="flex flex-col gap-4">

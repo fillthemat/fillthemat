@@ -40,14 +40,10 @@ describe("conversations", () => {
       const resolved = await findOrCreateConversation({
         schoolId: schoolIds[0],
         identity: { channel: "web", resumeToken: randomUUID() },
-        now:
-          state === "past-deadline"
-            ? new Date("2026-01-01T00:00:00.000Z")
-            : undefined,
+        now: state === "past-deadline" ? new Date("2026-01-01T00:00:00.000Z") : undefined,
       });
       if (!resolved.ok) throw new Error("conversation refused");
-      if (state === "ended")
-        await endConversation(resolved.conversation.id, "message_limit");
+      if (state === "ended") await endConversation(resolved.conversation.id, "message_limit");
       const [contact] =
         await sql`insert into app.contacts (school_id, name, phone) values (${schoolIds[0]}, 'Book Trial contact', ${randomUUID()}) returning id`;
       expect(
@@ -76,9 +72,10 @@ describe("conversations", () => {
       await endConversation(original.conversation.id, reason);
       expect(await findConversation(input)).toBeUndefined();
       expect(await claimGeneration(original.conversation.id)).toBeUndefined();
-      expect(
-        await findOrCreateConversation({ schoolId: schoolIds[1], identity }),
-      ).toEqual({ ok: false, reason: "invalid_conversation" });
+      expect(await findOrCreateConversation({ schoolId: schoolIds[1], identity })).toEqual({
+        ok: false,
+        reason: "invalid_conversation",
+      });
       const replacement = await findOrCreateConversation(input);
       if (!replacement.ok) throw new Error("conversation refused");
       expect(replacement.conversation.id).not.toBe(original.conversation.id);
@@ -120,9 +117,7 @@ describe("conversations", () => {
       if (!original.ok) throw new Error("conversation refused");
       const now = new Date("2026-01-31T12:00:00.000Z");
       const replacements = await Promise.all(
-        Array.from({ length: 8 }, () =>
-          findOrCreateConversation({ ...input, now }),
-        ),
+        Array.from({ length: 8 }, () => findOrCreateConversation({ ...input, now })),
       );
       const ids = replacements.map((result) => {
         expect(result.ok).toBe(true);
@@ -169,16 +164,15 @@ describe("conversations", () => {
       identity,
     });
     expect(original.ok).toBe(true);
-    expect(
-      await findOrCreateConversation({ schoolId: schoolIds[1], identity }),
-    ).toEqual({ ok: false, reason: "invalid_conversation" });
-    expect(
-      await findConversation({ schoolId: schoolIds[1], identity }),
-    ).toBeUndefined();
+    expect(await findOrCreateConversation({ schoolId: schoolIds[1], identity })).toEqual({
+      ok: false,
+      reason: "invalid_conversation",
+    });
+    expect(await findConversation({ schoolId: schoolIds[1], identity })).toBeUndefined();
     if (!original.ok) throw new Error("conversation refused");
-    expect(
-      (await findConversation({ schoolId: schoolIds[0], identity }))?.id,
-    ).toBe(original.conversation.id);
+    expect((await findConversation({ schoolId: schoolIds[0], identity }))?.id).toBe(
+      original.conversation.id,
+    );
   });
 
   it("claims generation exclusively and releases its lock idempotently", async () => {

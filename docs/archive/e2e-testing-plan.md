@@ -23,49 +23,49 @@ The project already has Playwright installed with a minimal smoke test (`e2e/smo
 
 ### 2.1. Playwright (current)
 
-| Aspect | Assessment |
-|--------|------------|
-| **What it is** | Code-first browser automation framework. You write TypeScript/JavaScript specs that use selectors, assertions, and browser APIs. |
-| **Speed** | Very fast — local runs complete in seconds. Millisecond-level control over timeouts. |
-| **Cost** | Free / open source. Only infrastructure cost (CI compute). |
-| **Determinism** | Highly deterministic — the same test runs the exact same way every time. |
-| **Auth support** | Requires manual workarounds for OAuth (cookie injection, dev-only routes, or intercepting redirects). No native Google OAuth handling. |
-| **AI chat testing** | Must mock `/api/chat` with deterministic responses, or the test becomes flaky waiting for an LLM. Cannot naturally interact with a streaming AI widget. |
-| **Maintenance** | Tests break when selectors change. Requires ongoing maintenance as UI evolves. |
-| **CI integration** | Excellent. Native GitHub Actions, Vercel preview URL support, trace viewer, screenshots on failure. |
-| **Offline** | Works fully offline. No SaaS dependency. |
-| **Next.js alignment** | Officially recommended by Next.js 16 App Router docs. |
+| Aspect                | Assessment                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What it is**        | Code-first browser automation framework. You write TypeScript/JavaScript specs that use selectors, assertions, and browser APIs.                        |
+| **Speed**             | Very fast — local runs complete in seconds. Millisecond-level control over timeouts.                                                                    |
+| **Cost**              | Free / open source. Only infrastructure cost (CI compute).                                                                                              |
+| **Determinism**       | Highly deterministic — the same test runs the exact same way every time.                                                                                |
+| **Auth support**      | Requires manual workarounds for OAuth (cookie injection, dev-only routes, or intercepting redirects). No native Google OAuth handling.                  |
+| **AI chat testing**   | Must mock `/api/chat` with deterministic responses, or the test becomes flaky waiting for an LLM. Cannot naturally interact with a streaming AI widget. |
+| **Maintenance**       | Tests break when selectors change. Requires ongoing maintenance as UI evolves.                                                                          |
+| **CI integration**    | Excellent. Native GitHub Actions, Vercel preview URL support, trace viewer, screenshots on failure.                                                     |
+| **Offline**           | Works fully offline. No SaaS dependency.                                                                                                                |
+| **Next.js alignment** | Officially recommended by Next.js 16 App Router docs.                                                                                                   |
 
 **Verdict:** ✅ **Keep as the primary foundation.** Already installed, fast, free, deterministic, and aligned with Next.js. Best for: smoke tests, API assertions, known regression flows, and fast local feedback loops.
 
 ### 2.2. TesterArmy
 
-| Aspect | Assessment |
-|--------|------------|
-| **What it is** | AI-agent testing automation. You write natural-language steps (e.g., "Log in with the admin account, open Settings, verify the plan shows Pro"). AI agents with computer vision execute them in a real browser, clicking UI like a human. |
-| **Speed** | Slower — cloud runs take 30s to several minutes per test. Local runs (`--local`) are faster but still agent-driven. |
-| **Cost** | SaaS with a free tier. Beyond that, pay-per-run or subscription. Exact pricing not published; likely scales with run volume. |
-| **Determinism** | Lower — AI agents make vision-based decisions, so the exact click path may vary between runs. Steps are natural language, not code. |
-| **Auth support** | **Excellent.** Native support for Google OAuth, password login, MFA/TOTP (authenticator secrets), email OTP (via agent mail inboxes), SMS verification, and custom auth flows. No hacks needed. |
-| **AI chat testing** | **Excellent.** The agent can literally read and type into the chat widget like a user. No need to mock `/api/chat` — it exercises the real LLM integration. |
-| **Maintenance** | Claimed to be near-zero. No selectors to break. UI redesigns don't break tests because the agent uses vision, not DOM queries. |
-| **CI integration** | Excellent. Native GitHub App, Vercel/Netlify/Coolify integrations, group webhooks, PR comments with results, and merge blocking. |
-| **Offline** | ❌ Requires internet. Cloud runs run on TesterArmy infrastructure. Local runs (`--local`) still need API connectivity. |
-| **Exploration** | Unique feature: an AI agent reads PR diffs, writes a tailored test plan for that change, and executes it. Catches issues nobody wrote a test for. |
-| **Next.js alignment** | Not specifically endorsed by Next.js, but has first-class Vercel preview integration. |
-| **Migration** | Has explicit migration guides from Playwright, Cypress, Selenium, and Appium. |
+| Aspect                | Assessment                                                                                                                                                                                                                                |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What it is**        | AI-agent testing automation. You write natural-language steps (e.g., "Log in with the admin account, open Settings, verify the plan shows Pro"). AI agents with computer vision execute them in a real browser, clicking UI like a human. |
+| **Speed**             | Slower — cloud runs take 30s to several minutes per test. Local runs (`--local`) are faster but still agent-driven.                                                                                                                       |
+| **Cost**              | SaaS with a free tier. Beyond that, pay-per-run or subscription. Exact pricing not published; likely scales with run volume.                                                                                                              |
+| **Determinism**       | Lower — AI agents make vision-based decisions, so the exact click path may vary between runs. Steps are natural language, not code.                                                                                                       |
+| **Auth support**      | **Excellent.** Native support for Google OAuth, password login, MFA/TOTP (authenticator secrets), email OTP (via agent mail inboxes), SMS verification, and custom auth flows. No hacks needed.                                           |
+| **AI chat testing**   | **Excellent.** The agent can literally read and type into the chat widget like a user. No need to mock `/api/chat` — it exercises the real LLM integration.                                                                               |
+| **Maintenance**       | Claimed to be near-zero. No selectors to break. UI redesigns don't break tests because the agent uses vision, not DOM queries.                                                                                                            |
+| **CI integration**    | Excellent. Native GitHub App, Vercel/Netlify/Coolify integrations, group webhooks, PR comments with results, and merge blocking.                                                                                                          |
+| **Offline**           | ❌ Requires internet. Cloud runs run on TesterArmy infrastructure. Local runs (`--local`) still need API connectivity.                                                                                                                    |
+| **Exploration**       | Unique feature: an AI agent reads PR diffs, writes a tailored test plan for that change, and executes it. Catches issues nobody wrote a test for.                                                                                         |
+| **Next.js alignment** | Not specifically endorsed by Next.js, but has first-class Vercel preview integration.                                                                                                                                                     |
+| **Migration**         | Has explicit migration guides from Playwright, Cypress, Selenium, and Appium.                                                                                                                                                             |
 
 **Verdict:** ✅ **Strong complement** for this specific project. Its native handling of Google OAuth and ability to test the AI chat widget without mocking are game-changers. Best for: auth flows, chat widget testing, PR exploratory testing, and visual regression catching. Use as a **secondary layer** on top of Playwright, not a replacement.
 
 ### 2.3. Other tools
 
-| Tool | Verdict | Rationale |
-|------|---------|-----------|
-| **Cypress** | ❌ Skip | Slower than Playwright; inferior handling of async Server Components (Next.js docs note this); no native multi-tab/multi-origin support for Supabase OAuth. |
-| **Vitest Browser Mode** | ⚠️ Later | Good for component-level browser testing, but not a replacement for full-page e2e flows. Consider only if we later need to test individual React components in isolation. |
-| **Puppeteer + Mocha/Jest** | ❌ Skip | Lower-level than Playwright; requires more boilerplate; no built-in test runner, fixtures, or trace viewer. |
-| **Selenium / WebDriver** | ❌ Skip | Legacy, slower, more complex setup. No advantage over Playwright for a modern Next.js app. |
-| **Maestro** | ❌ Skip | Mobile-focused (React Native). Not relevant for a web-only Next.js app. |
+| Tool                       | Verdict  | Rationale                                                                                                                                                                 |
+| -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cypress**                | ❌ Skip  | Slower than Playwright; inferior handling of async Server Components (Next.js docs note this); no native multi-tab/multi-origin support for Supabase OAuth.               |
+| **Vitest Browser Mode**    | ⚠️ Later | Good for component-level browser testing, but not a replacement for full-page e2e flows. Consider only if we later need to test individual React components in isolation. |
+| **Puppeteer + Mocha/Jest** | ❌ Skip  | Lower-level than Playwright; requires more boilerplate; no built-in test runner, fixtures, or trace viewer.                                                               |
+| **Selenium / WebDriver**   | ❌ Skip  | Legacy, slower, more complex setup. No advantage over Playwright for a modern Next.js app.                                                                                |
+| **Maestro**                | ❌ Skip  | Mobile-focused (React Native). Not relevant for a web-only Next.js app.                                                                                                   |
 
 ---
 
@@ -92,15 +92,15 @@ The project already has Playwright installed with a minimal smoke test (`e2e/smo
 
 ### Why both?
 
-| Scenario | Playwright | TesterArmy |
-|----------|-----------|------------|
-| "Does the dashboard render stats after seeding?" | ✅ Fast, deterministic | ⚠️ Overkill, slower, costs a run |
-| "Does the booking API reject double-booking?" | ✅ Request fixture, instant | ❌ Not designed for API-only assertions |
-| "Can a user sign in via Google OAuth?" | ❌ Hard to automate reliably | ✅ Native support, no hacks |
-| "Can a prospect complete a booking through the AI chat?" | ❌ Must mock LLM, loses realism | ✅ Tests the real AI integration |
-| "What if this PR broke something we didn't test?" | ❌ Only tests what you wrote | ✅ Exploration agent reads diffs, finds gaps |
-| "Run 50 tests in 2 minutes on CI" | ✅ | ❌ Too slow and expensive |
-| "Run on a plane without WiFi" | ✅ | ❌ |
+| Scenario                                                 | Playwright                      | TesterArmy                                   |
+| -------------------------------------------------------- | ------------------------------- | -------------------------------------------- |
+| "Does the dashboard render stats after seeding?"         | ✅ Fast, deterministic          | ⚠️ Overkill, slower, costs a run             |
+| "Does the booking API reject double-booking?"            | ✅ Request fixture, instant     | ❌ Not designed for API-only assertions      |
+| "Can a user sign in via Google OAuth?"                   | ❌ Hard to automate reliably    | ✅ Native support, no hacks                  |
+| "Can a prospect complete a booking through the AI chat?" | ❌ Must mock LLM, loses realism | ✅ Tests the real AI integration             |
+| "What if this PR broke something we didn't test?"        | ❌ Only tests what you wrote    | ✅ Exploration agent reads diffs, finds gaps |
+| "Run 50 tests in 2 minutes on CI"                        | ✅                              | ❌ Too slow and expensive                    |
+| "Run on a plane without WiFi"                            | ✅                              | ❌                                           |
 
 ---
 
@@ -116,10 +116,12 @@ vitest.integration.config.ts  # integration tests against real DB
 ```
 
 **What works today:**
+
 - Playwright runs against the dev server (`bun run dev`).
 - Smoke test renders the signed-out homepage.
 
 **What is missing:**
+
 - No test database isolation.
 - No authenticated test fixtures.
 - No coverage of the prospect booking chat or the owner dashboard.
@@ -141,13 +143,13 @@ vitest.integration.config.ts  # integration tests against real DB
 
 ### 5.2. Test Pyramid for This Project
 
-| Layer | Tool | Coverage |
-|-------|------|----------|
-| **Unit** | Vitest | Pure functions, utilities, schedule math, ICS generation, slug validation |
-| **Integration** | Vitest + Postgres | DB queries, Drizzle ORM logic, API route handlers (mocked AI/Resend) |
-| **E2E (Deterministic)** | Playwright | Smoke tests, static page assertions, API routes, form validation, dashboard nav |
-| **E2E (Realistic / AI)** | TesterArmy | OAuth flows, AI chat booking, visual regression, PR exploration |
-| **Contract / API** | Playwright `request` fixture | REST API assertions for `/api/bookings`, `/api/slots`, `/api/leads` |
+| Layer                    | Tool                         | Coverage                                                                        |
+| ------------------------ | ---------------------------- | ------------------------------------------------------------------------------- |
+| **Unit**                 | Vitest                       | Pure functions, utilities, schedule math, ICS generation, slug validation       |
+| **Integration**          | Vitest + Postgres            | DB queries, Drizzle ORM logic, API route handlers (mocked AI/Resend)            |
+| **E2E (Deterministic)**  | Playwright                   | Smoke tests, static page assertions, API routes, form validation, dashboard nav |
+| **E2E (Realistic / AI)** | TesterArmy                   | OAuth flows, AI chat booking, visual regression, PR exploration                 |
+| **Contract / API**       | Playwright `request` fixture | REST API assertions for `/api/bookings`, `/api/slots`, `/api/leads`             |
 
 ---
 
@@ -162,18 +164,18 @@ Add a hidden `POST /api/e2e/auth` route (only in `development`/`test` env) that 
 ```ts
 // src/app/api/e2e/auth/route.ts (guarded by NODE_ENV)
 export async function POST(req: NextRequest) {
-  if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
-    return new Response('Forbidden', { status: 403 });
+  if (process.env.NODE_ENV !== "development" && process.env.NODE_ENV !== "test") {
+    return new Response("Forbidden", { status: 403 });
   }
   const { userId, email, name } = await req.json();
   // Use Supabase service-role client to mint a session
   const { data } = await supabaseAdmin.auth.admin.generateLink({
-    type: 'magiclink',
+    type: "magiclink",
     email,
   });
   // Or directly create a session and set the cookie
   // ...implementation details...
-  return new Response('OK', { status: 200 });
+  return new Response("OK", { status: 200 });
 }
 ```
 
@@ -201,6 +203,7 @@ DATABASE_URL=postgres://localhost:5432/fillthemat_test
 ```
 
 Before each test run:
+
 1. Drop and recreate the test schema.
 2. Run `drizzle-kit migrate` against the test DB.
 3. Seed minimal fixtures (one approved school, one owner, one trial offering, one window).
@@ -328,6 +331,7 @@ npx testerarmy --help
 ```
 
 Authenticate:
+
 ```bash
 ta auth --api-key $TESTERARMY_API_KEY
 ```
@@ -371,6 +375,7 @@ For prospect flows, no credential is needed — the agent tests as an anonymous 
 ### 9.5. Create Tests (Natural Language Steps)
 
 **Test 1: Owner Onboarding**
+
 ```text
 Log in with the saved owner account via Google OAuth.
 Verify the onboarding page is shown or the dashboard is visible.
@@ -379,6 +384,7 @@ Verify the dashboard shows the school name "Test Dojo".
 ```
 
 **Test 2: AI Chat Booking**
+
 ```text
 Navigate to the public school page at /s/test-dojo.
 Verify the school name and chat widget are visible.
@@ -388,6 +394,7 @@ Verify the booking confirmation appears with the correct date and time.
 ```
 
 **Test 3: Dashboard Publish Flow**
+
 ```text
 Log in with the saved owner account.
 Navigate to the dashboard.
@@ -398,6 +405,7 @@ Click Publish and verify the school status changes to "Published".
 ```
 
 Create via CLI:
+
 ```bash
 echo '{"title":"AI Chat Booking","description":"Prospect books a trial through the AI chat widget","steps":[{"title":"Navigate to /s/test-dojo","type":"act"},{"title":"Verify school name and chat widget are visible","type":"assert"},{"title":"Ask the chat about booking a trial class and follow the prompts","type":"act"},{"title":"Verify booking confirmation appears with correct date and time","type":"assert"}]}' | ta tests create --project <projectId> --json
 ```
@@ -513,36 +521,36 @@ echo '{"name":"Critical flows","testIds":["<testId1>","<testId2>"]}' | ta groups
 
 ### Playwright Test Cases
 
-| # | Test | Mocking / Setup |
-|---|------|-----------------|
-| 1 | Homepage renders for signed-out user. | None |
-| 2 | Unpublished school returns 404 for anonymous visitor. | None |
-| 3 | Owner can preview unpublished school via `?preview=1`. | Auth bypass + seeded school |
-| 4 | Landing session POSTs to `/api/sessions` with UTM params. | Check network |
-| 5 | `POST /api/bookings` creates a booking with valid payload. | Request fixture + seeded data |
-| 6 | `POST /api/bookings` rejects double-booking same occurrence. | Request fixture + seeded data |
-| 7 | `GET /api/slots?schoolId=...` returns available occurrences. | Request fixture + seeded data |
-| 8 | Signed-out user redirected from `/dashboard` to `/sign-in`. | None |
-| 9 | Signed-in user without school redirected to `/onboarding`. | Auth bypass + no school seed |
-| 10 | Onboarding form creates school and redirects to `/dashboard`. | Auth bypass + no school seed |
-| 11 | Dashboard shows 0 stats for a new school. | Auth bypass + fresh school seed |
-| 12 | Dashboard "Preview" button marks school previewed. | Auth bypass |
-| 13 | Dashboard "Publish" button disabled until prerequisites met. | Auth bypass + incomplete school |
-| 14 | Settings page updates school name, timezone, notification email. | Auth bypass |
-| 15 | Bookings page lists upcoming trial bookings. | Auth bypass + seeded bookings |
-| 16 | Leads page displays captured leads. | Auth bypass + seeded leads |
-| 17 | Mocked AI chat booking flow completes end-to-end. | Mock `/api/chat` responses |
-| 18 | Homepage renders within 3s on cold start. | Performance assertion |
+| #   | Test                                                             | Mocking / Setup                 |
+| --- | ---------------------------------------------------------------- | ------------------------------- |
+| 1   | Homepage renders for signed-out user.                            | None                            |
+| 2   | Unpublished school returns 404 for anonymous visitor.            | None                            |
+| 3   | Owner can preview unpublished school via `?preview=1`.           | Auth bypass + seeded school     |
+| 4   | Landing session POSTs to `/api/sessions` with UTM params.        | Check network                   |
+| 5   | `POST /api/bookings` creates a booking with valid payload.       | Request fixture + seeded data   |
+| 6   | `POST /api/bookings` rejects double-booking same occurrence.     | Request fixture + seeded data   |
+| 7   | `GET /api/slots?schoolId=...` returns available occurrences.     | Request fixture + seeded data   |
+| 8   | Signed-out user redirected from `/dashboard` to `/sign-in`.      | None                            |
+| 9   | Signed-in user without school redirected to `/onboarding`.       | Auth bypass + no school seed    |
+| 10  | Onboarding form creates school and redirects to `/dashboard`.    | Auth bypass + no school seed    |
+| 11  | Dashboard shows 0 stats for a new school.                        | Auth bypass + fresh school seed |
+| 12  | Dashboard "Preview" button marks school previewed.               | Auth bypass                     |
+| 13  | Dashboard "Publish" button disabled until prerequisites met.     | Auth bypass + incomplete school |
+| 14  | Settings page updates school name, timezone, notification email. | Auth bypass                     |
+| 15  | Bookings page lists upcoming trial bookings.                     | Auth bypass + seeded bookings   |
+| 16  | Leads page displays captured leads.                              | Auth bypass + seeded leads      |
+| 17  | Mocked AI chat booking flow completes end-to-end.                | Mock `/api/chat` responses      |
+| 18  | Homepage renders within 3s on cold start.                        | Performance assertion           |
 
 ### TesterArmy Test Cases
 
-| # | Test | Notes |
-|---|------|-------|
-| 19 | Owner signs in via Google OAuth and reaches dashboard. | Real OAuth, no mocks |
-| 20 | AI chat widget: prospect asks about trials and completes booking. | Real LLM responses, no mocking |
-| 21 | Dashboard: owner previews landing page, then publishes school. | Real browser, visual assertions |
-| 22 | Public school page: prospect views school info and starts chat. | Anonymous user, no auth |
-| 23 | PR exploration: agent reads PR and finds un-tested edge case. | Auto-generated per PR |
+| #   | Test                                                              | Notes                           |
+| --- | ----------------------------------------------------------------- | ------------------------------- |
+| 19  | Owner signs in via Google OAuth and reaches dashboard.            | Real OAuth, no mocks            |
+| 20  | AI chat widget: prospect asks about trials and completes booking. | Real LLM responses, no mocking  |
+| 21  | Dashboard: owner previews landing page, then publishes school.    | Real browser, visual assertions |
+| 22  | Public school page: prospect views school info and starts chat.   | Anonymous user, no auth         |
+| 23  | PR exploration: agent reads PR and finds un-tested edge case.     | Auto-generated per PR           |
 
 ---
 
@@ -620,18 +628,18 @@ jobs:
 
 ## 13. Risks & Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| **Supabase auth cookie format changes** | Use the dev-only `/api/e2e/auth` route rather than hard-coding cookie shapes. For TesterArmy, this is irrelevant — it handles OAuth natively. |
-| **Non-deterministic AI chat responses in Playwright** | Mock `/api/chat` in Playwright; exercise the real LLM only in TesterArmy. |
-| **TesterArmy costs scale with run volume** | Use TesterArmy selectively: auth flows, chat widget, and PR exploration. Run Playwright for the bulk of regression tests. |
-| **TesterArmy flakiness due to AI vision** | Iterate on step wording and project memories. Use `assert` steps with specific visible labels. TesterArmy retries failed steps automatically. |
-| **Test data leaks between parallel Playwright workers** | Use `workers: 1` in CI until unique seeding per worker is implemented. Use random slugs/emails. |
-| **Local dev server conflicts** | Playwright `reuseExistingServer` handles this. TesterArmy local runs need the dev server running on a known port. |
-| **Flaky tests due to network / animation** | Use `toHaveURL`, `toBeVisible`, and `expect.poll` instead of arbitrary `waitForTimeout`. Disable CSS animations in test mode. |
-| **Vercel preview deployment testing** | Playwright: lightweight smoke job against preview URL. TesterArmy: native Vercel integration handles this. |
-| **TesterArmy requires internet** | Playwright runs fully offline. If TesterArmy is down, Playwright still provides baseline coverage. |
-| **Migration cost if leaving TesterArmy** | Playwright tests are standard code — fully portable. TesterArmy tests are natural language — easy to convert back to Playwright specs if needed. |
+| Risk                                                    | Mitigation                                                                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Supabase auth cookie format changes**                 | Use the dev-only `/api/e2e/auth` route rather than hard-coding cookie shapes. For TesterArmy, this is irrelevant — it handles OAuth natively.    |
+| **Non-deterministic AI chat responses in Playwright**   | Mock `/api/chat` in Playwright; exercise the real LLM only in TesterArmy.                                                                        |
+| **TesterArmy costs scale with run volume**              | Use TesterArmy selectively: auth flows, chat widget, and PR exploration. Run Playwright for the bulk of regression tests.                        |
+| **TesterArmy flakiness due to AI vision**               | Iterate on step wording and project memories. Use `assert` steps with specific visible labels. TesterArmy retries failed steps automatically.    |
+| **Test data leaks between parallel Playwright workers** | Use `workers: 1` in CI until unique seeding per worker is implemented. Use random slugs/emails.                                                  |
+| **Local dev server conflicts**                          | Playwright `reuseExistingServer` handles this. TesterArmy local runs need the dev server running on a known port.                                |
+| **Flaky tests due to network / animation**              | Use `toHaveURL`, `toBeVisible`, and `expect.poll` instead of arbitrary `waitForTimeout`. Disable CSS animations in test mode.                    |
+| **Vercel preview deployment testing**                   | Playwright: lightweight smoke job against preview URL. TesterArmy: native Vercel integration handles this.                                       |
+| **TesterArmy requires internet**                        | Playwright runs fully offline. If TesterArmy is down, Playwright still provides baseline coverage.                                               |
+| **Migration cost if leaving TesterArmy**                | Playwright tests are standard code — fully portable. TesterArmy tests are natural language — easy to convert back to Playwright specs if needed. |
 
 ---
 
@@ -663,7 +671,14 @@ await page.route("**/api/chat", async (route) => {
       type: "tool-call",
       toolCallId: "1",
       toolName: "bookTrial",
-      args: { offeringId: offering.id, occurrenceId: occurrence.id, contactName: "Test Parent", contactEmail: "parent@test.com", participantName: "Test Kid", participantAge: 8 },
+      args: {
+        offeringId: offering.id,
+        occurrenceId: occurrence.id,
+        contactName: "Test Parent",
+        contactEmail: "parent@test.com",
+        participantName: "Test Kid",
+        participantAge: 8,
+      },
     })}\n\n`,
   });
 });
@@ -677,26 +692,26 @@ The app uses `@marsidev/react-turnstile`. In test mode, set `NEXT_PUBLIC_TURNSTI
 
 ## Appendix C: TesterArmy Step Reference
 
-| Step Type | Use For | Example |
-|-----------|---------|---------|
-| `act` | User actions | `Open the billing settings page.` |
-| `assert` | Verifying state | `Verify the billing page shows the current plan.` |
-| `login` | Authentication | `Log in with the saved admin account.` |
-| `files` | Uploading files | `Upload the sample invoice PDF.` |
+| Step Type    | Use For         | Example                                                |
+| ------------ | --------------- | ------------------------------------------------------ |
+| `act`        | User actions    | `Open the billing settings page.`                      |
+| `assert`     | Verifying state | `Verify the billing page shows the current plan.`      |
+| `login`      | Authentication  | `Log in with the saved admin account.`                 |
+| `files`      | Uploading files | `Upload the sample invoice PDF.`                       |
 | `screenshot` | Visual evidence | `Capture a screenshot of the completed checkout page.` |
 
 TesterArmy steps should be 3–10 per test. Each step gets one time budget. Tests cannot exceed 30 steps. Good steps read like instructions to a teammate — no selectors, no waits, no internal component names.
 
 ## Appendix D: TesterArmy vs Playwright Concept Mapping
 
-| Playwright | TesterArmy |
-|------------|------------|
-| `test()` in a spec file | A test with natural-language steps |
-| `test.describe()` block | A test group |
+| Playwright                                   | TesterArmy                                                           |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| `test()` in a spec file                      | A test with natural-language steps                                   |
+| `test.describe()` block                      | A test group                                                         |
 | `page.goto()`, `page.click()`, `page.fill()` | `act` steps (`"Navigate to /pricing"`, `"Click the upgrade button"`) |
-| `expect(locator).toBeVisible()` | `assert` steps (`"The dashboard shows the new project"`) |
-| Login fixtures / `storageState` | `login` step + project credentials |
-| `playwright.config.ts` `baseURL` | Project URL (override with `--url`) |
-| Selectors (`getByTestId`, CSS, XPath) | **Not needed** — agent finds elements visually |
-| Retries and `waitFor` calls | **Not needed** — agent waits like a human |
-| CI workflow running `npx playwright test` | `ta tests run --group <groupId>` or group webhooks |
+| `expect(locator).toBeVisible()`              | `assert` steps (`"The dashboard shows the new project"`)             |
+| Login fixtures / `storageState`              | `login` step + project credentials                                   |
+| `playwright.config.ts` `baseURL`             | Project URL (override with `--url`)                                  |
+| Selectors (`getByTestId`, CSS, XPath)        | **Not needed** — agent finds elements visually                       |
+| Retries and `waitFor` calls                  | **Not needed** — agent waits like a human                            |
+| CI workflow running `npx playwright test`    | `ta tests run --group <groupId>` or group webhooks                   |

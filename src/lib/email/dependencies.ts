@@ -13,10 +13,7 @@ export type EmailMessage = {
 export type EmailSendOutcome =
   | { ok: true; kind: "accepted"; providerId: string }
   | { ok: true; kind: "local_noop"; providerId: null }
-  | ({ ok: false; message: string } & Extract<
-      RetryFailure,
-      { kind: "internal" | "email_error" }
-    >);
+  | ({ ok: false; message: string } & Extract<RetryFailure, { kind: "internal" | "email_error" }>);
 export type EmailTransport = {
   send(message: EmailMessage): Promise<EmailSendOutcome>;
 };
@@ -40,10 +37,7 @@ const transport: EmailTransport = {
       return { ok: true, kind: "local_noop", providerId: null };
     }
     if (!process.env.RESEND_FROM)
-      throw new InternalFailure(
-        "missing_credentials",
-        "RESEND_FROM is not set",
-      );
+      throw new InternalFailure("missing_credentials", "RESEND_FROM is not set");
     try {
       const result = await resend.emails.send(
         { ...message, text: message.text ?? "", from: getFromAddress() },

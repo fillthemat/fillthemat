@@ -66,12 +66,7 @@ export async function loadOverviewMetrics(
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(landingSessions)
-      .where(
-        and(
-          eq(landingSessions.schoolId, schoolId),
-          isNotNull(landingSessions.qualifiedAt),
-        ),
-      ),
+      .where(and(eq(landingSessions.schoolId, schoolId), isNotNull(landingSessions.qualifiedAt))),
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(landingSessions)
@@ -100,27 +95,15 @@ export async function loadOverviewMetrics(
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(trialOfferings)
-      .where(
-        and(
-          eq(trialOfferings.schoolId, schoolId),
-          eq(trialOfferings.active, true),
-        ),
-      ),
+      .where(and(eq(trialOfferings.schoolId, schoolId), eq(trialOfferings.active, true))),
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(trialWindows)
-      .where(
-        and(eq(trialWindows.schoolId, schoolId), eq(trialWindows.active, true)),
-      ),
+      .where(and(eq(trialWindows.schoolId, schoolId), eq(trialWindows.active, true))),
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(emailDeliveries)
-      .where(
-        and(
-          eq(emailDeliveries.schoolId, schoolId),
-          eq(emailDeliveries.state, "failed"),
-        ),
-      ),
+      .where(and(eq(emailDeliveries.schoolId, schoolId), eq(emailDeliveries.state, "failed"))),
     db.select().from(cronRuns).orderBy(desc(cronRuns.startedAt)).limit(1),
   ]);
 

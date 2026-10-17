@@ -2,10 +2,7 @@
 
 import { Turnstile } from "@marsidev/react-turnstile";
 import { useEffect, useState } from "react";
-import {
-  BookingConfirmationForm,
-  type ConfirmationValues,
-} from "./booking-confirmation-form";
+import { BookingConfirmationForm, type ConfirmationValues } from "./booking-confirmation-form";
 import { readLandingSessionToken } from "./landing-session";
 
 type Offering = {
@@ -59,16 +56,12 @@ export function BookingFlow({
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
-  const [confirmation, setConfirmation] = useState<ConfirmationValues | null>(
-    null,
-  );
+  const [confirmation, setConfirmation] = useState<ConfirmationValues | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [leadSent, setLeadSent] = useState(false);
 
   const activeOfferings = offerings.filter((offering) => offering.active);
-  const selected = activeOfferings.find(
-    (offering) => offering.id === offeringId,
-  );
+  const selected = activeOfferings.find((offering) => offering.id === offeringId);
 
   useEffect(() => {
     if (!offeringId || age === "") return;
@@ -81,9 +74,7 @@ export function BookingFlow({
         noMatch?: boolean;
       };
       setSlots(payload.slots ?? []);
-      setNoMatch(
-        Boolean(payload.noMatch) || (payload.slots ?? []).length === 0,
-      );
+      setNoMatch(Boolean(payload.noMatch) || (payload.slots ?? []).length === 0);
     })();
   }, [offeringId, age, slug, preview]);
 
@@ -96,9 +87,7 @@ export function BookingFlow({
       <BookingConfirmationForm
         values={confirmation}
         onBooked={({ offeringName, whenLabel }) =>
-          setDone(
-            `You're booked for ${offeringName} on ${whenLabel}. Check email for details.`,
-          )
+          setDone(`You're booked for ${offeringName} on ${whenLabel}. Check email for details.`)
         }
       />
     );
@@ -164,8 +153,7 @@ export function BookingFlow({
           <option value="">Select a time</option>
           {slots.map((slot) => (
             <option key={slot.slotId} value={slot.slotId}>
-              {slot.localDateLabel} at {slot.localTimeLabel} ({slot.remaining}{" "}
-              left)
+              {slot.localDateLabel} at {slot.localTimeLabel} ({slot.remaining} left)
             </option>
           ))}
         </select>
@@ -244,10 +232,7 @@ function LeadForm({
 
   return (
     <form onSubmit={onSubmit} className="grid gap-2 rounded-xl bg-page-50 p-3">
-      <p>
-        No matching trial time is open. Leave your details and the school will
-        follow up.
-      </p>
+      <p>No matching trial time is open. Leave your details and the school will follow up.</p>
       <input
         required
         value={name}

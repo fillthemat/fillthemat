@@ -1,9 +1,6 @@
 import { type LanguageModel, wrapLanguageModel } from "ai";
-import {
-  type CompletedReply,
-  completedReply,
-} from "../../src/lib/ai/assistant";
 import type { EvalCase } from "./cases";
+import { type CompletedReply, completedReply } from "../../src/lib/ai/assistant";
 import { type Score, scoreIntents, scoreToolCalls } from "./scoring";
 
 export type CaseResult = {
@@ -28,9 +25,7 @@ export async function runCase(
       wrapGenerate: async ({ doGenerate }) => {
         const result = await doGenerate();
         toolCalls.push(
-          ...result.content.flatMap((part) =>
-            part.type === "tool-call" ? [part.toolName] : [],
-          ),
+          ...result.content.flatMap((part) => (part.type === "tool-call" ? [part.toolName] : [])),
         );
         return result;
       },

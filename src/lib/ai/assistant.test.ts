@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { simulateReadableStream, type UIMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
 import { legacyAssistantHistory } from "@/test/assistant-legacy-history";
@@ -16,9 +16,7 @@ import { PLATFORM_INSTRUCTIONS } from "./instructions";
 
 type ModelStep = Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>>;
 type ModelStreamPart =
-  Awaited<
-    ReturnType<MockLanguageModelV4["doStream"]>
-  >["stream"] extends ReadableStream<infer Part>
+  Awaited<ReturnType<MockLanguageModelV4["doStream"]>>["stream"] extends ReadableStream<infer Part>
     ? Part
     : never;
 
@@ -41,10 +39,7 @@ function textStep(text: string): ModelStep {
   };
 }
 
-function toolCallStep(
-  toolName: string,
-  toolInput: Record<string, unknown>,
-): ModelStep {
+function toolCallStep(toolName: string, toolInput: Record<string, unknown>): ModelStep {
   return {
     content: [
       {
@@ -80,13 +75,11 @@ function streamingModel(
             if (part.type !== "text") return [];
             return [
               { type: "text-start", id: "reply" },
-              ...part.text.split(/(?<= )/).map(
-                (delta): ModelStreamPart => ({
-                  type: "text-delta",
-                  id: "reply",
-                  delta,
-                }),
-              ),
+              ...part.text.split(/(?<= )/).map((delta): ModelStreamPart => ({
+                type: "text-delta",
+                id: "reply",
+                delta,
+              })),
               { type: "text-end", id: "reply" },
             ];
           }),
@@ -110,9 +103,7 @@ function chunksOf(body: string): unknown[] {
 }
 
 function textOf(message: AssistantUIMessage) {
-  return message.parts
-    .map((part) => (part.type === "text" ? part.text : ""))
-    .join("");
+  return message.parts.map((part) => (part.type === "text" ? part.text : "")).join("");
 }
 
 // What a reply written by `modelId` came from.
@@ -183,10 +174,7 @@ const kidsBjjWindow = {
 // Monday 5 October 2026, 08:00 in New York.
 const now = new Date("2026-10-05T12:00:00.000Z");
 // Wednesday 7 October 2026, 18:00 in New York.
-const openSlotId = encodeSlotId(
-  kidsBjjWindow.id,
-  new Date("2026-10-07T22:00:00.000Z"),
-);
+const openSlotId = encodeSlotId(kidsBjjWindow.id, new Date("2026-10-07T22:00:00.000Z"));
 // Wednesday 14 October 2026, 18:00 in New York, already fully booked.
 const fullOccurrence = {
   trialWindowId: kidsBjjWindow.id,
@@ -346,9 +334,7 @@ describe("the assistant's completed reply", () => {
         participantName: "Ana",
         participantAge: 13,
       }),
-      textStep(
-        "Kids BJJ is for ages 5 to 12. Shall we look at other offerings?",
-      ),
+      textStep("Kids BJJ is for ages 5 to 12. Shall we look at other offerings?"),
     );
 
     const reply = await completedReply({ ...input, model });
@@ -437,9 +423,7 @@ describe("the assistant's completed reply", () => {
       type: "json",
       value: {
         noMatch: false,
-        slots: expect.arrayContaining([
-          expect.objectContaining({ slotId: openSlotId }),
-        ]),
+        slots: expect.arrayContaining([expect.objectContaining({ slotId: openSlotId })]),
       },
     });
     expect(reply.bookingIntent).toBeNull();
@@ -511,9 +495,7 @@ describe("the assistant's streamed reply", () => {
   });
 
   it("replays saved pre-rename occurrence and contact tool parts without registering aliases", async () => {
-    const model = streamingModel([
-      textStep("Wednesday at 6:00 PM; contact request for Sam."),
-    ]);
+    const model = streamingModel([textStep("Wednesday at 6:00 PM; contact request for Sam.")]);
     let finish: ReplyFinish | undefined;
     const response = await streamedReply({
       ...input,
@@ -541,9 +523,7 @@ describe("the assistant's streamed reply", () => {
     ]);
     const historyNames = call.prompt.flatMap((message) =>
       message.role === "tool"
-        ? message.content.map((part) =>
-            part.type === "tool-result" ? part.toolName : null,
-          )
+        ? message.content.map((part) => (part.type === "tool-result" ? part.toolName : null))
         : [],
     );
     expect(historyNames).toEqual(["list_trial_slots", "capture_lead"]);
@@ -600,10 +580,7 @@ describe("the assistant's streamed reply", () => {
     const response = await streamedReply({
       ...input,
       model: streamingModel(
-        [
-          toolCallStep("list_trial_offerings", {}),
-          textStep("We offer Kids BJJ."),
-        ],
+        [toolCallStep("list_trial_offerings", {}), textStep("We offer Kids BJJ.")],
         { modelId: "anthropic/claude-sonnet-4.6" },
       ),
       onFinish: (finish) => {
@@ -646,9 +623,9 @@ describe("the assistant's streamed reply", () => {
     // Leave time for a second call to show up.
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(
-      finishes.map(({ reply, completion }) => [completion, textOf(reply)]),
-    ).toEqual([["complete", "We offer Kids BJJ on Wednesdays at 6 PM."]]);
+    expect(finishes.map(({ reply, completion }) => [completion, textOf(reply)])).toEqual([
+      ["complete", "We offer Kids BJJ on Wednesdays at 6 PM."],
+    ]);
   });
 
   it.each([
@@ -675,25 +652,22 @@ describe("the assistant's streamed reply", () => {
         }),
       }),
     },
-  ])(
-    "calls back once with error status when the model $failure",
-    async ({ doStream }) => {
-      // The AI SDK logs model errors.
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      const finishes: ReplyFinish[] = [];
-      const response = await streamedReply({
-        ...input,
-        model: new MockLanguageModelV4({ doStream }),
-        onFinish: (finish) => {
-          finishes.push(finish);
-        },
-      });
+  ])("calls back once with error status when the model $failure", async ({ doStream }) => {
+    // The AI SDK logs model errors.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const finishes: ReplyFinish[] = [];
+    const response = await streamedReply({
+      ...input,
+      model: new MockLanguageModelV4({ doStream }),
+      onFinish: (finish) => {
+        finishes.push(finish);
+      },
+    });
 
-      await response.text();
+    await response.text();
 
-      expect(finishes.map(({ completion }) => completion)).toEqual(["error"]);
-    },
-  );
+    expect(finishes.map(({ completion }) => completion)).toEqual(["error"]);
+  });
 
   it("ends the response with an error, calling back once and rejecting nothing unhandled, when the finish callback throws", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});

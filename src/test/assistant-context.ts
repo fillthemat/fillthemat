@@ -37,14 +37,8 @@ export const trialWindow = {
   label: null,
 };
 
-export const openSlotId = encodeSlotId(
-  trialWindow.id,
-  new Date("2026-10-07T22:00:00.000Z"),
-);
-export const fullSlotId = encodeSlotId(
-  trialWindow.id,
-  new Date("2026-10-14T22:00:00.000Z"),
-);
+export const openSlotId = encodeSlotId(trialWindow.id, new Date("2026-10-07T22:00:00.000Z"));
+export const fullSlotId = encodeSlotId(trialWindow.id, new Date("2026-10-14T22:00:00.000Z"));
 
 export function assistantContext(): AssistantContext {
   return {

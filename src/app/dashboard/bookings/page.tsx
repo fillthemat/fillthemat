@@ -46,9 +46,7 @@ export default async function BookingsPage({
   const { school } = await requireOwnedSchool();
   const params = await searchParams;
   const { filter = "upcoming" } = params;
-  const activeFilter = FILTERS.some((item) => item.id === filter)
-    ? filter
-    : "upcoming";
+  const activeFilter = FILTERS.some((item) => item.id === filter) ? filter : "upcoming";
   const statusFilter = resolveStatus(params.status);
   const db = getDb();
   const now = new Date();
@@ -94,10 +92,7 @@ export default async function BookingsPage({
   return (
     <main id="main-content" className="flex flex-col gap-4">
       <PageHeader title="Bookings" />
-      <nav
-        aria-label="Booking filters"
-        className="flex flex-wrap items-center gap-2"
-      >
+      <nav aria-label="Booking filters" className="flex flex-wrap items-center gap-2">
         <div className="flex gap-1">
           {FILTERS.map((item) => {
             const current = item.id === activeFilter;
@@ -142,17 +137,11 @@ export default async function BookingsPage({
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-medium text-pretty">
-                      {booking.participantNameSnapshot} (
-                      {booking.participantAgeSnapshot})
+                      {booking.participantNameSnapshot} ({booking.participantAgeSnapshot})
                     </p>
-                    <p className="text-sm text-pretty">
-                      {booking.offeringNameSnapshot}
-                    </p>
+                    <p className="text-sm text-pretty">{booking.offeringNameSnapshot}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatBookingWhen(
-                        booking.startAt,
-                        booking.timezoneSnapshot,
-                      )}
+                      {formatBookingWhen(booking.startAt, booking.timezoneSnapshot)}
                     </p>
                   </div>
                   <Badge variant={bookingStatusVariant(booking.status)}>
@@ -195,19 +184,13 @@ export default async function BookingsPage({
               <TableBody>
                 {rows.map((booking) => (
                   <TableRow key={booking.id}>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {formatBookingWhen(
-                        booking.startAt,
-                        booking.timezoneSnapshot,
-                      )}
+                    <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
+                      {formatBookingWhen(booking.startAt, booking.timezoneSnapshot)}
                     </TableCell>
                     <TableCell className="font-medium text-pretty">
-                      {booking.participantNameSnapshot} (
-                      {booking.participantAgeSnapshot})
+                      {booking.participantNameSnapshot} ({booking.participantAgeSnapshot})
                     </TableCell>
-                    <TableCell className="text-pretty">
-                      {booking.offeringNameSnapshot}
-                    </TableCell>
+                    <TableCell className="text-pretty">{booking.offeringNameSnapshot}</TableCell>
                     <TableCell>
                       <Badge variant={bookingStatusVariant(booking.status)}>
                         {formatBookingStatus(booking.status)}
@@ -248,10 +231,7 @@ function ContactLine({ name, email }: { name: string; email: string | null }) {
       {email ? (
         <>
           {" · "}
-          <a
-            href={`mailto:${email}`}
-            className="underline-offset-4 hover:underline"
-          >
+          <a href={`mailto:${email}`} className="underline-offset-4 hover:underline">
             {email}
           </a>
         </>

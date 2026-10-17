@@ -25,16 +25,16 @@ Dashboard canvas and raised surfaces are scoped:
 - Component tokens (`--card`, `--muted`, `--primary`, …) are also set on
   `html.dark` so a portal to `document.body` does not lose the palette.
 
-| Token | Use |
-| --- | --- |
-| `--background` / `--foreground` | Canvas and copy |
-| `--card` / `--popover` | Raised surfaces and dialogs |
-| `--muted` / `--muted-foreground` | Secondary regions and metadata |
-| `--border` / `--input` / `--ring` | Hairlines, fields, focus |
-| `--primary` | Neutral primary action (near-white on dark) |
-| `--secondary` / `--accent` | Quiet fills |
-| `--destructive` | Destructive actions and errors |
-| `--success` / `--warning` | Status only, never as the only cue |
+| Token                             | Use                                         |
+| --------------------------------- | ------------------------------------------- |
+| `--background` / `--foreground`   | Canvas and copy                             |
+| `--card` / `--popover`            | Raised surfaces and dialogs                 |
+| `--muted` / `--muted-foreground`  | Secondary regions and metadata              |
+| `--border` / `--input` / `--ring` | Hairlines, fields, focus                    |
+| `--primary`                       | Neutral primary action (near-white on dark) |
+| `--secondary` / `--accent`        | Quiet fills                                 |
+| `--destructive`                   | Destructive actions and errors              |
+| `--success` / `--warning`         | Status only, never as the only cue          |
 
 Pages must not invent new palettes. Status always includes a word label.
 
@@ -62,21 +62,32 @@ and none converted.
 Import from `@/components/ui/<name>` (no barrel file).
 
 ```tsx
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Separator } from "@/components/ui/separator";
 import {
-  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
 } from "@/components/ui/table";
-import {
-  AlertDialog, AlertDialogTrigger, AlertDialogContent,
-  AlertDialogHeader, AlertDialogTitle, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
-} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 ```
 
 ### Button

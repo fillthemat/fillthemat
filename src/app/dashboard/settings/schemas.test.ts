@@ -36,9 +36,7 @@ describe("profileSchema", () => {
   });
 
   it("uppercases a country code", () => {
-    expect(
-      profileSchema.parse({ ...VALID_PROFILE, country: "ca" }).country,
-    ).toBe("CA");
+    expect(profileSchema.parse({ ...VALID_PROFILE, country: "ca" }).country).toBe("CA");
   });
 
   it("reports a missing name and a bad email per field", () => {
@@ -154,21 +152,11 @@ describe("windowSchema", () => {
   });
 
   it("rejects a bad time, day, duration, and capacity", () => {
-    expect(
-      windowSchema.safeParse({ ...base, startMinute: "25:00" }).success,
-    ).toBe(false);
-    expect(windowSchema.safeParse({ ...base, dayOfWeek: "9" }).success).toBe(
-      false,
-    );
-    expect(
-      windowSchema.safeParse({ ...base, durationMinutes: "5" }).success,
-    ).toBe(false);
-    expect(windowSchema.safeParse({ ...base, capacity: "0" }).success).toBe(
-      false,
-    );
-    expect(windowSchema.safeParse({ ...base, capacity: "51" }).success).toBe(
-      false,
-    );
+    expect(windowSchema.safeParse({ ...base, startMinute: "25:00" }).success).toBe(false);
+    expect(windowSchema.safeParse({ ...base, dayOfWeek: "9" }).success).toBe(false);
+    expect(windowSchema.safeParse({ ...base, durationMinutes: "5" }).success).toBe(false);
+    expect(windowSchema.safeParse({ ...base, capacity: "0" }).success).toBe(false);
+    expect(windowSchema.safeParse({ ...base, capacity: "51" }).success).toBe(false);
   });
 });
 
@@ -176,21 +164,16 @@ describe("capacitySchema", () => {
   it("accepts the supported range only", () => {
     const id = "00000000-0000-4000-8000-000000000000";
     expect(capacitySchema.parse({ id, capacity: "12" }).capacity).toBe(12);
-    expect(capacitySchema.safeParse({ id, capacity: "60" }).success).toBe(
-      false,
-    );
+    expect(capacitySchema.safeParse({ id, capacity: "60" }).success).toBe(false);
   });
 });
 
 describe("brandingSchema", () => {
   it("adds a missing hash and keeps blanks null", () => {
-    expect(
-      brandingSchema.parse({ logoUrl: "", primaryColor: "1e3a8a" })
-        .primaryColor,
-    ).toBe("#1e3a8a");
-    expect(
-      brandingSchema.parse({ logoUrl: "", primaryColor: "" }).primaryColor,
-    ).toBeNull();
+    expect(brandingSchema.parse({ logoUrl: "", primaryColor: "1e3a8a" }).primaryColor).toBe(
+      "#1e3a8a",
+    );
+    expect(brandingSchema.parse({ logoUrl: "", primaryColor: "" }).primaryColor).toBeNull();
   });
 
   it("requires https logos and 6-digit hex colors", () => {
@@ -222,19 +205,13 @@ describe("toggleOfferingSchema", () => {
   const id = "00000000-0000-4000-8000-000000000000";
 
   it("reads an explicit desired state", () => {
-    expect(toggleOfferingSchema.parse({ id, active: "true" }).active).toBe(
-      true,
-    );
-    expect(toggleOfferingSchema.parse({ id, active: "false" }).active).toBe(
-      false,
-    );
+    expect(toggleOfferingSchema.parse({ id, active: "true" }).active).toBe(true);
+    expect(toggleOfferingSchema.parse({ id, active: "false" }).active).toBe(false);
   });
 
   it("rejects invert-style missing values", () => {
     expect(toggleOfferingSchema.safeParse({ id }).success).toBe(false);
-    expect(
-      toggleOfferingSchema.safeParse({ id, active: "maybe" }).success,
-    ).toBe(false);
+    expect(toggleOfferingSchema.safeParse({ id, active: "maybe" }).success).toBe(false);
   });
 });
 
@@ -247,9 +224,7 @@ describe("update identity schemas", () => {
   });
 
   it("rejects a missing FAQ token", () => {
-    expect(updateFaqSchema.safeParse({ id, updatedAt: "" }).success).toBe(
-      false,
-    );
+    expect(updateFaqSchema.safeParse({ id, updatedAt: "" }).success).toBe(false);
   });
 });
 
@@ -275,20 +250,14 @@ describe("windowSchema start time", () => {
   };
 
   it("accepts the HH:MM:SS form some browsers submit", () => {
-    expect(
-      windowSchema.parse({ ...base, startMinute: "18:30:00" }).startMinute,
-    ).toBe(18 * 60 + 30);
-    expect(
-      windowSchema.parse({ ...base, startMinute: "07:05:30.500" }).startMinute,
-    ).toBe(7 * 60 + 5);
+    expect(windowSchema.parse({ ...base, startMinute: "18:30:00" }).startMinute).toBe(18 * 60 + 30);
+    expect(windowSchema.parse({ ...base, startMinute: "07:05:30.500" }).startMinute).toBe(
+      7 * 60 + 5,
+    );
   });
 
   it("still rejects nonsense", () => {
-    expect(
-      windowSchema.safeParse({ ...base, startMinute: "18:30:99" }).success,
-    ).toBe(false);
-    expect(
-      windowSchema.safeParse({ ...base, startMinute: "1830" }).success,
-    ).toBe(false);
+    expect(windowSchema.safeParse({ ...base, startMinute: "18:30:99" }).success).toBe(false);
+    expect(windowSchema.safeParse({ ...base, startMinute: "1830" }).success).toBe(false);
   });
 });

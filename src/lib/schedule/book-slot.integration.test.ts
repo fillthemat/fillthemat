@@ -1,18 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { EmailMessage } from "@/lib/email/dependencies";
 import { getDb } from "@/db";
 import { emailDeliveries, schools, trialWindows } from "@/db/schema";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
-import type { EmailMessage } from "@/lib/email/dependencies";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { bookSlot, cancelBooking } from "./book-slot";
@@ -54,15 +46,9 @@ afterAll(async () => {
 });
 
 async function createBooking() {
-  const [schoolRow] = await db
-    .select()
-    .from(schools)
-    .where(eq(schools.id, schoolId));
+  const [schoolRow] = await db.select().from(schools).where(eq(schools.id, schoolId));
   const school = requireRow(schoolRow, "school");
-  const windows = await db
-    .select()
-    .from(trialWindows)
-    .where(eq(trialWindows.schoolId, schoolId));
+  const windows = await db.select().from(trialWindows).where(eq(trialWindows.schoolId, schoolId));
   const slot = requireRow(
     listOpenSlots({
       offeringId,
@@ -106,9 +92,7 @@ describe("inline booking emails with the app clock behind the database", () => {
     expect(result.ok).toBe(true);
     await attemptPendingForBooking(booking.id, { transport: { send } });
     expect(send).toHaveBeenCalledTimes(2);
-    expect(
-      send.mock.calls.map(([message]) => message.idempotencyKey).sort(),
-    ).toEqual([
+    expect(send.mock.calls.map(([message]) => message.idempotencyKey).sort()).toEqual([
       `booking-cancellation/${booking.id}/1`,
       `owner-cancellation/${booking.id}/1`,
     ]);
@@ -117,8 +101,7 @@ describe("inline booking emails with the app clock behind the database", () => {
       .from(emailDeliveries)
       .where(eq(emailDeliveries.bookingId, booking.id));
     const cancellations = deliveries.filter(
-      ({ kind }) =>
-        kind === "booking_cancellation" || kind === "owner_cancellation",
+      ({ kind }) => kind === "booking_cancellation" || kind === "owner_cancellation",
     );
     expect(cancellations).toHaveLength(2);
     for (const delivery of cancellations) {
@@ -138,9 +121,7 @@ describe("inline booking emails with the app clock behind the database", () => {
     }));
     await attemptPendingForBooking(booking.id, { transport: { send } });
     expect(send).toHaveBeenCalledTimes(2);
-    expect(
-      send.mock.calls.map(([message]) => message.idempotencyKey).sort(),
-    ).toEqual([
+    expect(send.mock.calls.map(([message]) => message.idempotencyKey).sort()).toEqual([
       `booking-confirmation/${booking.id}`,
       `owner-booking/${booking.id}`,
     ]);

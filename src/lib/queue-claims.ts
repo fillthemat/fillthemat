@@ -1,5 +1,5 @@
-import { and, eq, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { and, eq, sql } from "drizzle-orm";
 
 type Claim = {
   id: string;
@@ -27,11 +27,7 @@ type LaneRow = { id: string; attempts: number; createdAt: Date };
 /** Select under one transaction's SKIP LOCKED locks; refill either spare lane. */
 export async function takeClaimLanes<Row extends LaneRow>(
   limit: number,
-  take: (
-    fresh: boolean,
-    count: number,
-    excludedIds: string[],
-  ) => Promise<Row[]>,
+  take: (fresh: boolean, count: number, excludedIds: string[]) => Promise<Row[]>,
   retryOnly = false,
 ): Promise<Row[]> {
   const due: Row[] = [];
@@ -56,10 +52,7 @@ export async function takeClaimLanes<Row extends LaneRow>(
 }
 
 /** UPDATE RETURNING is unordered; restore fresh-first and oldest-first ordering. */
-export function orderClaimedRows<Row extends LaneRow>(
-  due: Row[],
-  claimed: Row[],
-): Row[] {
+export function orderClaimedRows<Row extends LaneRow>(due: Row[], claimed: Row[]): Row[] {
   const byId = new Map(claimed.map((row) => [row.id, row]));
   return due
     .sort(

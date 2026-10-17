@@ -14,15 +14,11 @@ describe("verifyWhatsAppSignature", () => {
   });
 
   it("rejects a signature computed over different content", () => {
-    expect(verifyWhatsAppSignature("hello", sign("goodbye"), secret)).toBe(
-      false,
-    );
+    expect(verifyWhatsAppSignature("hello", sign("goodbye"), secret)).toBe(false);
   });
 
   it("rejects a length mismatch without throwing (never 500)", () => {
-    expect(() =>
-      verifyWhatsAppSignature("hello", "sha256=abcd", secret),
-    ).not.toThrow();
+    expect(() => verifyWhatsAppSignature("hello", "sha256=abcd", secret)).not.toThrow();
     expect(verifyWhatsAppSignature("hello", "sha256=abcd", secret)).toBe(false);
   });
 

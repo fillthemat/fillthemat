@@ -12,6 +12,7 @@ IMPLEMENTATION TASK — WhatsApp Cloud API channel, Phase 5 (fillthemat)
 You are one implementation sub-agent. The plan is merged to main as `docs/whatsapp-plan.md`; the
 architecture-spike decision (after() fast path + typing indicator + Hobby-safe daily cron) is
 recorded in `docs/decisions/whatsapp-cron-after.md`. **Phases 1–4 are ALREADY IMPLEMENTED AND MERGED:**
+
 - Phase 1: `whatsapp_deliveries` table, `contacts.email` nullable (+ unique `(school_id, phone)`),
   `schools.whatsapp_phone_number_id` / `whatsapp_waba_id`, `isLocalWhatsAppNoop()`.
 - Phase 2: `/api/webhooks/whatsapp` (GET verify + POST `X-Hub-Signature-256`), wamid dedupe at the
@@ -81,6 +82,7 @@ Concrete work, in order:
 7. **`cancelBooking` stays email/dashboard-only** (decision K) — no WhatsApp cancellation in v1.
 
 == GROUNDING RULES ==
+
 - Read `AGENTS.md` + `docs/local-development.md` first. Next 16.3.3 breaking changes: consult
   `node_modules/next/dist/docs/` before Next APIs. `ai@7.0.84`: consult `node_modules/ai/docs/` before
   agent/tool code.
@@ -99,10 +101,11 @@ Own your 30X0 origin via `bun run setup`, plain `bun run dev`, `bun run dev:stop
 
 == DELIVERABLES ==
 Implement Phase 5 and run the plan's exact local test steps, all with ZERO `WHATSAPP_*` env values:
+
 - replay a full conversation to a confirmed booking → `bookings` row + occupancy +1 + no double-write
   on a duplicate wamid replay;
 - per-wa_id cap → 429-equivalent;
 - lead row with a synthesized `utm_source='whatsapp'` session + contact upsert when no email;
 - WhatsApp-template prospect confirmation enqueued when the contact has no email.
-Commit per logical change. Final `result.md`: per-item summary, files + `file:line` for load-bearing
-spots, test commands/evidence, deviations, open issues. End with `bun run dev:stop`.
+  Commit per logical change. Final `result.md`: per-item summary, files + `file:line` for load-bearing
+  spots, test commands/evidence, deviations, open issues. End with `bun run dev:stop`.

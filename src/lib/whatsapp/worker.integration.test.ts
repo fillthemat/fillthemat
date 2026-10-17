@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { conversations, whatsappDeliveries, whatsappJobs } from "@/db/schema";
@@ -7,15 +7,8 @@ import { findOrCreateConversation } from "@/lib/conversations/conversation-store
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
-import {
-  sendWhatsAppInteractive,
-  sendWhatsAppTemplate,
-  sendWhatsAppText,
-} from "./client";
-import {
-  attemptWhatsAppDeliveriesNow,
-  enqueueWhatsAppDelivery,
-} from "./deliveries";
+import { sendWhatsAppInteractive, sendWhatsAppTemplate, sendWhatsAppText } from "./client";
+import { attemptWhatsAppDeliveriesNow, enqueueWhatsAppDelivery } from "./deliveries";
 import { enqueueInboundJobs } from "./jobs";
 
 loadLocalEnv();
@@ -40,9 +33,7 @@ beforeAll(async () => {
   schoolId = seeded.schoolId;
 });
 afterAll(async () => {
-  await db
-    .delete(whatsappJobs)
-    .where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
+  await db.delete(whatsappJobs).where(eq(whatsappJobs.phoneNumberId, phoneNumberId));
   await deleteSchoolOwner(sql, ownerId);
   await sql.end({ timeout: 5 });
 });
@@ -71,10 +62,7 @@ describe("WhatsApp worker dependencies", () => {
     const result = await runWhatsAppWorkerOnce(runId, {
       now: () => new Date(now),
     });
-    const [failed] = await db
-      .select()
-      .from(whatsappJobs)
-      .where(eq(whatsappJobs.id, job.id));
+    const [failed] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, job.id));
     expect(failed).toMatchObject({
       state: "dead",
       attempts: 1,
@@ -182,9 +170,7 @@ describe("WhatsApp worker dependencies", () => {
       .update(conversations)
       .set({ generatingAt: now })
       .where(eq(conversations.id, conversation.conversation.id));
-    await enqueueInboundJobs([
-      { wamid, waId, phoneNumberId, text: "Hello", profileName: null },
-    ]);
+    await enqueueInboundJobs([{ wamid, waId, phoneNumberId, text: "Hello", profileName: null }]);
     await db
       .update(whatsappJobs)
       .set({ nextAttemptAt: now })
@@ -214,10 +200,7 @@ describe("WhatsApp worker dependencies", () => {
       dead: 0,
       deferred: 1,
     });
-    const [job] = await db
-      .select()
-      .from(whatsappJobs)
-      .where(eq(whatsappJobs.dedupeKey, wamid));
+    const [job] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.dedupeKey, wamid));
     expect({
       elapsed,
       state: job.state,
@@ -240,10 +223,7 @@ describe("WhatsApp worker dependencies", () => {
           recipientWaId: "16505550003",
           body: "Hello",
           templateName: type === "template" ? "booking_confirmation" : null,
-          interactiveButtons:
-            type === "interactive"
-              ? [{ id: "confirm", title: "Confirm" }]
-              : null,
+          interactiveButtons: type === "interactive" ? [{ id: "confirm", title: "Confirm" }] : null,
           windowExpiresAt: new Date("2020-01-02T12:00:00Z"),
           providerIdempotencyKey: `${type}/${suffix}`,
         },
@@ -269,10 +249,7 @@ describe("WhatsApp worker dependencies", () => {
           sendInteractive: (input) => sendWhatsAppInteractive(input, graph),
         },
       });
-      const [row] = await db
-        .select()
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.id, id));
+      const [row] = await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.id, id));
       expect({
         state: row.state,
         attempts: row.attempts,
@@ -288,10 +265,7 @@ describe("WhatsApp worker dependencies", () => {
         sendOutcome: "unknown",
         sentAt: null,
         nextAttemptAt: new Date("2020-01-01T12:00:10Z"),
-        lastError:
-          type === "http"
-            ? "graph_unconfirmed_http_503"
-            : "graph_missing_message_id",
+        lastError: type === "http" ? "graph_unconfirmed_http_503" : "graph_missing_message_id",
       });
       await db.delete(whatsappDeliveries).where(eq(whatsappDeliveries.id, id));
     },
@@ -368,12 +342,7 @@ describe("WhatsApp worker dependencies", () => {
     const rows = await db
       .select()
       .from(whatsappDeliveries)
-      .where(
-        and(
-          eq(whatsappDeliveries.schoolId, schoolId),
-          eq(whatsappDeliveries.state, "sent"),
-        ),
-      );
+      .where(and(eq(whatsappDeliveries.schoolId, schoolId), eq(whatsappDeliveries.state, "sent")));
     expect(rows).toHaveLength(2);
     expect(
       rows.every(

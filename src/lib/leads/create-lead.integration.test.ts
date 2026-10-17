@@ -1,14 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { EmailMessage } from "@/lib/email/dependencies";
 import { getDb } from "@/db";
 import {
   contacts,
@@ -20,7 +13,6 @@ import {
 } from "@/db/schema";
 import { hashWaId } from "@/lib/crypto";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
-import type { EmailMessage } from "@/lib/email/dependencies";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
 import { createLead } from "@/lib/leads/create-lead";
 import {
@@ -74,10 +66,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("createLead (WhatsApp no-email path)", () => {
   it("sends the owner lead alert inline when the app clock is behind the database", async () => {
-    const [schoolRow] = await db
-      .select()
-      .from(schools)
-      .where(eq(schools.id, schoolId));
+    const [schoolRow] = await db.select().from(schools).where(eq(schools.id, schoolId));
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(Date.now() - 86_400_000));
     const lead = await createLead({
@@ -105,11 +94,7 @@ describe("createLead (WhatsApp no-email path)", () => {
   });
 
   it("creates a lead with a synthesized utm_source='whatsapp' session and phone-keyed contact", async () => {
-    const [schoolRow] = await db
-      .select()
-      .from(schools)
-      .where(eq(schools.id, schoolId))
-      .limit(1);
+    const [schoolRow] = await db.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
     const school = requireRow(schoolRow, "school");
 
     const lead = await createLead({
@@ -124,10 +109,7 @@ describe("createLead (WhatsApp no-email path)", () => {
     expect(lead.schoolId).toBe(schoolId);
     expect(lead.participantName).toBe("Sam");
 
-    const [contact] = await db
-      .select()
-      .from(contacts)
-      .where(eq(contacts.id, lead.contactId));
+    const [contact] = await db.select().from(contacts).where(eq(contacts.id, lead.contactId));
     expect(requireRow(contact, "contact").email).toBeNull();
     expect(contact?.phone).toBe(waId);
 
@@ -137,13 +119,8 @@ describe("createLead (WhatsApp no-email path)", () => {
       .where(eq(landingSessions.id, lead.landingSessionId));
     expect(session?.utmSource).toBe("whatsapp");
 
-    const [funnel] = await db
-      .select()
-      .from(funnelEvents)
-      .where(eq(funnelEvents.leadId, lead.id));
-    expect(requireRow(funnel, "funnel event").eventType).toBe(
-      FUNNEL_EVENTS.leadCaptured,
-    );
+    const [funnel] = await db.select().from(funnelEvents).where(eq(funnelEvents.leadId, lead.id));
+    expect(requireRow(funnel, "funnel event").eventType).toBe(FUNNEL_EVENTS.leadCaptured);
     expect(funnel?.metadata).toEqual({
       channel: "whatsapp",
       hasOffering: false,
@@ -158,11 +135,7 @@ describe("createLead (WhatsApp no-email path)", () => {
   });
 
   it("upserts the phone-keyed contact and reuses the synthesized session on repeat leads", async () => {
-    const [schoolRow] = await db
-      .select()
-      .from(schools)
-      .where(eq(schools.id, schoolId))
-      .limit(1);
+    const [schoolRow] = await db.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
     const school = requireRow(schoolRow, "school");
 
     const first = await createLead({
@@ -196,10 +169,7 @@ describe("createLead (WhatsApp no-email path)", () => {
       .where(
         and(
           eq(landingSessions.schoolId, schoolId),
-          eq(
-            landingSessions.sessionKeyHash,
-            hashWaId(`whatsapp-landing:${waId}`),
-          ),
+          eq(landingSessions.sessionKeyHash, hashWaId(`whatsapp-landing:${waId}`)),
         ),
       );
     expect(sessions).toHaveLength(1);

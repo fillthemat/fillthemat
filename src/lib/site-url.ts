@@ -13,8 +13,7 @@ function configuredSiteUrl(): string {
 export function getSiteUrl(headers?: Headers): string {
   if (process.env.VERCEL_ENV === "preview" && headers) {
     const host = headers.get("x-forwarded-host");
-    const proto =
-      headers.get("x-forwarded-proto") === "http" ? "http" : "https";
+    const proto = headers.get("x-forwarded-proto") === "http" ? "http" : "https";
     if (host && /^[a-z0-9.-]+$/i.test(host)) {
       return `${proto}://${host}`;
     }

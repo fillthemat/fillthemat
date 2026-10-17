@@ -61,9 +61,7 @@ test("navigation keeps browser history predictable", async ({ page }) => {
   await expect(page.locator("#section-title")).toHaveText("Pricing");
 });
 
-test("invalid input shows an inline error and keeps what was typed", async ({
-  page,
-}) => {
+test("invalid input shows an inline error and keeps what was typed", async ({ page }) => {
   await page.goto("/dashboard/settings");
   const name = page.getByLabel(/School name/);
   const original = await name.inputValue();
@@ -72,9 +70,7 @@ test("invalid input shows an inline error and keeps what was typed", async ({
   await city.fill("Brooklyn Heights");
   await page.getByRole("button", { name: "Save School Details" }).click();
 
-  await expect(
-    page.getByText("Add the name families should hear."),
-  ).toBeVisible();
+  await expect(page.getByText("Add the name families should hear.")).toBeVisible();
   // Nothing the owner typed is thrown away on a failed save.
   await expect(city).toHaveValue("Brooklyn Heights");
   await expect(name).toHaveAttribute("aria-invalid", "true");
@@ -83,37 +79,27 @@ test("invalid input shows an inline error and keeps what was typed", async ({
   await name.fill(original);
 });
 
-test("a valid save reports success and clears the unsaved state", async ({
-  page,
-}) => {
+test("a valid save reports success and clears the unsaved state", async ({ page }) => {
   await page.goto("/dashboard/settings");
   const parking = page.getByLabel(/^Parking/);
   // The local Supabase stack is shared, so put this field back afterwards.
   const original = await parking.inputValue();
   const value = `Lot behind the building. ${Date.now()}`;
   await parking.fill(value);
-  await expect(
-    page.getByRole("status").filter({ hasText: "Unsaved changes" }),
-  ).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible();
 
   await page.getByRole("button", { name: "Save School Details" }).click();
-  await expect(
-    page.getByText("School details saved. Your agent uses them now."),
-  ).toBeVisible();
+  await expect(page.getByText("School details saved. Your agent uses them now.")).toBeVisible();
 
   await page.reload();
   await expect(page.getByLabel(/^Parking/)).toHaveValue(value);
 
   await page.getByLabel(/^Parking/).fill(original);
   await page.getByRole("button", { name: "Save School Details" }).click();
-  await expect(
-    page.getByText("School details saved. Your agent uses them now."),
-  ).toBeVisible();
+  await expect(page.getByText("School details saved. Your agent uses them now.")).toBeVisible();
 });
 
-test("updating spots confirms the save and leaves no unsaved state", async ({
-  page,
-}) => {
+test("updating spots confirms the save and leaves no unsaved state", async ({ page }) => {
   await page.goto("/dashboard/settings?section=schedule");
   const row = page
     .getByRole("listitem")
@@ -132,9 +118,7 @@ test("updating spots confirms the save and leaves no unsaved state", async ({
   await expect(spots).toHaveValue(next);
   // Baseline moved with the save: nothing to discard, nothing to warn about.
   await expect(row.getByRole("button", { name: "Discard" })).toHaveCount(0);
-  await expect(
-    row.getByRole("button", { name: "Update Spots" }),
-  ).toBeDisabled();
+  await expect(row.getByRole("button", { name: "Update Spots" })).toBeDisabled();
 
   await spots.fill(original);
   await row.getByRole("button", { name: "Update Spots" }).click();
@@ -147,16 +131,12 @@ test("saving shows the value the server stored", async ({ page }) => {
   await page.getByRole("button", { name: "Save School Details" }).click();
 
   await expect(page.getByLabel(/Country code/)).toHaveValue("US");
-  await expect(
-    page.getByRole("status").filter({ hasText: "Unsaved changes" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toHaveCount(0);
 });
 
 test("switching categories with unsaved edits asks first", async ({ page }) => {
   await page.goto("/dashboard/settings?section=pricing");
-  await page
-    .getByLabel(/Prices and conditions/)
-    .fill("Trial class: free for first-time students.");
+  await page.getByLabel(/Prices and conditions/).fill("Trial class: free for first-time students.");
 
   await page
     .getByRole("navigation", { name: "Settings categories" })
@@ -172,18 +152,11 @@ test("switching categories with unsaved edits asks first", async ({ page }) => {
     .getByRole("navigation", { name: "Settings categories" })
     .getByRole("link", { name: /FAQs/ })
     .click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Discard Changes" })
-    .click();
-  await expect(page.locator("#section-title")).toHaveText(
-    "Frequently asked questions",
-  );
+  await page.getByRole("alertdialog").getByRole("button", { name: "Discard Changes" }).click();
+  await expect(page.locator("#section-title")).toHaveText("Frequently asked questions");
 });
 
-test("adding and deleting a question requires confirmation to delete", async ({
-  page,
-}) => {
+test("adding and deleting a question requires confirmation to delete", async ({ page }) => {
   const question = `Is there parking for the trial? ${Date.now()}`;
   await page.goto("/dashboard/settings?section=faqs");
 
@@ -204,14 +177,10 @@ test("adding and deleting a question requires confirmation to delete", async ({
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Delete Question" }).click();
 
-  await expect(
-    page.getByRole("listitem").filter({ hasText: question }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("listitem").filter({ hasText: question })).toHaveCount(0);
 });
 
-test("a class time can be added, then deleted after confirming", async ({
-  page,
-}) => {
+test("a class time can be added, then deleted after confirming", async ({ page }) => {
   await page.goto("/dashboard/settings?section=schedule");
 
   const addButton = page.getByRole("button", { name: "Add a Class Time" });
@@ -223,9 +192,7 @@ test("a class time can be added, then deleted after confirming", async ({
   await page.getByLabel(/^Internal label/).fill("Playwright temp window");
   await page.getByRole("button", { name: "Add Class Time" }).click();
 
-  const row = page
-    .getByRole("listitem")
-    .filter({ hasText: "Playwright temp window" });
+  const row = page.getByRole("listitem").filter({ hasText: "Playwright temp window" });
   await expect(row).toBeVisible();
   await expect(row).toContainText("7:15 PM – 8:00 PM");
 
@@ -237,18 +204,13 @@ test("a class time can be added, then deleted after confirming", async ({
   await expect(row).toBeVisible();
 
   await row.getByRole("button", { name: "Delete" }).click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Delete Class Time" })
-    .click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete Class Time" }).click();
   await expect(
     page.getByRole("listitem").filter({ hasText: "Playwright temp window" }),
   ).toHaveCount(0);
 });
 
-test("a trial class can be edited, saved, reloaded, and edited again", async ({
-  page,
-}) => {
+test("a trial class can be edited, saved, reloaded, and edited again", async ({ page }) => {
   await page.goto("/dashboard/settings?section=offerings");
   const row = page
     .getByRole("region", { name: "Your trial classes" })
@@ -265,9 +227,7 @@ test("a trial class can be edited, saved, reloaded, and edited again", async ({
   await page.getByRole("button", { name: "Save Changes" }).click();
 
   const savedRow = page.getByRole("listitem").filter({ hasText: next });
-  await expect(
-    page.getByRole("status").filter({ hasText: /saved/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /saved/i })).toBeVisible();
   await expect(savedRow.getByRole("button", { name: "Edit" })).toBeFocused();
 
   await page.reload();
@@ -279,14 +239,10 @@ test("a trial class can be edited, saved, reloaded, and edited again", async ({
 
   await page.getByLabel(/Class name/).fill(original);
   await page.getByRole("button", { name: "Save Changes" }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: /saved/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /saved/i })).toBeVisible();
 });
 
-test("cancel on a clean editor closes immediately without asking", async ({
-  page,
-}) => {
+test("cancel on a clean editor closes immediately without asking", async ({ page }) => {
   await page.goto("/dashboard/settings?section=offerings");
   const row = page
     .getByRole("region", { name: "Your trial classes" })
@@ -294,22 +250,16 @@ test("cancel on a clean editor closes immediately without asking", async ({
     .filter({ hasText: "Kids beginner trial" })
     .first();
   await row.getByRole("button", { name: "Edit" }).click();
-  await expect(
-    page.getByRole("button", { name: "Save Changes" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save Changes" })).toBeVisible();
 
   await page.getByRole("button", { name: "Cancel" }).click();
 
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(0);
   await expect(row.getByRole("button", { name: "Edit" })).toBeVisible();
 });
 
-test("switching records while dirty asks before discarding", async ({
-  page,
-}) => {
+test("switching records while dirty asks before discarding", async ({ page }) => {
   await page.goto("/dashboard/settings?section=offerings");
   const row = page
     .getByRole("region", { name: "Your trial classes" })
@@ -326,18 +276,11 @@ test("switching records while dirty asks before discarding", async ({
   await expect(page.getByLabel(/Class name/)).toHaveValue("Unsaved draft name");
 
   await page.getByRole("button", { name: "Add a Trial Class" }).click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Discard Changes" })
-    .click();
-  await expect(
-    page.getByRole("group", { name: /Add a trial class/i }),
-  ).toBeVisible();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Discard Changes" }).click();
+  await expect(page.getByRole("group", { name: /Add a trial class/i })).toBeVisible();
 });
 
-test("cancel on a clean FAQ editor closes immediately without asking", async ({
-  page,
-}) => {
+test("cancel on a clean FAQ editor closes immediately without asking", async ({ page }) => {
   const question = `Idle cancel FAQ ${Date.now()}`;
   await page.goto("/dashboard/settings?section=faqs");
   const addButton = page.getByRole("button", { name: "Add a Question" });
@@ -350,23 +293,16 @@ test("cancel on a clean FAQ editor closes immediately without asking", async ({
   const item = page.getByRole("listitem").filter({ hasText: question });
   await expect(item).toBeVisible();
   await item.getByRole("button", { name: "Edit" }).click();
-  await expect(
-    page.getByRole("button", { name: "Save Changes" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save Changes" })).toBeVisible();
 
   await page.getByRole("button", { name: "Cancel" }).click();
 
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(0);
   await expect(item.getByRole("button", { name: "Edit" })).toBeVisible();
 
   await item.getByRole("button", { name: "Delete" }).click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Delete Question" })
-    .click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete Question" }).click();
 });
 
 test("an FAQ can be edited without deleting it", async ({ page }) => {
@@ -385,16 +321,11 @@ test("an FAQ can be edited without deleting it", async ({ page }) => {
   await item.getByRole("button", { name: "Edit" }).click();
   await page.getByLabel(/^Answer/).fill("Yes — street parking too.");
   await page.getByRole("button", { name: "Save Changes" }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: /saved/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /saved/i })).toBeVisible();
 
   await item.locator("summary").click();
   await expect(item.getByText("Yes — street parking too.")).toBeVisible();
 
   await item.getByRole("button", { name: "Delete" }).click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Delete Question" })
-    .click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete Question" }).click();
 });

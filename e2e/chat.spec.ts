@@ -46,9 +46,7 @@ test("the message-limit refusal is a notice and the next message can start afres
     });
   });
   await page.goto("/s/demo?preview=1");
-  await expect(
-    page.getByText("Earlier conversation", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("Earlier conversation", { exact: true })).toBeVisible();
   const input = page.getByPlaceholder("Ask about classes or times");
   await input.fill("The refused question");
   await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -58,11 +56,7 @@ test("the message-limit refusal is a notice and the next message can start afres
   await input.fill("Hello again");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByText("A fresh reply", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Earlier conversation", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByText("The refused question", { exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByText("Earlier conversation", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("The refused question", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("status")).toHaveCount(0);
 });

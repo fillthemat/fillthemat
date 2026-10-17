@@ -151,10 +151,7 @@ describe("WhatsApp Graph sends", () => {
       };
       const outcome =
         type === "text"
-          ? await sendWhatsAppText(
-              { ...recipient, text: "Hello" },
-              dependencies,
-            )
+          ? await sendWhatsAppText({ ...recipient, text: "Hello" }, dependencies)
           : type === "template"
             ? await sendWhatsAppTemplate(
                 {
@@ -200,27 +197,21 @@ describe("WhatsApp Graph sends", () => {
       message: "graph_unconfirmed_http_503",
     });
   });
-  it.each([429, 503])(
-    "keeps a structured HTTP %s rejection definite",
-    async (status) => {
-      const outcome = await sendWhatsAppText(
-        { phoneNumberId: "phone", to: "recipient", text: "Hello" },
-        {
-          token: "test-token",
-          fetch: async () =>
-            Response.json(
-              { error: { code: 131016, message: "Rejected" } },
-              { status },
-            ),
-        },
-      );
-      expect(outcome).toMatchObject({
-        ok: false,
-        kind: "whatsapp_error",
-        status,
-      });
-    },
-  );
+  it.each([429, 503])("keeps a structured HTTP %s rejection definite", async (status) => {
+    const outcome = await sendWhatsAppText(
+      { phoneNumberId: "phone", to: "recipient", text: "Hello" },
+      {
+        token: "test-token",
+        fetch: async () =>
+          Response.json({ error: { code: 131016, message: "Rejected" } }, { status }),
+      },
+    );
+    expect(outcome).toMatchObject({
+      ok: false,
+      kind: "whatsapp_error",
+      status,
+    });
+  });
   it("bounds the send and classifies a timeout as unknown", async () => {
     const outcome = await sendWhatsAppText(
       { phoneNumberId: "phone", to: "recipient", text: "Hello" },

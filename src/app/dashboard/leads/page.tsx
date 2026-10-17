@@ -28,9 +28,7 @@ export default async function LeadsPage() {
           {rows.map(({ lead, contact }) => {
             const participant = [
               lead.participantName,
-              lead.participantAge != null
-                ? `(age ${lead.participantAge})`
-                : null,
+              lead.participantAge != null ? `(age ${lead.participantAge})` : null,
             ]
               .filter(Boolean)
               .join(" ");
@@ -54,21 +52,14 @@ export default async function LeadsPage() {
                   ) : null}
                   {contact.email && contact.phone ? " · " : null}
                   {contact.phone ? (
-                    <a
-                      href={`tel:${contact.phone}`}
-                      className="underline-offset-4 hover:underline"
-                    >
+                    <a href={`tel:${contact.phone}`} className="underline-offset-4 hover:underline">
                       {contact.phone}
                     </a>
                   ) : null}
                 </p>
-                {participant ? (
-                  <p className="text-sm text-pretty">{participant}</p>
-                ) : null}
+                {participant ? <p className="text-sm text-pretty">{participant}</p> : null}
                 {lead.statedNeed ? (
-                  <p className="text-sm text-pretty break-words">
-                    {lead.statedNeed}
-                  </p>
+                  <p className="text-sm text-pretty break-words">{lead.statedNeed}</p>
                 ) : null}
               </li>
             );

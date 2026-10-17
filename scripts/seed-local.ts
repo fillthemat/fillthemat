@@ -1,7 +1,7 @@
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { and, eq, gte } from "drizzle-orm";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { getDb } from "../src/db";
 import {
   bookings,
@@ -33,18 +33,16 @@ async function ensureAuthUser(apiUrl: string, serviceRoleKey: string) {
   const admin = createClient(apiUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: created, error: createError } =
-    await admin.auth.admin.createUser({
-      email: LOCAL_OWNER_EMAIL,
-      password: LOCAL_OWNER_PASSWORD,
-      email_confirm: true,
-      user_metadata: { name: "Local Owner" },
-    });
+  const { data: created, error: createError } = await admin.auth.admin.createUser({
+    email: LOCAL_OWNER_EMAIL,
+    password: LOCAL_OWNER_PASSWORD,
+    email_confirm: true,
+    user_metadata: { name: "Local Owner" },
+  });
   if (!createError && created.user) return created.user;
 
   const duplicate =
-    createError?.message?.toLowerCase().includes("already") ||
-    createError?.status === 422;
+    createError?.message?.toLowerCase().includes("already") || createError?.status === 422;
   if (!duplicate) {
     fail(`Could not create local owner: ${createError?.message ?? "unknown"}`);
   }
@@ -54,9 +52,7 @@ async function ensureAuthUser(apiUrl: string, serviceRoleKey: string) {
     perPage: 200,
   });
   if (listError) fail(`Could not list auth users: ${listError.message}`);
-  const existing = list.users.find(
-    (user) => user.email?.toLowerCase() === LOCAL_OWNER_EMAIL,
-  );
+  const existing = list.users.find((user) => user.email?.toLowerCase() === LOCAL_OWNER_EMAIL);
   if (!existing) fail("Local owner exists but could not be loaded.");
   return existing;
 }
@@ -186,11 +182,7 @@ export async function seedLocal() {
   }
   if (!window) fail("Could not seed class time.");
 
-  const [school] = await db
-    .select()
-    .from(schools)
-    .where(eq(schools.id, schoolId))
-    .limit(1);
+  const [school] = await db.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
   if (!school) fail("Could not load demo school.");
   await seedUpcomingBooking({
     schoolId,

@@ -1,14 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { whatsappDeliveries } from "@/db/schema";
 import { MAX_EXECUTIONS } from "@/lib/retry-policy";
@@ -16,34 +8,30 @@ import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import type { WhatsAppSendOutcome } from "./client";
+import type { InboundWhatsAppStatus } from "./status";
 import {
   applyWhatsAppStatuses,
   claimDueWhatsAppDeliveries,
   enqueueWhatsAppDelivery,
   sendWhatsAppDelivery,
 } from "./deliveries";
-import type { InboundWhatsAppStatus } from "./status";
 
 loadLocalEnv();
 const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
 const suffix = randomUUID();
-const { drainDueWhatsAppDeliveries } = scopedWhatsAppRunner(() => [
-  `callback-${suffix}`,
-]);
+const { drainDueWhatsAppDeliveries } = scopedWhatsAppRunner(() => [`callback-${suffix}`]);
 // Fixed time for deterministic due gates; the runner scopes claims explicitly.
 const initialNow = new Date("2000-01-01T12:00:00Z");
 let now = initialNow;
 let schoolId: string;
 const ids: string[] = [];
-const send = vi.fn(
-  async (): Promise<WhatsAppSendOutcome> => ({
-    ok: true,
-    kind: "accepted",
-    providerId: `fake:${randomUUID()}`,
-  }),
-);
+const send = vi.fn(async (): Promise<WhatsAppSendOutcome> => ({
+  ok: true,
+  kind: "accepted",
+  providerId: `fake:${randomUUID()}`,
+}));
 const dependencies = {
   now: () => new Date(now),
   sleep: async () => {
@@ -63,10 +51,7 @@ beforeAll(async () => {
   ).schoolId;
 });
 afterEach(async () => {
-  if (ids.length)
-    await db
-      .delete(whatsappDeliveries)
-      .where(inArray(whatsappDeliveries.id, ids));
+  if (ids.length) await db.delete(whatsappDeliveries).where(inArray(whatsappDeliveries.id, ids));
   ids.length = 0;
   now = initialNow;
   send.mockClear();
@@ -93,21 +78,14 @@ async function enqueue() {
   return id;
 }
 async function delivery(id: string) {
-  const [row] = await db
-    .select()
-    .from(whatsappDeliveries)
-    .where(eq(whatsappDeliveries.id, id));
+  const [row] = await db.select().from(whatsappDeliveries).where(eq(whatsappDeliveries.id, id));
   return row;
 }
 async function run() {
   // Callback assertions observe one claim batch; in-run timing is covered by
   // the worker suite rather than advancing beyond the callback's due gate here.
   return {
-    deliveries: await drainDueWhatsAppDeliveries(
-      randomUUID(),
-      25,
-      dependencies,
-    ),
+    deliveries: await drainDueWhatsAppDeliveries(randomUUID(), 25, dependencies),
   };
 }
 function status(
@@ -238,9 +216,7 @@ describe("WhatsApp accepted-send failure callbacks", () => {
         attempts: 1,
       });
       if (callbackStatus === "failed")
-        expect((await delivery(id)).nextAttemptAt).toEqual(
-          new Date("2000-01-01T12:00:10Z"),
-        );
+        expect((await delivery(id)).nextAttemptAt).toEqual(new Date("2000-01-01T12:00:10Z"));
     },
   );
   it("reconciles delivery evidence even after an unknown send exhausts its retry budget", async () => {
@@ -309,10 +285,9 @@ describe("WhatsApp accepted-send failure callbacks", () => {
     });
     now = new Date("2000-01-01T12:01:00Z");
     expect((await run()).deliveries.claimed).toBe(0);
-    await applyWhatsAppStatuses(
-      [status(`fake:lost/${suffix}`, { status: "delivered" })],
-      { now: dependencies.now },
-    );
+    await applyWhatsAppStatuses([status(`fake:lost/${suffix}`, { status: "delivered" })], {
+      now: dependencies.now,
+    });
     expect((await delivery(id)).state).toBe("delivered");
   });
   it.each([
@@ -419,24 +394,21 @@ describe("WhatsApp accepted-send failure callbacks", () => {
       const id = await enqueue();
       await run();
       const accepted = await delivery(id);
-      await applyWhatsAppStatuses(
-        [status(accepted.providerId, { status: positive })],
-        { now: dependencies.now },
-      );
+      await applyWhatsAppStatuses([status(accepted.providerId, { status: positive })], {
+        now: dependencies.now,
+      });
       const confirmed = await delivery(id);
       now = new Date("2000-01-01T12:01:00Z");
-      await applyWhatsAppStatuses(
-        [status(accepted.providerId, { errorCode: "131026" })],
-        { now: dependencies.now },
-      );
+      await applyWhatsAppStatuses([status(accepted.providerId, { errorCode: "131026" })], {
+        now: dependencies.now,
+      });
       expect(await delivery(id)).toEqual(confirmed);
       expect((await run()).deliveries.claimed).toBe(0);
       expect(send).toHaveBeenCalledTimes(1);
       if (positive === "delivered") {
-        await applyWhatsAppStatuses(
-          [status(accepted.providerId, { status: "read" })],
-          { now: dependencies.now },
-        );
+        await applyWhatsAppStatuses([status(accepted.providerId, { status: "read" })], {
+          now: dependencies.now,
+        });
         expect((await delivery(id)).state).toBe("read");
       }
     },
@@ -450,16 +422,14 @@ describe("WhatsApp accepted-send failure callbacks", () => {
       now: dependencies.now,
     });
     now = new Date("2000-01-01T12:00:01Z");
-    await applyWhatsAppStatuses(
-      [status(accepted.providerId, { status: "sent" })],
-      { now: dependencies.now },
-    );
+    await applyWhatsAppStatuses([status(accepted.providerId, { status: "sent" })], {
+      now: dependencies.now,
+    });
     expect((await delivery(id)).state).toBe("failed");
     now = new Date("2000-01-01T12:00:02Z");
-    await applyWhatsAppStatuses(
-      [status(accepted.providerId, { status: "delivered" })],
-      { now: dependencies.now },
-    );
+    await applyWhatsAppStatuses([status(accepted.providerId, { status: "delivered" })], {
+      now: dependencies.now,
+    });
     expect(await delivery(id)).toMatchObject({
       state: "delivered",
       attempts: 1,
@@ -510,10 +480,9 @@ describe("WhatsApp accepted-send failure callbacks", () => {
       ids: [id],
       now,
     });
-    await applyWhatsAppStatuses(
-      [status(first.providerId, { status: "delivered" })],
-      { now: dependencies.now },
-    );
+    await applyWhatsAppStatuses([status(first.providerId, { status: "delivered" })], {
+      now: dependencies.now,
+    });
     expect(await delivery(id)).toMatchObject({
       state: "delivered",
       attempts: 1,
@@ -581,13 +550,7 @@ describe("WhatsApp accepted-send failure callbacks", () => {
   it("uses each accepted execution once and stops after five accept-then-fail cycles", async () => {
     const id = await enqueue();
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    for (const [index, delay] of [
-      10_000,
-      20_000,
-      40_000,
-      80_000,
-      null,
-    ].entries()) {
+    for (const [index, delay] of [10_000, 20_000, 40_000, 80_000, null].entries()) {
       expect((await run()).deliveries.sent).toBe(1);
       const accepted = await delivery(id);
       expect(accepted.attempts).toBe(index + 1);

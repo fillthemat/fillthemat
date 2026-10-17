@@ -51,10 +51,7 @@ const LEVEL_BY_COMPLETION = {
   complete: undefined,
   aborted: "WARNING",
   error: "ERROR",
-} as const satisfies Record<
-  NonNullable<TurnReply["completion"]>,
-  LangfuseSpanAttributes["level"]
->;
+} as const satisfies Record<NonNullable<TurnReply["completion"]>, LangfuseSpanAttributes["level"]>;
 
 // Long enough for a full assistant turn, and well under the platform's
 // default function duration, so a turn that never ends still has its finished
@@ -83,18 +80,16 @@ export function startTurnTrace({
   );
   // Spans started in this context nest under the root and carry the session,
   // user and tags.
-  const turnContext = context.with(
-    trace.setSpan(ROOT_CONTEXT, root.otelSpan),
-    () =>
-      propagateAttributes(
-        {
-          sessionId: conversationId,
-          userId: schoolId,
-          tags: [channel],
-          traceName: TRACE_NAME,
-        },
-        () => context.active(),
-      ),
+  const turnContext = context.with(trace.setSpan(ROOT_CONTEXT, root.otelSpan), () =>
+    propagateAttributes(
+      {
+        sessionId: conversationId,
+        userId: schoolId,
+        tags: [channel],
+        traceName: TRACE_NAME,
+      },
+      () => context.active(),
+    ),
   );
 
   // A turn ends once: with its reply, or as failed when work run in it throws,
@@ -156,9 +151,7 @@ function failureMessage(error: unknown): string {
   while (cause instanceof Error && cause.cause !== undefined) {
     cause = cause.cause;
   }
-  return cause instanceof Error
-    ? `${cause.name}: ${cause.message}`
-    : String(cause);
+  return cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
 }
 
 type FlushableTracerProvider = {
@@ -187,11 +180,7 @@ export async function exportEndedTurns(): Promise<void> {
       "tracing: export failed",
       [failure]
         .flat()
-        .map((error) =>
-          error instanceof Error
-            ? `${error.name}: ${error.message}`
-            : "unknown",
-        ),
+        .map((error) => (error instanceof Error ? `${error.name}: ${error.message}` : "unknown")),
     );
   }
 }

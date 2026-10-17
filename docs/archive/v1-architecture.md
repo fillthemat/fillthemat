@@ -105,8 +105,8 @@ The scaffolded `biome.json` is the only lint/format configuration. Enable Biome'
 In the root layout:
 
 ```tsx
-import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+import { GeistSans } from "geist/font/sans";
 ```
 
 Put `GeistSans.variable` and `GeistMono.variable` on `<html>`. Use the Geist CSS variables in `globals.css`; do not load Geist through `next/font`.
@@ -556,8 +556,7 @@ No SMS or Google Calendar API is used.
 Install and implement against the pinned AI SDK v7 package's bundled docs/source. Use `ToolLoopAgent`, `createAgentUIStreamResponse`, `isStepCount`, `UIMessage.parts`, `DefaultChatTransport`, and the current Gateway provider interface. Do not copy v6 examples.
 
 ```ts
-export const BOOKING_AGENT_MODEL =
-  process.env.BOOKING_AGENT_MODEL || "anthropic/claude-sonnet-4.6";
+export const BOOKING_AGENT_MODEL = process.env.BOOKING_AGENT_MODEL || "anthropic/claude-sonnet-4.6";
 ```
 
 Wrap the model with the Gateway provider so calls carry `tags: ["feature:booking-chat"]` and `user: school.id`. GPT-5.4 is the manually configured fallback, not an automatic hidden switch. Require Gateway/provider Zero Data Retention for pilot traffic.

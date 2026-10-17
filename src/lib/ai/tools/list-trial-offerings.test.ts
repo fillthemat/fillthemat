@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  assistantContext,
-  kidsOffering,
-  toolExecutionOptions,
-} from "@/test/assistant-context";
+import { assistantContext, kidsOffering, toolExecutionOptions } from "@/test/assistant-context";
 import { listTrialOfferings } from "./list-trial-offerings";
 
 describe("list trial offerings", () => {

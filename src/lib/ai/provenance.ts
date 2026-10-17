@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { asSchema, type Tool } from "ai";
+import { createHash } from "node:crypto";
 import { PLATFORM_INSTRUCTIONS } from "./instructions";
 
 /** Hash only platform-authored instructions and model-facing tool definitions. */
@@ -21,9 +21,7 @@ export async function platformInstructionsHash(
           // JSON object key order is not behaviour; array order is preserved.
           if (value && typeof value === "object" && !Array.isArray(value)) {
             return Object.fromEntries(
-              Object.entries(value).sort(([a], [b]) =>
-                a < b ? -1 : a > b ? 1 : 0,
-              ),
+              Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
             );
           }
           return value;

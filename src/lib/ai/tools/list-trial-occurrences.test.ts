@@ -28,9 +28,7 @@ describe("list trial occurrences", () => {
       ]),
     });
     expect(result).not.toMatchObject({
-      slots: expect.arrayContaining([
-        expect.objectContaining({ slotId: fullSlotId }),
-      ]),
+      slots: expect.arrayContaining([expect.objectContaining({ slotId: fullSlotId })]),
     });
   });
 });

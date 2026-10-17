@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { after } from "next/server";
+import { randomUUID } from "node:crypto";
 import { sendWhatsAppTypingIndicator } from "@/lib/whatsapp/client";
 import {
   WHATSAPP_MAX_BODY_BYTES,

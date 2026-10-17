@@ -30,10 +30,7 @@ export function toTimeValue(minutes: number): string {
   return `${String(hour).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
 }
 
-export function formatTimeRange(
-  startMinute: number,
-  durationMinutes: number,
-): string {
+export function formatTimeRange(startMinute: number, durationMinutes: number): string {
   return `${formatMinutes(startMinute)} – ${formatMinutes(startMinute + durationMinutes)}`;
 }
 
@@ -45,14 +42,9 @@ export function formatDuration(minutes: number): string {
   return rest === 0 ? hourLabel : `${hourLabel} ${rest} min`;
 }
 
-export function formatAgeRange(
-  minimumAge: number | null,
-  maximumAge: number | null,
-): string {
+export function formatAgeRange(minimumAge: number | null, maximumAge: number | null): string {
   if (minimumAge != null && maximumAge != null) {
-    return minimumAge === maximumAge
-      ? `Age ${minimumAge}`
-      : `Ages ${minimumAge}–${maximumAge}`;
+    return minimumAge === maximumAge ? `Age ${minimumAge}` : `Ages ${minimumAge}–${maximumAge}`;
   }
   if (minimumAge != null) return `Ages ${minimumAge} and up`;
   if (maximumAge != null) return `Ages ${maximumAge} and under`;

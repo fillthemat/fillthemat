@@ -1,22 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
 import { whatsappJobs } from "@/db/schema";
 import { findOrCreateConversation } from "@/lib/conversations/conversation-store";
-import {
-  authSql,
-  loadLocalEnv,
-  whileSavingMessages,
-} from "@/test/integration-env";
+import { authSql, loadLocalEnv, whileSavingMessages } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import { scopedWhatsAppRunner } from "@/test/whatsapp-worker";
 import {
@@ -33,9 +21,7 @@ const db = getDb();
 const sql = authSql();
 const ownerId = randomUUID();
 const phoneNumberId = `job-retry-${randomUUID()}`;
-const { drainWhatsAppJobs, runWhatsAppWorkerOnce } = scopedWhatsAppRunner(
-  () => [phoneNumberId],
-);
+const { drainWhatsAppJobs, runWhatsAppWorkerOnce } = scopedWhatsAppRunner(() => [phoneNumberId]);
 const now = new Date("1990-01-01T12:00:00Z");
 const ids: string[] = [];
 let schoolId: string;
@@ -51,8 +37,7 @@ beforeAll(async () => {
 });
 afterEach(async () => {
   vi.restoreAllMocks();
-  if (ids.length)
-    await db.delete(whatsappJobs).where(inArray(whatsappJobs.id, ids));
+  if (ids.length) await db.delete(whatsappJobs).where(inArray(whatsappJobs.id, ids));
   ids.length = 0;
 });
 afterAll(async () => {
@@ -60,9 +45,7 @@ afterAll(async () => {
   await sql.end({ timeout: 5 });
 });
 
-async function insertJob(
-  values: Partial<typeof whatsappJobs.$inferInsert> = {},
-) {
+async function insertJob(values: Partial<typeof whatsappJobs.$inferInsert> = {}) {
   const wamid = randomUUID();
   const [job] = await db
     .insert(whatsappJobs)
@@ -85,10 +68,7 @@ async function insertJob(
   return job;
 }
 async function readJob(id: string) {
-  const [job] = await db
-    .select()
-    .from(whatsappJobs)
-    .where(eq(whatsappJobs.id, id));
+  const [job] = await db.select().from(whatsappJobs).where(eq(whatsappJobs.id, id));
   return job;
 }
 
@@ -147,8 +127,7 @@ describe("bounded WhatsApp job executions", () => {
       {
         conversationId: conversation.conversation.id,
         role: "user",
-        statement:
-          "raise exception 'temporary storage outage with private details'",
+        statement: "raise exception 'temporary storage outage with private details'",
       },
       async () => {
         const retryTimes = ["12:00:10", "12:00:30", "12:01:10", "12:02:30"];
@@ -185,9 +164,7 @@ describe("bounded WhatsApp job executions", () => {
             deferred: 0,
           });
           if (execution < 5) {
-            expect(row.nextAttemptAt).toEqual(
-              new Date(`1990-01-01T${retryTimes[execution - 1]}Z`),
-            );
+            expect(row.nextAttemptAt).toEqual(new Date(`1990-01-01T${retryTimes[execution - 1]}Z`));
             const beforeDue = await drainWhatsAppJobs(randomUUID(), 10, {
               now: () => clock,
             });
@@ -220,9 +197,7 @@ describe("bounded WhatsApp job executions", () => {
     });
     const later = new Date("1990-01-01T12:06:00Z");
     // Recover and immediately claim the same job with the same run identifier.
-    await recoverStuckWhatsAppJobs(undefined, later, "recovery-run", [
-      phoneNumberId,
-    ]);
+    await recoverStuckWhatsAppJobs(undefined, later, "recovery-run", [phoneNumberId]);
     const [newClaim] = await claimDueWhatsAppJobs("reused-run", {
       phoneNumberIds: [phoneNumberId],
       now: later,

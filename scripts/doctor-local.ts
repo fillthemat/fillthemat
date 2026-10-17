@@ -1,12 +1,5 @@
-import {
-  GATEWAY_TOKEN_ENV_VARS,
-  hasGatewayToken,
-} from "../src/lib/ai/gateway-token";
-import {
-  missingRequiredKeys,
-  parseSupabaseStatusEnv,
-  readEnvFile,
-} from "./local-env";
+import { GATEWAY_TOKEN_ENV_VARS, hasGatewayToken } from "../src/lib/ai/gateway-token";
+import { missingRequiredKeys, parseSupabaseStatusEnv, readEnvFile } from "./local-env";
 import { portFromSiteUrl } from "./local-ports";
 import { fail, tryCapture } from "./local-process";
 
@@ -26,11 +19,8 @@ function main() {
 
   const bunVersion = process.versions.bun;
   healthy =
-    check(
-      Boolean(bunVersion),
-      `bun ${bunVersion}`,
-      "Not running under Bun. Use bun run doctor.",
-    ) && healthy;
+    check(Boolean(bunVersion), `bun ${bunVersion}`, "Not running under Bun. Use bun run doctor.") &&
+    healthy;
   if (bunVersion && !bunVersion.startsWith("1.4.")) {
     console.warn(`warn Expected bun 1.4.x, found ${bunVersion}`);
   }
@@ -57,9 +47,7 @@ function main() {
       console.log(`ok  API ${parsed.apiUrl}`);
     } catch (error) {
       healthy = false;
-      console.error(
-        `err ${error instanceof Error ? error.message : "status parse failed"}`,
-      );
+      console.error(`err ${error instanceof Error ? error.message : "status parse failed"}`);
     }
   }
 
@@ -82,38 +70,24 @@ function main() {
     console.log(`ok  app ${env.NEXT_PUBLIC_SITE_URL}`);
   }
 
-  if (hasGatewayToken(env))
-    console.log("ok  AI Gateway token present (real assistant model)");
+  if (hasGatewayToken(env)) console.log("ok  AI Gateway token present (real assistant model)");
   else
     console.log(
       `…   ${GATEWAY_TOKEN_ENV_VARS.join(" / ")} missing (assistant uses its scripted local model)`,
     );
 
   if (env.RESEND_API_KEY) console.log("ok  RESEND_API_KEY present");
-  else
-    console.log(
-      "…   RESEND_API_KEY missing (email deliveries log + mark sent)",
-    );
+  else console.log("…   RESEND_API_KEY missing (email deliveries log + mark sent)");
 
   if (env.WHATSAPP_SYSTEM_USER_TOKEN)
     console.log("ok  WHATSAPP_SYSTEM_USER_TOKEN present (real WhatsApp send)");
-  else
-    console.log(
-      "…   WHATSAPP_SYSTEM_USER_TOKEN missing (WhatsApp uses local stub)",
-    );
+  else console.log("…   WHATSAPP_SYSTEM_USER_TOKEN missing (WhatsApp uses local stub)");
 
   if (env.WHATSAPP_APP_SECRET) console.log("ok  WHATSAPP_APP_SECRET present");
-  else
-    console.log(
-      "…   WHATSAPP_APP_SECRET missing (webhook verify uses dev-stub secret locally)",
-    );
+  else console.log("…   WHATSAPP_APP_SECRET missing (webhook verify uses dev-stub secret locally)");
 
-  if (env.WHATSAPP_VERIFY_TOKEN)
-    console.log("ok  WHATSAPP_VERIFY_TOKEN present");
-  else
-    console.log(
-      "…   WHATSAPP_VERIFY_TOKEN missing (GET verify uses dev-stub token locally)",
-    );
+  if (env.WHATSAPP_VERIFY_TOKEN) console.log("ok  WHATSAPP_VERIFY_TOKEN present");
+  else console.log("…   WHATSAPP_VERIFY_TOKEN missing (GET verify uses dev-stub token locally)");
 
   if (!healthy) fail("doctor found problems.");
   console.log("doctor passed.");

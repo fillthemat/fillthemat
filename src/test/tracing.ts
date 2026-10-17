@@ -1,8 +1,5 @@
 import { ExportResultCode } from "@opentelemetry/core";
-import {
-  InMemorySpanExporter,
-  type ReadableSpan,
-} from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter, type ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { afterEach, beforeEach, vi } from "vitest";
 import { registerTracing } from "@/lib/tracing/register";
 
@@ -85,13 +82,9 @@ export function leaks(spans: ReadableSpan[], values: string[]): string[] {
  */
 export async function exportedTraces() {
   const spans = await exportedSpans();
-  const traceIds = [
-    ...new Set(spans.map((span) => span.spanContext().traceId)),
-  ];
+  const traceIds = [...new Set(spans.map((span) => span.spanContext().traceId))];
   return traceIds.map((traceId) => {
-    const root = spans.find(
-      (span) => span.spanContext().traceId === traceId && isRoot(span),
-    );
+    const root = spans.find((span) => span.spanContext().traceId === traceId && isRoot(span));
     const attributes = root?.attributes ?? {};
     return {
       sessionId: attributes["session.id"],
@@ -105,10 +98,7 @@ export async function exportedTraces() {
       metadata: Object.fromEntries(
         Object.entries(attributes)
           .filter(([key]) => key.startsWith(OBSERVATION_METADATA))
-          .map(([key, value]) => [
-            key.slice(OBSERVATION_METADATA.length),
-            value,
-          ]),
+          .map(([key, value]) => [key.slice(OBSERVATION_METADATA.length), value]),
       ),
     };
   });
@@ -141,12 +131,10 @@ export function holdSpanExports() {
   const started = Promise.withResolvers<void>();
   const released = Promise.withResolvers<void>();
   const exportSpans = tracing.exporter.export.bind(tracing.exporter);
-  const spy = vi
-    .spyOn(tracing.exporter, "export")
-    .mockImplementation((spans, done) => {
-      started.resolve();
-      void released.promise.then(() => exportSpans(spans, done));
-    });
+  const spy = vi.spyOn(tracing.exporter, "export").mockImplementation((spans, done) => {
+    started.resolve();
+    void released.promise.then(() => exportSpans(spans, done));
+  });
   undoAfterTest.push(() => {
     released.resolve();
     spy.mockRestore();

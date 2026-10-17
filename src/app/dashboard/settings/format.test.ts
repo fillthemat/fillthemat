@@ -78,8 +78,6 @@ describe("resolveSection", () => {
 describe("sectionHref", () => {
   it("deep-links each category", () => {
     expect(sectionHref("profile")).toBe("/dashboard/settings");
-    expect(sectionHref("branding")).toBe(
-      "/dashboard/settings?section=branding",
-    );
+    expect(sectionHref("branding")).toBe("/dashboard/settings?section=branding");
   });
 });
