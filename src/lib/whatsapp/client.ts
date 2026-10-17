@@ -1,3 +1,4 @@
+import type { Fetcher } from "@/lib/fetcher";
 import { isLocalWhatsAppNoop } from "@/lib/dev-flags";
 import { whatsappApiVersion, whatsappGraphBase, whatsappSystemUserToken } from "./config";
 import { whatsappTemplateComponents } from "./templates";
@@ -34,7 +35,7 @@ export type WhatsAppReceiptOutcome =
   | WhatsAppSendFailure;
 
 export type WhatsAppGraphDependencies = {
-  fetch?: typeof fetch;
+  fetch?: Fetcher;
   token?: string | null;
   localNoop?: boolean;
 };

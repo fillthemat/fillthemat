@@ -1,3 +1,5 @@
+import type { Fetcher } from "@/lib/fetcher";
+
 const fallback =
   "We could not confirm your booking. Please contact the school before trying again.";
 const messages: Record<string, string> = {
@@ -40,7 +42,7 @@ function messageFromBody(body: unknown): string {
 }
 
 export async function submitBooking(options: {
-  fetcher?: typeof fetch;
+  fetcher?: Fetcher;
   key: { current: string | null };
   buildBody: (idempotencyKey: string) => unknown;
   setPending: (pending: boolean) => void;
