@@ -1,13 +1,9 @@
 # Local development
 
-This is the current, scripted way to run the Fillthemat stack on your machine. The historical diagnosis and implementation phases that used to live here were moved to `docs/archive/local-dev-onboarding-plan.md`.
-
 ## Prerequisites
 
-- **Bun 1.4.x** (matches `packageManager` in `package.json`).
-- A **Docker Engine** reachable via `docker info` — OrbStack, Docker Desktop, or Colima. The Supabase CLI talks to the Docker API; the specific Docker product does not matter.
-
-No Google Cloud project, Studio SQL, or hand-copied keys are required to boot and sign in.
+- **Bun 1.4.3 (matches `packageManager` in `package.json`).
+- A **Docker Engine** reachable via `docker info` — OrbStack, Docker Desktop, or Colima.
 
 ## Quickstart
 

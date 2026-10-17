@@ -8,23 +8,6 @@ import { fail, tryCapture } from "./local-process";
 const ENV_LOCAL = ".env.local";
 const SUPABASE_ENV = "supabase/.env";
 
-function assertBun() {
-  const version = process.versions.bun;
-  if (!version) fail("Run bun run setup (this script must execute under Bun).");
-  if (!version.startsWith("1.4.")) {
-    console.warn(`Warning: packageManager is bun@1.4.x; this shell is ${version}.`);
-  }
-}
-
-function assertDocker() {
-  const result = tryCapture("docker", ["info"]);
-  if (!result.ok) {
-    fail(
-      "Docker Engine is not reachable (`docker info` failed). Start OrbStack, Docker Desktop, or Colima, then retry.",
-    );
-  }
-}
-
 function ensureGooglePlaceholder() {
   if (existsSync(SUPABASE_ENV)) return;
   writeFileSync(
@@ -42,8 +25,6 @@ function ensureGooglePlaceholder() {
 }
 
 async function main() {
-  assertBun();
-  assertDocker();
   ensureGooglePlaceholder();
 
   console.log("Starting local Supabase (no-op if already running)…");
