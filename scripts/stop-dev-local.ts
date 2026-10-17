@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readEnvFile } from "./local-env";
 import { portFromSiteUrl } from "./local-ports";
 import { fail } from "./local-process";
 
@@ -20,7 +19,7 @@ function listenPids(port: number): number[] {
   return [...pids];
 }
 
-const siteUrl = readEnvFile(".env.local").NEXT_PUBLIC_SITE_URL;
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 if (!siteUrl?.trim()) {
   console.log("Nothing to stop: no local app port configured.");
   process.exit(0);

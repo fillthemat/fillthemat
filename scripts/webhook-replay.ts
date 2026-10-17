@@ -2,14 +2,6 @@ import { createHmac } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { whatsappAppSecret } from "../src/lib/whatsapp/config";
-import { readEnvFile } from "./local-env";
-
-function loadEnvLocal() {
-  const file = readEnvFile(".env.local");
-  for (const [key, value] of Object.entries(file)) {
-    if (!process.env[key]) process.env[key] = value;
-  }
-}
 
 function fail(message: string): never {
   console.error(`error: ${message}`);
@@ -28,7 +20,6 @@ async function main() {
     fixture = args[fixtureIndex + 1];
   }
 
-  loadEnvLocal();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
   if (!siteUrl) fail("NEXT_PUBLIC_SITE_URL is not set. Run bun run setup first.");
 
