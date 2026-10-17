@@ -27,20 +27,13 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2.2.0
 
-      - uses: ./.github/actions/setup-bun-ci
-
-      - name: Start local Supabase, migrate, and seed
-        run: bun run setup
-
-      - name: Build app
-        run: bun run build
-
-      - name: Install Playwright Chromium
-        run: bunx playwright install --with-deps chromium
-
-      - name: Run Playwright
-        id: playwright
+      - run: bun install
+      - run: bun run setup
+      - run: bun run build
+      - run: bunx playwright install --with-deps chromium
+      - id: playwright
         run: bun run test:e2e
 
       - name: Upload HTML report
