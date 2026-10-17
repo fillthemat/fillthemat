@@ -38,8 +38,6 @@ jobs:
 
       - run: bun install
       - name: Diagnose Supabase CLI
-        run: |
-          echo "Supabase executable: $(command -v supabase)"
-          supabase --version
+        run: bunx supabase --version
       - run: bun run setup
       - run: bun run test:integration
