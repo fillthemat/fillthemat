@@ -1,23 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { hasGatewayToken } from "../src/lib/ai/gateway-token";
 import { getSupabaseEnv, upsertEnv } from "./local-env";
+import { claimAppPort } from "./local-ports";
 import { fail } from "./local-process";
 
 const LOCAL_ENV_FILE = ".env.local";
 const LOCAL_SUPABASE_ENV_FILE = "supabase/.env";
-
-async function ensureGooglePlaceholder() {
-  upsertEnv(LOCAL_SUPABASE_ENV_FILE, {
-    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID: "local-placeholder",
-    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET: "local-placeholder",
-  });
-  console.log(`Wrote ${LOCAL_SUPABASE_ENV_FILE} with Google placeholders.`);
-}
-
-async function ensureExperimentalStackEnabled() {
-  upsertEnv(LOCAL_ENV_FILE, { SUPABASE_EXPERIMENTAL_STACK: "1" });
-  console.log(`Wrote ${LOCAL_ENV_FILE} with SUPABASE_EXPERIMENTAL_STACK=1.`);
-}
 
 async function main() {
   ensureExperimentalStackEnabled();
@@ -64,20 +52,37 @@ main().catch((error) => {
   fail(error instanceof Error ? error.message : String(error));
 });
 
+async function ensureGooglePlaceholder() {
+  upsertEnv(LOCAL_SUPABASE_ENV_FILE, {
+    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID: "local-placeholder",
+    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET: "local-placeholder",
+  });
+  console.log(`Wrote ${LOCAL_SUPABASE_ENV_FILE} with Google placeholders.`);
+}
+
+async function ensureExperimentalStackEnabled() {
+  upsertEnv(LOCAL_ENV_FILE, { SUPABASE_EXPERIMENTAL_STACK: "1" });
+  console.log(`Wrote ${LOCAL_ENV_FILE} with SUPABASE_EXPERIMENTAL_STACK=1.`);
+}
+
 async function setupLocalEnvVars(): Promise<Record<string, string>> {
-  const LOCAL_SITE_URL = "http://127.0.0.1:3000";
   const generateSecret = () => `${crypto.randomUUID()}${crypto.randomUUID()}`;
   const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
   const TURNSTILE_TEST_SECRET_KEY = "1x0000000000000000000000000000000AA";
 
   const updates: Record<string, string> = {
-    NEXT_PUBLIC_SITE_URL: LOCAL_SITE_URL,
-    CRON_SECRET: generateSecret(),
+    CRON_SECRET: process.env.CRON_SECRET || generateSecret(),
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: TURNSTILE_TEST_SITE_KEY,
     TURNSTILE_SECRET_KEY: TURNSTILE_TEST_SECRET_KEY,
     ALLOW_SELF_APPROVAL: "true",
     NEXT_PUBLIC_DEV_AUTH: "true",
   };
+  if (!process.env.NEXT_PUBLIC_SITE_URL) {
+    const LOCAL_BASE_URL = "http://127.0.0.1";
+    const port = await claimAppPort();
+    const siteUrl = `${LOCAL_BASE_URL}:${port}`;
+    updates["NEXT_PUBLIC_SITE_URL"] = siteUrl;
+  }
 
   // Set Supabase vars
   const SUPABASE_MAPPINGS = [
