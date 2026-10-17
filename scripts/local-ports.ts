@@ -57,7 +57,7 @@ export async function claimAppPort(): Promise<number> {
       return port;
     }
 
-    const portOwner = await Bun.file(portFile).text();
+    const portOwner = (await Bun.file(portFile).text()).trim();
 
     // Port already belongs to gitCurrentWorktree.
     if (portOwner === gitCurrentWorktree) return port;

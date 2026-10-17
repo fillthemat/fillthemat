@@ -29,7 +29,7 @@ if (command === "create") {
     stdout: "inherit",
     stderr: "inherit",
   });
-  Bun.spawnSync(["git", "worktree", "remove", WORKTREE_PATH], {
+  Bun.spawnSync(["git", "worktree", "remove", WORKTREE_PATH, "--force"], {
     stdout: "inherit",
     stderr: "inherit",
   });
