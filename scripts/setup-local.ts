@@ -1,11 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { hasGatewayToken } from "../src/lib/ai/gateway-token";
-import { mergeLocalEnv, parseSupabaseStatusEnv, readEnvFile, writeEnvFile } from "./local-env";
-import { claimAppPortForCwd, localSiteUrl } from "./local-ports";
-import { fail, tryCapture } from "./local-process";
+import { envUpsertVars } from "./env-upsert-vars";
+import { fail } from "./local-process";
 
-const ENV_LOCAL = ".env.local";
 const SUPABASE_ENV = "supabase/.env";
 
 function ensureGooglePlaceholder() {
@@ -27,30 +25,22 @@ function ensureGooglePlaceholder() {
 async function main() {
   ensureGooglePlaceholder();
 
-  console.log("Starting local Supabase (no-op if already running)…");
-  execFileSync("bunx", ["supabase", "start"], { stdio: "inherit" });
-
-  const statusText = execFileSync("bunx", ["supabase", "status", "-o", "env"], {
-    encoding: "utf8",
+  Bun.spawnSync(["bun", "install"], {
+    stdout: "inherit",
+    stderr: "inherit",
   });
-  const status = parseSupabaseStatusEnv(statusText);
-  const existing = readEnvFile(ENV_LOCAL);
-  const appPort = await claimAppPortForCwd(existing.NEXT_PUBLIC_SITE_URL).catch((error) =>
-    fail(error instanceof Error ? error.message : String(error)),
-  );
-  const siteUrl = localSiteUrl(appPort);
-  const generatedSecret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
-  const merged = mergeLocalEnv(existing, status, generatedSecret, siteUrl);
-  writeEnvFile(ENV_LOCAL, merged);
-  console.log(`Wrote ${ENV_LOCAL} (existing vendor keys preserved; app ${siteUrl}).`);
+  Bun.spawnSync(["supabase", "start"], {
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const updatedVars = await envUpsertVars();
 
   console.log("Applying Drizzle migrations…");
   execFileSync("bunx", ["drizzle-kit", "migrate"], {
     stdio: "inherit",
     env: {
       ...process.env,
-      DIRECT_URL: merged.DIRECT_URL,
-      DATABASE_URL: merged.DATABASE_URL,
+      ...updatedVars,
     },
   });
 
@@ -59,19 +49,14 @@ async function main() {
 
   console.log("");
   console.log("Local stack is ready.");
-  if (status.studioUrl) console.log(`  Studio    ${status.studioUrl}`);
-  if (status.inbucketUrl) console.log(`  Inbucket  ${status.inbucketUrl}`);
-  console.log(`  App       bun run dev  → ${siteUrl}`);
+  console.log(`  App       bun run dev  → ${updatedVars["NEXT_PUBLIC_SITE_URL"]}`);
   console.log("");
   console.log("  Sign in   owner@local.test / local-dev-password");
   console.log("");
-  if (!hasGatewayToken(merged)) {
+  if (!hasGatewayToken(updatedVars)) {
     console.log(
       "Optional: bunx vercel env pull  (real assistant model; scripted local model otherwise).",
     );
-  }
-  if (!existing.RESEND_API_KEY && !merged.RESEND_API_KEY) {
-    console.log("Optional: RESEND_API_KEY + RESEND_FROM  (real mail; local noop otherwise).");
   }
   // seedLocal() leaves the postgres-js pool open; without this, bun never exits.
   process.exit(0);

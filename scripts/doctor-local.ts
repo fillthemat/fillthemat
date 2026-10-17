@@ -1,5 +1,5 @@
 import { GATEWAY_TOKEN_ENV_VARS, hasGatewayToken } from "../src/lib/ai/gateway-token";
-import { missingRequiredKeys, parseSupabaseStatusEnv, readEnvFile } from "./local-env";
+import { missingRequiredKeys, readEnvFile } from "./local-env";
 import { portFromSiteUrl } from "./local-ports";
 import { fail, tryCapture } from "./local-process";
 
@@ -14,7 +14,7 @@ function check(ok: boolean, pass: string, failMessage: string) {
   return false;
 }
 
-function main() {
+async function main() {
   let healthy = true;
 
   const bunVersion = process.versions.bun;
@@ -33,22 +33,16 @@ function main() {
       "Docker Engine not reachable. Start OrbStack, Docker Desktop, or Colima.",
     ) && healthy;
 
-  const status = tryCapture("bunx", ["supabase", "status", "-o", "env"]);
-  healthy =
-    check(
-      status.ok,
-      "supabase status",
-      "Local Supabase is not running. bun run setup (or bun run supabase:start).",
-    ) && healthy;
-
-  if (status.ok) {
-    try {
-      const parsed = parseSupabaseStatusEnv(status.stdout);
-      console.log(`ok  API ${parsed.apiUrl}`);
-    } catch (error) {
-      healthy = false;
-      console.error(`err ${error instanceof Error ? error.message : "status parse failed"}`);
-    }
+  const proc = Bun.spawn(["supabase", "status", "--env", "--output-format", "json"], {
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+  const supabaseEnv = (await new Response(proc.stdout).json()) as Record<string, string>;
+  if (!supabaseEnv["DB_URL"]) {
+    healthy = false;
+    console.error("err supabase not running");
+  } else {
+    console.log("ok  supabase is running");
   }
 
   const env = readEnvFile(ENV_LOCAL);

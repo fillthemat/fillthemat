@@ -17,18 +17,6 @@ bun run dev        # http://127.0.0.1:3000 (see worktree contract below)
 
 Stop this checkout's frontend with `bun run dev:stop`. Never `pkill` Next/dev-local by name, and never `supabase stop` from this worktree — see the port contract below.
 
-## What `bun run setup` does
-
-1. Asserts Bun and a reachable Docker Engine.
-2. Writes `supabase/.env` Google placeholders if absent, so `supabase start` boots without a Cloud client.
-3. Starts local Supabase (no-op if already running).
-4. Reads `supabase status -o env` and merges it into `.env.local`, **preserving** any keys you already set (`RESEND_*`, `VERCEL_OIDC_TOKEN`, `BOOKING_AGENT_MODEL`, `WHATSAPP_*`, …).
-5. Claims this checkout's Next port and writes `NEXT_PUBLIC_SITE_URL` (see below).
-6. Fills Turnstile always-pass test keys, `CRON_SECRET`, and `ALLOW_SELF_APPROVAL`.
-7. Runs `bunx drizzle-kit migrate` and seeds the demo tenant.
-
-It is idempotent and safe to re-run.
-
 ## Seed credentials
 
 In `.env.local`-written local auth, email sign-in is the default path (Google is optional). Sign in at `/sign-in` with:
@@ -69,10 +57,4 @@ Each worktree shares the machine's single Supabase/Docker stack but owns the Nex
 - Stop **this** tree's Next with `bun run dev:stop`. Do not stop or recreate Supabase from a child worktree — other agents may be using it.
 - When done: in the tree run `bun run dev:stop`, then from the repo root `git worktree remove .worktrees/<name>`. Do not hand-delete `.git/fillthemat-ports/*`; setup reclaims a port once its worktree path is gone.
 
-## Non-goals (local)
-
-- No parallel docker-compose Postgres and no switching local Next to hosted Supabase.
-- Email/password auth stays disabled on the hosted project — the product contract is Google sign-in for owners.
-- No devcontainers, Nix, or `mise` (revisit only if Bun + a Docker Engine still fails for someone).
-
-Related: `docs/v1-deploy-current.md` (hosted deploy), `docs/known-gaps.md` (remaining work), `docs/archive/local-dev-onboarding-plan.md` (history).
+Related: `docs/v1-deploy-current.md` (hosted deploy), `docs/known-gaps.md` (remaining work).
