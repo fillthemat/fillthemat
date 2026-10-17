@@ -23,7 +23,7 @@ export async function envUpsertVars(): Promise<Record<string, string>> {
     stderr: "inherit",
   });
   const supabaseEnv = (await new Response(proc.stdout).json()) as Record<string, string>;
-  console.log(`supabaseEnv: ${supabaseEnv}`);
+  console.log(`supabaseEnv: ${JSON.stringify(supabaseEnv)}`);
 
   for (const [sourceKey, targetKey] of SUPABASE_MAPPINGS) {
     const value = supabaseEnv[sourceKey];
