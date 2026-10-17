@@ -37,9 +37,9 @@ _Example_: `src/components/ui/input.tsx`
 
 After making code changes, ensure it's up to standards by running:
 
+- bun typecheck
 - bun lint:fix
 - bun format
-- bun check
 
 ## Everyday style
 

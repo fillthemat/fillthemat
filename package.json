@@ -34,13 +34,14 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "bun run --bun next typegen && bun check",
     "vercel": "bunx vercel@63.1.2",
     "vercel:deploy": "bunx vercel",
     "vercel:deploy:prod": "bunx vercel --prod",
     "vercel:env:pull": "bunx vercel env pull",
     "vercel:ignore-build": "bun --no-env-file scripts/ignore-build.ts",
     "verify": "bun run verify:checks && bun run test",
-    "verify:checks": "bun run db:check:migrations && bun lint && bun format:check && bun check",
+    "verify:checks": "bun run db:check:migrations && bun lint && bun format:check && bun typecheck",
     "whatsapp:worker": "bun scripts/whatsapp-worker.ts --once"
   },
   "dependencies": {
