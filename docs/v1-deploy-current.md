@@ -112,7 +112,7 @@ Test keys (always pass) are acceptable while the URL is private. For any shared 
 From the repo (linked project), run local checks, then request a production deployment:
 
 ```bash
-bun run check
+bun run verify:checks
 bun run test
 bun run build
 bun run vercel:deploy:prod
