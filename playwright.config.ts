@@ -1,14 +1,11 @@
 import { defineConfig } from "@playwright/test";
-import { readEnvFile } from "./scripts/local-env";
 
 /**
  * Each worktree owns the origin `bun run setup` wrote into `.env.local`, so the
  * suite follows that instead of assuming :3000.
  */
 const baseURL =
-  process.env.PLAYWRIGHT_BASE_URL ??
-  readEnvFile(".env.local").NEXT_PUBLIC_SITE_URL ??
-  "http://127.0.0.1:3000";
+  process.env.PLAYWRIGHT_BASE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://127.0.0.1:3000";
 
 const isCI = Boolean(process.env.CI);
 const port = new URL(baseURL).port || "80";

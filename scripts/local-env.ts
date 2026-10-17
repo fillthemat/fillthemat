@@ -1,36 +1,46 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { parseEnv } from "node:util";
+export function missingRequiredKeys(): string[] {
+  const REQUIRED_LOCAL_KEYS = [
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+    "NEXT_PUBLIC_SITE_URL",
+    "CRON_SECRET",
+    "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
+    "TURNSTILE_SECRET_KEY",
+  ];
+  return REQUIRED_LOCAL_KEYS.filter((key) => !process.env[key]);
+}
 
-export const REQUIRED_LOCAL_KEYS = [
-  "DATABASE_URL",
-  "DIRECT_URL",
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-  "NEXT_PUBLIC_SITE_URL",
-  "CRON_SECRET",
-  "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
-  "TURNSTILE_SECRET_KEY",
-] as const;
+export async function getSupabaseEnv(): Promise<Record<string, string>> {
+  const proc = Bun.spawn(["supabase", "status", "--env", "--output-format", "json"], {
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+  const supabaseEnv = (await new Response(proc.stdout).json()) as Record<string, string>;
+  return supabaseEnv;
+}
 
-export function readEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) return {};
-  const parsed = parseEnv(readFileSync(path, "utf8"));
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(parsed)) {
-    if (value !== undefined) out[key] = value;
+export async function upsertEnv(
+  env_file_name: string,
+  updates: Record<string, string>,
+): Promise<Record<string, string>> {
+  const envFile = Bun.file(env_file_name);
+  let lines = (await envFile.exists()) ? (await envFile.text()).split("\n") : [];
+  const updated: Record<string, string> = {};
+
+  const upsertLines = (key: string, value: string) => {
+    updated[key] = value;
+    const line = `${key}=${value}`;
+    const index = lines.findIndex((l) => l.startsWith(`${key}=`));
+    if (index >= 0) lines[index] = line;
+    else lines.splice(lines.at(-1) === "" ? -1 : lines.length, 0, line);
+  };
+
+  for (const [key, value] of Object.entries(updates)) {
+    upsertLines(key, value);
   }
-  return out;
-}
 
-export function writeEnvFile(path: string, vars: Record<string, string>) {
-  mkdirSync(dirname(path) || ".", { recursive: true });
-  const body = Object.entries(vars)
-    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-    .join("\n");
-  writeFileSync(path, `# Generated/merged by bun run setup. Do not commit.\n\n${body}\n`);
-}
-
-export function missingRequiredKeys(env: Record<string, string>): string[] {
-  return REQUIRED_LOCAL_KEYS.filter((key) => !env[key]);
+  await Bun.write(env_file_name, lines.join("\n").replace(/\n?$/, "\n"));
+  return updated;
 }

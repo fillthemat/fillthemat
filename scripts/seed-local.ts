@@ -15,19 +15,12 @@ import {
 } from "../src/db/schema";
 import { bookingIcsUid } from "../src/lib/email/ics";
 import { LOCAL_WHATSAPP_PHONE_NUMBER_ID } from "../src/lib/whatsapp/config";
-import { readEnvFile } from "./local-env";
+import { getSupabaseEnv } from "./local-env";
 import { fail } from "./local-process";
 
 export const LOCAL_OWNER_EMAIL = "owner@local.test";
 export const LOCAL_OWNER_PASSWORD = "local-dev-password";
 export const LOCAL_SCHOOL_SLUG = "demo";
-
-function loadEnv() {
-  const file = readEnvFile(".env.local");
-  for (const [key, value] of Object.entries(file)) {
-    process.env[key] = value;
-  }
-}
 
 async function ensureAuthUser(apiUrl: string, serviceRoleKey: string) {
   const admin = createClient(apiUrl, serviceRoleKey, {
@@ -58,12 +51,7 @@ async function ensureAuthUser(apiUrl: string, serviceRoleKey: string) {
 }
 
 export async function seedLocal() {
-  loadEnv();
-  const proc = Bun.spawn(["supabase", "status", "--env", "--output-format", "json"], {
-    stdout: "pipe",
-    stderr: "inherit",
-  });
-  const supabaseEnv = (await new Response(proc.stdout).json()) as Record<string, string>;
+  const supabaseEnv = await getSupabaseEnv();
   if (!supabaseEnv["SERVICE_ROLE_KEY"]) {
     fail("supabase status did not include SERVICE_ROLE_KEY.");
   }

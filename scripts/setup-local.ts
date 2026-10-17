@@ -1,28 +1,26 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
 import { hasGatewayToken } from "../src/lib/ai/gateway-token";
-import { envUpsertVars } from "./env-upsert-vars";
+import { getSupabaseEnv, upsertEnv } from "./local-env";
 import { fail } from "./local-process";
 
-const SUPABASE_ENV = "supabase/.env";
+const LOCAL_ENV_FILE = ".env.local";
+const LOCAL_SUPABASE_ENV_FILE = "supabase/.env";
 
-function ensureGooglePlaceholder() {
-  if (existsSync(SUPABASE_ENV)) return;
-  writeFileSync(
-    SUPABASE_ENV,
-    [
-      "# Placeholder so `supabase start` can boot without a Google Cloud client.",
-      "# Replace with a real Web client to use Continue with Google locally.",
-      "# Callback: http://127.0.0.1:54321/auth/v1/callback",
-      "SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=local-placeholder",
-      "SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET=local-placeholder",
-      "",
-    ].join("\n"),
-  );
-  console.log(`Wrote ${SUPABASE_ENV} with Google placeholders.`);
+async function ensureGooglePlaceholder() {
+  upsertEnv(LOCAL_SUPABASE_ENV_FILE, {
+    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID: "local-placeholder",
+    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET: "local-placeholder",
+  });
+  console.log(`Wrote ${LOCAL_SUPABASE_ENV_FILE} with Google placeholders.`);
+}
+
+async function ensureExperimentalStackEnabled() {
+  upsertEnv(LOCAL_ENV_FILE, { SUPABASE_EXPERIMENTAL_STACK: "1" });
+  console.log(`Wrote ${LOCAL_ENV_FILE} with SUPABASE_EXPERIMENTAL_STACK=1.`);
 }
 
 async function main() {
+  ensureExperimentalStackEnabled();
   ensureGooglePlaceholder();
 
   Bun.spawnSync(["bun", "install"], {
@@ -33,15 +31,15 @@ async function main() {
     stdout: "inherit",
     stderr: "inherit",
   });
-  const updatedVars = await envUpsertVars();
+  const updatedVars = await setupLocalEnvVars();
+
+  // Commit the updated vars to the current process.
+  Object.assign(process.env, updatedVars);
 
   console.log("Applying Drizzle migrations…");
   execFileSync("bunx", ["drizzle-kit", "migrate"], {
     stdio: "inherit",
-    env: {
-      ...process.env,
-      ...updatedVars,
-    },
+    env: { ...process.env },
   });
 
   const { seedLocal } = await import("./seed-local");
@@ -65,3 +63,41 @@ async function main() {
 main().catch((error) => {
   fail(error instanceof Error ? error.message : String(error));
 });
+
+async function setupLocalEnvVars(): Promise<Record<string, string>> {
+  const LOCAL_SITE_URL = "http://127.0.0.1:3000";
+  const generateSecret = () => `${crypto.randomUUID()}${crypto.randomUUID()}`;
+  const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
+  const TURNSTILE_TEST_SECRET_KEY = "1x0000000000000000000000000000000AA";
+
+  const updates: Record<string, string> = {
+    NEXT_PUBLIC_SITE_URL: LOCAL_SITE_URL,
+    CRON_SECRET: generateSecret(),
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: TURNSTILE_TEST_SITE_KEY,
+    TURNSTILE_SECRET_KEY: TURNSTILE_TEST_SECRET_KEY,
+    ALLOW_SELF_APPROVAL: "true",
+    NEXT_PUBLIC_DEV_AUTH: "true",
+  };
+
+  // Set Supabase vars
+  const SUPABASE_MAPPINGS = [
+    ["DB_URL", "DATABASE_URL"],
+    ["DB_URL", "DIRECT_URL"],
+    ["API_URL", "NEXT_PUBLIC_SUPABASE_URL"],
+    ["PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"],
+  ] as const;
+  const supabaseEnv = await getSupabaseEnv();
+
+  for (const [sourceKey, targetKey] of SUPABASE_MAPPINGS) {
+    const value = supabaseEnv[sourceKey];
+    if (value === undefined) {
+      console.warn(`Key "${sourceKey}" not found in input, skipping`);
+      continue;
+    }
+    updates[targetKey] = value;
+  }
+
+  await upsertEnv(LOCAL_ENV_FILE, updates);
+  console.log(`Wrote ${LOCAL_ENV_FILE} with live values.`);
+  return updates;
+}

@@ -1,5 +1,5 @@
 import { GATEWAY_TOKEN_ENV_VARS, hasGatewayToken } from "../src/lib/ai/gateway-token";
-import { missingRequiredKeys, readEnvFile } from "./local-env";
+import { getSupabaseEnv, missingRequiredKeys } from "./local-env";
 import { portFromSiteUrl } from "./local-ports";
 import { fail, tryCapture } from "./local-process";
 
@@ -33,11 +33,7 @@ async function main() {
       "Docker Engine not reachable. Start OrbStack, Docker Desktop, or Colima.",
     ) && healthy;
 
-  const proc = Bun.spawn(["supabase", "status", "--env", "--output-format", "json"], {
-    stdout: "pipe",
-    stderr: "inherit",
-  });
-  const supabaseEnv = (await new Response(proc.stdout).json()) as Record<string, string>;
+  const supabaseEnv = await getSupabaseEnv();
   if (!supabaseEnv["DB_URL"]) {
     healthy = false;
     console.error("err supabase not running");
@@ -45,8 +41,7 @@ async function main() {
     console.log("ok  supabase is running");
   }
 
-  const env = readEnvFile(ENV_LOCAL);
-  const missing = missingRequiredKeys(env);
+  const missing = missingRequiredKeys();
   healthy =
     check(
       missing.length === 0,
@@ -54,33 +49,34 @@ async function main() {
       `${ENV_LOCAL} missing: ${missing.join(", ")}. Run bun run setup.`,
     ) && healthy;
 
-  const appPort = portFromSiteUrl(env.NEXT_PUBLIC_SITE_URL);
-  if (env.NEXT_PUBLIC_SITE_URL && appPort === undefined) {
+  const appPort = portFromSiteUrl(process.env.NEXT_PUBLIC_SITE_URL);
+  if (process.env.NEXT_PUBLIC_SITE_URL && appPort === undefined) {
     healthy = false;
     console.error(
-      `err NEXT_PUBLIC_SITE_URL=${env.NEXT_PUBLIC_SITE_URL} is not an eligible local origin (http://127.0.0.1:3000, :3010, … :3090). Run bun run setup.`,
+      `err NEXT_PUBLIC_SITE_URL=${process.env.NEXT_PUBLIC_SITE_URL} is not an eligible local origin (http://127.0.0.1:3000, :3010, … :3090). Run bun run setup.`,
     );
   } else if (appPort !== undefined) {
-    console.log(`ok  app ${env.NEXT_PUBLIC_SITE_URL}`);
+    console.log(`ok  app ${process.env.NEXT_PUBLIC_SITE_URL}`);
   }
 
-  if (hasGatewayToken(env)) console.log("ok  AI Gateway token present (real assistant model)");
+  if (hasGatewayToken(process.env))
+    console.log("ok  AI Gateway token present (real assistant model)");
   else
     console.log(
       `…   ${GATEWAY_TOKEN_ENV_VARS.join(" / ")} missing (assistant uses its scripted local model)`,
     );
 
-  if (env.RESEND_API_KEY) console.log("ok  RESEND_API_KEY present");
+  if (process.env.RESEND_API_KEY) console.log("ok  RESEND_API_KEY present");
   else console.log("…   RESEND_API_KEY missing (email deliveries log + mark sent)");
 
-  if (env.WHATSAPP_SYSTEM_USER_TOKEN)
+  if (process.env.WHATSAPP_SYSTEM_USER_TOKEN)
     console.log("ok  WHATSAPP_SYSTEM_USER_TOKEN present (real WhatsApp send)");
   else console.log("…   WHATSAPP_SYSTEM_USER_TOKEN missing (WhatsApp uses local stub)");
 
-  if (env.WHATSAPP_APP_SECRET) console.log("ok  WHATSAPP_APP_SECRET present");
+  if (process.env.WHATSAPP_APP_SECRET) console.log("ok  WHATSAPP_APP_SECRET present");
   else console.log("…   WHATSAPP_APP_SECRET missing (webhook verify uses dev-stub secret locally)");
 
-  if (env.WHATSAPP_VERIFY_TOKEN) console.log("ok  WHATSAPP_VERIFY_TOKEN present");
+  if (process.env.WHATSAPP_VERIFY_TOKEN) console.log("ok  WHATSAPP_VERIFY_TOKEN present");
   else console.log("…   WHATSAPP_VERIFY_TOKEN missing (GET verify uses dev-stub token locally)");
 
   if (!healthy) fail("doctor found problems.");
