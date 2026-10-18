@@ -54,12 +54,4 @@ Create and remove worktrees using `bun wt`. When working with worktrees in this 
 - It has its own supabase stack
 - It has its own port to run Next.js
 
-## Worktree port contract
-
-Each worktree shares the machine's single Supabase/Docker stack but owns the Next.js origin written by `bun run setup` (`NEXT_PUBLIC_SITE_URL`). This assignment is a core assumption — the app's Auth allow-list depends on it.
-
-- Create worktrees at `.worktrees/<name>` from the repo root: `git worktree add .worktrees/<name> -b <branch>`. That directory is gitignored.
-- Run `bun run setup` in the worktree and use the origin it prints.
-- Eligible origins are `http://127.0.0.1:3000`, `:3010`, … `:3090`, reserved for this repo. One file per port under `.git/fillthemat-ports/` records the owning worktree.
-- If a port is occupied or `doctor` reports an ineligible site URL, stop and report the collision — do not choose another port.
-- When done: in the tree run `bun run dev:stop`, then from the repo root `git worktree remove .worktrees/<name>`. Do not hand-delete `.git/fillthemat-ports/*`; setup reclaims a port once its worktree path is gone.
+Start the Next server with `bun dev`. Exit by killing that thread, or run `bun dev:stop`.

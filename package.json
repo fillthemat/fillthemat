@@ -8,8 +8,6 @@
     "db:check": "bun --no-env-file scripts/check-migrations.ts",
     "db:check:migrations": "bun --no-env-file scripts/check-migration-metadata.ts && bunx drizzle-kit check",
     "db:check:prod": "bun --no-env-file --env-file=.env.production.local scripts/check-migrations.ts",
-    "db:generate": "bunx drizzle-kit generate",
-    "db:migrate": "bunx drizzle-kit migrate",
     "db:migrate:deploy": "bun --no-env-file scripts/migrate-prod.ts",
     "db:migrate:prod": "bun --no-env-file --env-file=.env.production.local scripts/migrate-prod.ts",
     "db:seed": "bun scripts/seed-local.ts",
