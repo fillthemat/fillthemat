@@ -153,7 +153,7 @@ function SettingsNav({ active }: { active: SectionId }) {
                 href={href}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
-                  "block touch-manipulation rounded-md px-3 py-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/70",
+                  " block touch-manipulation rounded-md px-3 py-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/70",
                   isActive
                     ? "bg-muted font-medium text-foreground"
                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

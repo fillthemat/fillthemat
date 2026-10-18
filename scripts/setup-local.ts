@@ -1,76 +1,33 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
 import { hasGatewayToken } from "../src/lib/ai/gateway-token";
-import { mergeLocalEnv, parseSupabaseStatusEnv, readEnvFile, writeEnvFile } from "./local-env";
-import { claimAppPortForCwd, localSiteUrl } from "./local-ports";
-import { fail, tryCapture } from "./local-process";
+import { getSupabaseEnv, upsertEnv } from "./local-env";
+import { claimAppPort } from "./local-ports";
+import { fail } from "./local-process";
 
-const ENV_LOCAL = ".env.local";
-const SUPABASE_ENV = "supabase/.env";
-
-function assertBun() {
-  const version = process.versions.bun;
-  if (!version) fail("Run bun run setup (this script must execute under Bun).");
-  if (!version.startsWith("1.4.")) {
-    console.warn(`Warning: packageManager is bun@1.4.x; this shell is ${version}.`);
-  }
-}
-
-function assertDocker() {
-  const result = tryCapture("docker", ["info"]);
-  if (!result.ok) {
-    fail(
-      "Docker Engine is not reachable (`docker info` failed). Start OrbStack, Docker Desktop, or Colima, then retry.",
-    );
-  }
-}
-
-function ensureGooglePlaceholder() {
-  if (existsSync(SUPABASE_ENV)) return;
-  writeFileSync(
-    SUPABASE_ENV,
-    [
-      "# Placeholder so `supabase start` can boot without a Google Cloud client.",
-      "# Replace with a real Web client to use Continue with Google locally.",
-      "# Callback: http://127.0.0.1:54321/auth/v1/callback",
-      "SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=local-placeholder",
-      "SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET=local-placeholder",
-      "",
-    ].join("\n"),
-  );
-  console.log(`Wrote ${SUPABASE_ENV} with Google placeholders.`);
-}
+const LOCAL_ENV_FILE = ".env.local";
+const LOCAL_SUPABASE_ENV_FILE = "supabase/.env";
 
 async function main() {
-  assertBun();
-  assertDocker();
+  ensureExperimentalStackEnabled();
   ensureGooglePlaceholder();
 
-  console.log("Starting local Supabase (no-op if already running)…");
-  execFileSync("bunx", ["supabase", "start"], { stdio: "inherit" });
-
-  const statusText = execFileSync("bunx", ["supabase", "status", "-o", "env"], {
-    encoding: "utf8",
+  Bun.spawnSync(["bun", "install"], {
+    stdout: "inherit",
+    stderr: "inherit",
   });
-  const status = parseSupabaseStatusEnv(statusText);
-  const existing = readEnvFile(ENV_LOCAL);
-  const appPort = await claimAppPortForCwd(existing.NEXT_PUBLIC_SITE_URL).catch((error) =>
-    fail(error instanceof Error ? error.message : String(error)),
-  );
-  const siteUrl = localSiteUrl(appPort);
-  const generatedSecret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
-  const merged = mergeLocalEnv(existing, status, generatedSecret, siteUrl);
-  writeEnvFile(ENV_LOCAL, merged);
-  console.log(`Wrote ${ENV_LOCAL} (existing vendor keys preserved; app ${siteUrl}).`);
+  Bun.spawnSync(["supabase", "start"], {
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const updatedVars = await setupLocalEnvVars();
+
+  // Commit the updated vars to the current process.
+  Object.assign(process.env, updatedVars);
 
   console.log("Applying Drizzle migrations…");
   execFileSync("bunx", ["drizzle-kit", "migrate"], {
     stdio: "inherit",
-    env: {
-      ...process.env,
-      DIRECT_URL: merged.DIRECT_URL,
-      DATABASE_URL: merged.DATABASE_URL,
-    },
+    env: { ...process.env },
   });
 
   const { seedLocal } = await import("./seed-local");
@@ -78,19 +35,14 @@ async function main() {
 
   console.log("");
   console.log("Local stack is ready.");
-  if (status.studioUrl) console.log(`  Studio    ${status.studioUrl}`);
-  if (status.inbucketUrl) console.log(`  Inbucket  ${status.inbucketUrl}`);
-  console.log(`  App       bun run dev  → ${siteUrl}`);
+  console.log(`  App       bun run dev  → ${updatedVars["NEXT_PUBLIC_SITE_URL"]}`);
   console.log("");
   console.log("  Sign in   owner@local.test / local-dev-password");
   console.log("");
-  if (!hasGatewayToken(merged)) {
+  if (!hasGatewayToken(updatedVars)) {
     console.log(
       "Optional: bunx vercel env pull  (real assistant model; scripted local model otherwise).",
     );
-  }
-  if (!existing.RESEND_API_KEY && !merged.RESEND_API_KEY) {
-    console.log("Optional: RESEND_API_KEY + RESEND_FROM  (real mail; local noop otherwise).");
   }
   // seedLocal() leaves the postgres-js pool open; without this, bun never exits.
   process.exit(0);
@@ -99,3 +51,60 @@ async function main() {
 main().catch((error) => {
   fail(error instanceof Error ? error.message : String(error));
 });
+
+async function ensureGooglePlaceholder() {
+  upsertEnv(LOCAL_SUPABASE_ENV_FILE, {
+    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID: "local-placeholder",
+    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET: "local-placeholder",
+  });
+  console.log(`Wrote ${LOCAL_SUPABASE_ENV_FILE} with Google placeholders.`);
+}
+
+async function ensureExperimentalStackEnabled() {
+  upsertEnv(LOCAL_ENV_FILE, { SUPABASE_EXPERIMENTAL_STACK: "1" });
+  console.log(`Wrote ${LOCAL_ENV_FILE} with SUPABASE_EXPERIMENTAL_STACK=1.`);
+}
+
+async function setupLocalEnvVars(): Promise<Record<string, string>> {
+  const generateSecret = () => `${crypto.randomUUID()}${crypto.randomUUID()}`;
+  const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
+  const TURNSTILE_TEST_SECRET_KEY = "1x0000000000000000000000000000000AA";
+
+  const updates: Record<string, string> = {
+    CRON_SECRET: process.env.CRON_SECRET || generateSecret(),
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: TURNSTILE_TEST_SITE_KEY,
+    TURNSTILE_SECRET_KEY: TURNSTILE_TEST_SECRET_KEY,
+    ALLOW_SELF_APPROVAL: "true",
+    NEXT_PUBLIC_DEV_AUTH: "true",
+  };
+  if (!process.env.NEXT_PUBLIC_SITE_URL) {
+    const LOCAL_BASE_URL = "http://127.0.0.1";
+    const port = await claimAppPort();
+    const siteUrl = `${LOCAL_BASE_URL}:${port}`;
+    updates["NEXT_PUBLIC_SITE_URL"] = siteUrl;
+  }
+
+  // Set Supabase vars
+  const SUPABASE_MAPPINGS = [
+    ["DB_URL", "DATABASE_URL"],
+    ["DB_URL", "DIRECT_URL"],
+    ["API_URL", "NEXT_PUBLIC_SUPABASE_URL"],
+    ["PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"],
+  ] as const;
+  const supabaseEnv = await getSupabaseEnv();
+
+  console.log(`DEBUG: ${JSON.stringify(supabaseEnv)}`);
+
+  for (const [sourceKey, targetKey] of SUPABASE_MAPPINGS) {
+    const value = supabaseEnv[sourceKey];
+    if (value === undefined) {
+      console.warn(`Key "${sourceKey}" not found in input, skipping`);
+      continue;
+    }
+    updates[targetKey] = value;
+  }
+
+  await upsertEnv(LOCAL_ENV_FILE, updates);
+  console.log(`Wrote ${LOCAL_ENV_FILE} with live values.`);
+  return updates;
+}
