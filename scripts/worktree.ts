@@ -18,7 +18,7 @@ if (command === "create") {
     stdout: "inherit",
     stderr: "inherit",
   });
-  Bun.spawnSync(["bun", "setup"], {
+  Bun.spawnSync(["bun", "setup", "--no-env-file"], {
     cwd: WORKTREE_PATH,
     stdout: "inherit",
     stderr: "inherit",
