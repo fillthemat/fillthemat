@@ -11,9 +11,10 @@ it("native sync generates only the requested increment against staged Drizzle hi
   try {
     const migrations = stageDeclarativePreview(root, directory);
     const before = new Set(readdirSync(migrations));
+    const usersFile = join(directory, "supabase/schemas/10-users.sql");
     writeFileSync(
-      join(directory, "supabase/schemas/40-preview-column.sql"),
-      "ALTER TABLE app.users ADD COLUMN declarative_preview_note text;\n",
+      usersFile,
+      readFileSync(usersFile, "utf8").replace("\n);", ",\n    declarative_preview_note text\n);"),
     );
     const result = spawnSync(
       resolve(root, "node_modules/.bin/supabase"),

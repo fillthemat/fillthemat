@@ -4,6 +4,14 @@ These SQL files describe the **current `app` schema**, converted from `src/db/sc
 
 Drizzle still provides runtime queries, inferred types, local setup migrations, production migrations and deployment checks. This is an opt-in native schema experiment, **not a production migration-runner cutover**. Keep both schema representations in sync while trialling it; do not deploy SQL-only edits through the unchanged Drizzle pipeline.
 
+## File layout
+
+- `00-app.sql` creates the private schema and shared enums.
+- `10-users.sql`–`28-cron-runs.sql` each define one table, followed by its foreign keys and indexes. The schools file also owns its identity function and trigger. Table files are ordered parent-first, so all current foreign keys can stay beside their owning table; there are no cyclic dependencies requiring a shared relations file.
+- `99-access.sql` keeps the schema-wide and default-privilege revokes together, after every table exists. Existing history has no RLS policies to distribute.
+
+Keep table-specific constraints, indexes, triggers and any future RLS policies in that table's file where dependencies permit. Preserve physical column order and constraint names from migration replay, not just the latest TypeScript snapshot. Shared types belong in `00-app.sql`; introduce a separate ordered dependency file only if a future cycle genuinely requires it.
+
 ## Try it safely
 
 Docker and the installed Supabase CLI are required. No local Supabase restart or reset is needed.
