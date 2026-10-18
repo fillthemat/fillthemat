@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { ContinueWithGoogle } from "@/components/continue-with-google";
 import { getOwnedSchool } from "@/lib/auth/current-school";
-import { getVerifiedClaims } from "@/lib/auth/current-user";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export default async function HomePage({
     redirect(`/auth/callback?${callback.toString()}`);
   }
 
-  const user = await getVerifiedClaims();
+  const user = await getCurrentUser();
   if (user) {
     const school = await getOwnedSchool(user.id);
     redirect(school ? "/dashboard" : "/onboarding");

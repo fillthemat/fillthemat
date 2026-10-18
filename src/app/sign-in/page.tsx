@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
 import { ContinueWithGoogle } from "@/components/continue-with-google";
 import { DevEmailAuth } from "@/components/dev-email-auth";
-import { getVerifiedClaims } from "@/lib/auth/current-user";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { isDevEmailAuthEnabled } from "@/lib/dev-flags";
 
 export const dynamic = "force-dynamic";
 
 export default async function SignInPage() {
-  const user = await getVerifiedClaims();
+  const user = await getCurrentUser();
   console.log(`DEBUG: ${JSON.stringify(user)}`);
   if (user) redirect("/");
 

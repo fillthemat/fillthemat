@@ -8,7 +8,7 @@ import {
   trialOfferings,
   trialWindows,
 } from "@/db/schema";
-import { getVerifiedClaims } from "@/lib/auth/current-user";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export async function getSchoolBySlug(slug: string): Promise<School | null> {
   const db = getDb();
@@ -25,7 +25,7 @@ export async function getSchoolForLandingAccess(
   if (!options?.preview) return null;
   const school = await getSchoolBySlug(slug);
   if (!school) return null;
-  const user = await getVerifiedClaims();
+  const user = await getCurrentUser();
   if (!user || school.ownerUserId !== user.id) return null;
   return school;
 }

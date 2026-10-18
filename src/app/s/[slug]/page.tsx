@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { BookingChat } from "@/components/booking-chat";
 import { LandingSession } from "@/components/landing-session";
 import { getOwnedSchool } from "@/lib/auth/current-school";
-import { getVerifiedClaims } from "@/lib/auth/current-user";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { getSchoolBySlug, loadSchoolCatalog } from "@/lib/schools/public";
 
 export default async function PublicSchoolPage({
@@ -21,7 +21,7 @@ export default async function PublicSchoolPage({
   const published = school.approvedAt != null && school.publishedAt != null;
   if (!published) {
     if (!isPreview) notFound();
-    const user = await getVerifiedClaims();
+    const user = await getCurrentUser();
     const owned = user ? await getOwnedSchool(user.id) : null;
     if (!owned || owned.id !== school.id) notFound();
   }

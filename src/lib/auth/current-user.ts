@@ -10,23 +10,21 @@ export type VerifiedUser = {
   name: string | null;
 };
 
-export async function getVerifiedClaims(): Promise<VerifiedUser | null> {
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase.auth.getClaims();
-    const claims = data?.claims;
-    if (error || !claims || typeof claims.sub !== "string") return null;
-    const email = typeof claims.email === "string" ? claims.email : null;
-    if (!email) return null;
-    const name = typeof claims.name === "string" ? claims.name : null;
-    return { id: claims.sub, email, name };
-  } catch {
-    return null;
-  }
+export async function getCurrentUser(): Promise<VerifiedUser | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+
+  if (!data || !data.claims.email) return null;
+  const user: VerifiedUser = {
+    id: data.claims.sub,
+    email: data.claims.email,
+    name: data.claims.name,
+  };
+  return user;
 }
 
 export async function ensureUser(): Promise<VerifiedUser | null> {
-  const claims = await getVerifiedClaims();
+  const claims = await getCurrentUser();
   if (!claims) return null;
   const db = getDb();
   const [user] = await db
