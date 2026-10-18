@@ -2,7 +2,7 @@
 
 These SQL files describe **copies in Supabase's default `public` schema** of the 19 tables and 10 enums managed by Drizzle in `app`. They are desired-state definitions, not migrations to run on an existing database. The runtime, `src/db/schema.ts`, all applied `drizzle/` history, setup and deployment continue to use **`app`**, unchanged. There is no runtime cutover, data copy, synchronization trigger or dual-write path.
 
-All copy-owned tables, types, indexes, foreign keys, functions and triggers live in or reference `public`, never `app`. The one intentional external FK remains `public.users.id → auth.users.id`; Supabase still owns Auth. Two schemas sharing an Auth parent means deleting that parent would cascade to both if installed together. The preview does not install anything in your shared stack or production.
+All copy-owned tables, types, indexes, foreign keys, functions and triggers live in or reference `public`, never `app`. The one intentional external FK remains `public.users.id → auth.users.id`; Supabase still owns Auth. Two schemas sharing an Auth parent means deleting that parent would cascade to both if installed together. These declarations have not been installed in your shared stack or production.
 
 ## File layout
 
@@ -21,22 +21,17 @@ All copy-owned tables, types, indexes, foreign keys, functions and triggers live
 
 The original `app` ACLs, lack of RLS policies and runtime access model are untouched. Namespace, RLS and object ACL differences are intentional; this is not literal ACL parity. Custom role memberships, platform-specific grants and other existing public objects require separate review before any real installation. If these object names already exist in public, stop: this trial must not overwrite them.
 
-## Try it safely
+## Existing helpers are app-specific
 
-Docker and the installed Supabase CLI are required. No local Supabase restart/reset or environment changes are needed.
+The public-schema follow-up changes declarations and documentation only. Script and test changes from that follow-up were undone; the earlier helpers remain unchanged and **must not be used to validate or generate migrations for these public copies**:
 
-```bash
-bun run db:schema:check
-bun run db:schema:diff
-bun run test:integration scripts/declarative-schema.integration.test.ts
-```
+- `db:schema:check` still compares `app` dumps, does not normalize namespaces, and does not create the `service_role` required by these public declarations. It cannot validate public parity or security.
+- `db:schema:diff` still stages only Drizzle's app history and selects `--schema app`. With desired state now in public, it may propose dropping app objects in its disposable preview. **Do not use or apply its output for this trial.** It remains preview-only, with no application database connection or migration application.
+- The declarative unit/integration tests still assume app declarations and an app-only native baseline. They are not public-copy verification; the layout test in `bun run verify` now fails on that intentional mismatch. Do not interpret this as a passing automated public workflow.
 
-- `db:schema:check` starts a disposable PostgreSQL 17 container with no host ports, mounts or network. It replays unchanged Drizzle history and installs public declarations beside app in a second database, simulating permissive legacy default grants. It verifies the full app schema dump is unchanged, public objects do not reference app, all 19 tables have deny-by-default RLS and no client/service-role table or column privileges, the function has no public/client/service-role EXECUTE, and unrelated public access remains intact. Public schema ACLs and default privileges must also remain unchanged. Synthetic fixtures test the identity trigger, FK isolation, cascading deletes, owner writes and RLS denial even after temporary DML grants. Fixtures are rolled back.
-- For structural comparison, the checker **renames schemas inside disposable databases** to the same comparison namespace using PostgreSQL's dependency tracking. It removes only the independently verified extra RLS flags, and compares schema dumps without ACLs, ownership or comments. Names, column order, defaults, checks, FK actions, indexes, enum labels and function/trigger definitions must match. ACLs and RLS are checked separately, not silently ignored. `auth.users` is a stub; this is not an end-to-end Auth/PostgREST test or a full application regression suite against public.
-- `db:schema:diff` runs native `db schema declarative sync --no-apply --strict-coverage --schema public` in a temporary project. It stages the unchanged app migrations, then a **synthetic public comparison baseline derived from that history**, including explicit copy security. Only known namespace qualifiers are mapped; Auth references and function bodies are preserved. The baseline does not come from the edited desired-state files, so edits still produce real diffs. Nothing is written to repository migration history or applied to an application database. Supabase may cache disposable shadow infrastructure separately.
-- The integration test edits the staged users table file to add a nullable column and verifies that native generation produces an additive public migration, not app changes or schema recreation.
+There is no supported automated public comparison workflow in this change. A future comparison must use a separately provisioned, disposable database, replay unchanged app history, apply these public copies without real user data, and explicitly account for namespace/RLS/ACL differences. Do not run setup, reset or apply commands against the shared stack or production for this experiment. No persistent Studio comparison is installed by these declarations.
 
-Edit a table file and rerun the preview to see incremental generation. The parity check should fail for structural drift until Drizzle history describes the same structure; changes to the explicit public security contract must also be reviewed. Neither command copies application data. The side-by-side databases exist only during the disposable checker run and are removed afterward; there is no persistent Studio comparison installed by these commands.
+Before the script updates were withdrawn, disposable PostgreSQL checks passed structural parity, side-by-side isolation and public security checks. That is historical evidence only: those public-specific checks and fixtures are not retained, and the existing helpers cannot reproduce them. Auth/PostgREST and custom production roles were not verified.
 
 ## Native configuration and future installation
 

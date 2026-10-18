@@ -26,7 +26,7 @@ it("native sync generates only the requested increment against staged Drizzle hi
         "--workdir",
         directory,
         "--schema",
-        "public",
+        "app",
         "--no-apply",
         "--strict-coverage",
         "--file",
@@ -40,8 +40,6 @@ it("native sync generates only the requested increment against staged Drizzle hi
     expect(generated).toHaveLength(1);
     const sql = readFileSync(join(migrations, generated[0]), "utf8");
     expect(sql).toMatch(/ADD COLUMN\s+"?declarative_preview_note"?\s+text/i);
-    expect(sql).toMatch(/ALTER TABLE "public"\."users"/i);
-    expect(sql).not.toMatch(/"?app"?\./i);
     expect(sql).not.toMatch(/CREATE TABLE|DROP TABLE|DROP SCHEMA/i);
   } finally {
     rmSync(directory, { recursive: true, force: true });

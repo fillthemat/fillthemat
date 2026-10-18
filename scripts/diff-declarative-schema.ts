@@ -20,7 +20,7 @@ try {
       "--workdir",
       directory,
       "--schema",
-      "public",
+      "app",
       "--no-apply",
       "--strict-coverage",
       "--file",
