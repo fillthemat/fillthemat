@@ -50,9 +50,7 @@ max_client_conn = 100
 [db.migrations]
 # If disabled, migrations will be skipped during a db push or reset.
 enabled = true
-# Specifies an ordered list of schema files, directories, or glob patterns that describe your database.
-# Supports paths relative to supabase directory: "./schemas/*.sql", "./database".
-schema_paths = []
+# pg-delta resolves dependencies in schemas/ itself; do not set legacy schema_paths.
 
 [db.seed]
 # If enabled, seeds the database after migrations during a db reset.
@@ -429,6 +427,6 @@ stack = true
 [experimental.pgdelta]
 enabled = true
 # Directory under `supabase/` where declarative files are written.
-# declarative_schema_path = "./schemas"
+declarative_schema_path = "./schemas"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"

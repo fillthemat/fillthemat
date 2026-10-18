@@ -47,6 +47,10 @@ Set `RESEND_API_KEY` (+ `RESEND_FROM=onboarding@resend.dev` for owner-only test 
 
 See CODING_STANDARDS.md, "Linting, formatting, and typechecks".
 
+For the opt-in native Supabase declarative schema trial (without changing the
+Drizzle runtime or resetting a local stack), see
+[supabase/schemas/README.md](../supabase/schemas/README.md).
+
 ## Worktrees
 
 Create and remove worktrees using `bun wt`. When working with worktrees in this project, it is true that:
