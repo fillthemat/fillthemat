@@ -1,4 +1,4 @@
-CREATE TABLE app.trial_offerings (
+CREATE TABLE public.trial_offerings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     school_id uuid NOT NULL,
     name text NOT NULL,
@@ -20,4 +20,7 @@ CREATE TABLE app.trial_offerings (
     CONSTRAINT trial_offerings_name_len CHECK (char_length(name) BETWEEN 1 AND 80)
 );
 
-ALTER TABLE app.trial_offerings ADD CONSTRAINT trial_offerings_school_id_fk FOREIGN KEY (school_id) REFERENCES app.schools(id) ON DELETE CASCADE;
+ALTER TABLE public.trial_offerings ADD CONSTRAINT trial_offerings_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+
+ALTER TABLE public.trial_offerings ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.trial_offerings FROM PUBLIC, anon, authenticated, service_role;

@@ -1,4 +1,4 @@
-CREATE TABLE app.faqs (
+CREATE TABLE public.faqs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     school_id uuid NOT NULL,
     question text NOT NULL,
@@ -11,4 +11,7 @@ CREATE TABLE app.faqs (
     CONSTRAINT faqs_answer_len CHECK (char_length(answer) BETWEEN 1 AND 2000)
 );
 
-ALTER TABLE app.faqs ADD CONSTRAINT faqs_school_id_fk FOREIGN KEY (school_id) REFERENCES app.schools(id) ON DELETE CASCADE;
+ALTER TABLE public.faqs ADD CONSTRAINT faqs_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+
+ALTER TABLE public.faqs ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.faqs FROM PUBLIC, anon, authenticated, service_role;

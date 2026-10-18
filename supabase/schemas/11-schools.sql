@@ -1,4 +1,4 @@
-CREATE TABLE app.schools (
+CREATE TABLE public.schools (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     owner_user_id uuid NOT NULL,
     slug text NOT NULL,
@@ -33,12 +33,12 @@ CREATE TABLE app.schools (
     CONSTRAINT schools_logo_url CHECK (logo_url IS NULL OR logo_url ~ '^https://')
 );
 
-ALTER TABLE app.schools ADD CONSTRAINT schools_owner_user_id_users_id_fk FOREIGN KEY (owner_user_id) REFERENCES app.users(id) ON DELETE CASCADE;
+ALTER TABLE public.schools ADD CONSTRAINT schools_owner_user_id_users_id_fk FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-CREATE UNIQUE INDEX schools_whatsapp_phone_number_id_unique ON app.schools USING btree (whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL;
+CREATE UNIQUE INDEX schools_whatsapp_phone_number_id_unique ON public.schools USING btree (whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL;
 
 -- Preserve 0000's invoker function and trigger, including its original body.
-CREATE FUNCTION app.prevent_published_school_identity_change()
+CREATE FUNCTION public.prevent_published_school_identity_change()
 RETURNS trigger AS $$
 BEGIN
   IF OLD.published_at IS NOT NULL THEN
@@ -51,6 +51,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER schools_identity_immutable
-  BEFORE UPDATE ON app.schools
+  BEFORE UPDATE ON public.schools
   FOR EACH ROW
-  EXECUTE FUNCTION app.prevent_published_school_identity_change();
+  EXECUTE FUNCTION public.prevent_published_school_identity_change();
+
+ALTER TABLE public.schools ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.schools FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.prevent_published_school_identity_change() FROM PUBLIC, anon, authenticated, service_role;

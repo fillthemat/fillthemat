@@ -19,6 +19,37 @@ export function drizzleHistory(root: string) {
   }));
 }
 
+// Only used in disposable shadows, never written to repository migration history.
+// Keep the real app migrations unchanged and add independent public copies.
+export function publicComparisonBaseline(root: string) {
+  const history = drizzleHistory(root)
+    .map(({ sql }) => sql)
+    .join("\n");
+  const tables = [...history.matchAll(/CREATE TABLE "app"\."(\w+)"/g)].map((match) => match[1]);
+  const copies = history
+    .replace('CREATE SCHEMA "app";', 'CREATE SCHEMA IF NOT EXISTS "public";')
+    .replace(/^REVOKE ALL ON SCHEMA app FROM (?:PUBLIC|anon, authenticated);\n/gm, "")
+    .replace(/^REVOKE ALL ON ALL TABLES IN SCHEMA app FROM anon, authenticated;\n/gm, "")
+    .replace(
+      /^ALTER DEFAULT PRIVILEGES IN SCHEMA app REVOKE ALL ON TABLES FROM anon, authenticated;/gm,
+      "",
+    )
+    .replaceAll('"app".', '"public".')
+    .replace(/\bapp\./g, "public.");
+  if (/\bapp\b/.test(copies)) throw new Error("Unmapped app reference in public preview baseline.");
+  const security = tables.map(
+    (table) =>
+      `ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;\n` +
+      `REVOKE ALL ON TABLE public.${table} FROM PUBLIC, anon, authenticated, service_role;`,
+  );
+  return (
+    copies +
+    "\n" +
+    security.join("\n") +
+    "\nREVOKE ALL ON FUNCTION public.prevent_published_school_identity_change() FROM PUBLIC, anon, authenticated, service_role;\n"
+  );
+}
+
 export function stageDeclarativePreview(root: string, directory: string) {
   const supabase = join(directory, "supabase");
   const migrations = join(supabase, "migrations");
@@ -39,6 +70,10 @@ declarative_schema_path = "./schemas"
   for (const { version, tag, sql } of drizzleHistory(root)) {
     writeFileSync(join(migrations, `${version}_${tag}.sql`), sql);
   }
+  writeFileSync(
+    join(migrations, "20260102000000_public_comparison_baseline.sql"),
+    publicComparisonBaseline(root),
+  );
   return migrations;
 }
 

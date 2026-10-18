@@ -1,4 +1,4 @@
-CREATE TABLE app.contacts (
+CREATE TABLE public.contacts (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     school_id uuid NOT NULL,
     email text,
@@ -11,4 +11,7 @@ CREATE TABLE app.contacts (
     CONSTRAINT contacts_school_phone UNIQUE (school_id, phone)
 );
 
-ALTER TABLE app.contacts ADD CONSTRAINT contacts_school_id_fk FOREIGN KEY (school_id) REFERENCES app.schools(id) ON DELETE CASCADE;
+ALTER TABLE public.contacts ADD CONSTRAINT contacts_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+
+ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.contacts FROM PUBLIC, anon, authenticated, service_role;

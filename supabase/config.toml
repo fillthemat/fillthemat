@@ -427,6 +427,7 @@ stack = true
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]
 enabled = true
+# Side-by-side public copies only; Drizzle still owns the runtime app schema.
 # Directory under `supabase/` where declarative files are written.
 declarative_schema_path = "./schemas"
 # JSON string passed through to pg-delta SQL formatting.

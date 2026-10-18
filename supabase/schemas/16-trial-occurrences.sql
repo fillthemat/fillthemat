@@ -1,4 +1,4 @@
-CREATE TABLE app.trial_occurrences (
+CREATE TABLE public.trial_occurrences (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     school_id uuid NOT NULL,
     trial_window_id uuid NOT NULL,
@@ -16,6 +16,9 @@ CREATE TABLE app.trial_occurrences (
     CONSTRAINT trial_occurrences_range CHECK (end_at > start_at)
 );
 
-ALTER TABLE app.trial_occurrences ADD CONSTRAINT trial_occurrences_school_id_fk FOREIGN KEY (school_id) REFERENCES app.schools(id) ON DELETE CASCADE;
-ALTER TABLE app.trial_occurrences ADD CONSTRAINT trial_occurrences_window_fk FOREIGN KEY (school_id, trial_window_id) REFERENCES app.trial_windows(school_id, id) ON DELETE RESTRICT;
-ALTER TABLE app.trial_occurrences ADD CONSTRAINT trial_occurrences_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES app.trial_offerings(school_id, id) ON DELETE RESTRICT;
+ALTER TABLE public.trial_occurrences ADD CONSTRAINT trial_occurrences_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+ALTER TABLE public.trial_occurrences ADD CONSTRAINT trial_occurrences_window_fk FOREIGN KEY (school_id, trial_window_id) REFERENCES public.trial_windows(school_id, id) ON DELETE RESTRICT;
+ALTER TABLE public.trial_occurrences ADD CONSTRAINT trial_occurrences_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE public.trial_occurrences ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.trial_occurrences FROM PUBLIC, anon, authenticated, service_role;

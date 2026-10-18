@@ -58,7 +58,10 @@ try {
     await setTimeout(500);
   }
   if (!ready) throw new Error("Disposable PostgreSQL did not become ready.");
-  query("postgres", "CREATE ROLE anon; CREATE ROLE authenticated; CREATE DATABASE declarative;");
+  query(
+    "postgres",
+    "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; CREATE ROLE public_probe; CREATE DATABASE declarative;",
+  );
   // Only the external FK target is stubbed; auth itself is owned by Supabase.
   const auth = "CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY);\n";
   query(
@@ -74,8 +77,15 @@ try {
     .sort()
     .map((file) => readFileSync(join(schemas, file), "utf8"))
     .join("\n");
-  query("declarative", auth + desired);
-  const dump = (database: string) =>
+  // Replay app beside public too, so accidental changes/dependencies are observable.
+  query(
+    "declarative",
+    auth +
+      drizzleHistory(process.cwd())
+        .map(({ sql }) => sql)
+        .join("\n"),
+  );
+  const dump = (database: string, schema: string, structural = false) =>
     normalizeSchemaDump(
       docker([
         "exec",
@@ -87,12 +97,62 @@ try {
         database,
         "--schema-only",
         "--no-owner",
-        "--schema=app",
+        `--schema=${schema}`,
+        ...(structural ? ["--no-acl", "--no-comments"] : []),
       ]),
     );
-  if (dump("postgres") !== dump("declarative"))
-    throw new Error("Declarative app schema differs from replayed Drizzle history.");
-  console.info("Exact PostgreSQL 17 schema parity: Drizzle history and supabase/schemas match.");
+  const originalApp = dump("declarative", "app");
+  // Simulate legacy Supabase's permissive defaults, including BYPASSRLS service_role.
+  // These settings exist only in this disposable database, never desired-state SQL.
+  query(
+    "declarative",
+    `
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+    CREATE TABLE public.unrelated (id integer);
+   `,
+  );
+  const publicBoundary = () =>
+    query(
+      "declarative",
+      `
+    SELECT nspacl FROM pg_namespace WHERE nspname = 'public';
+    SELECT defaclobjtype, defaclacl FROM pg_default_acl
+      WHERE defaclnamespace = 'public'::regnamespace ORDER BY defaclobjtype;
+  `,
+    );
+  const originalBoundary = publicBoundary();
+  query("declarative", desired);
+  if (publicBoundary() !== originalBoundary)
+    throw new Error("Public copies changed schema-wide ACLs or default privileges.");
+  if (dump("declarative", "app") !== originalApp)
+    throw new Error("Applying public copies changed the Drizzle app schema.");
+  if (/\bapp\./.test(dump("declarative", "public")))
+    throw new Error("Public copies still reference app objects.");
+  query("declarative", readFileSync("scripts/declarative-schema-security.sql", "utf8"));
+  query("declarative", readFileSync("scripts/declarative-schema-behavior.sql", "utf8"));
+
+  // Namespace normalization uses PostgreSQL dependency tracking, not text replacement:
+  // references to auth and function bodies are not rewritten or hidden. Security is
+  // tested above separately; only the deliberate RLS difference is removed here.
+  query("postgres", "ALTER SCHEMA app RENAME TO comparison;");
+  query(
+    "declarative",
+    `
+    DROP TABLE public.unrelated;
+    DO $$ DECLARE t record; BEGIN
+      FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+        EXECUTE format('ALTER TABLE public.%I DISABLE ROW LEVEL SECURITY', t.tablename);
+      END LOOP;
+    END $$;
+    ALTER SCHEMA public RENAME TO comparison;
+  `,
+  );
+  if (dump("postgres", "comparison", true) !== dump("declarative", "comparison", true))
+    throw new Error("Public copy structure/behavior differs from replayed Drizzle history.");
+  console.info(
+    "PostgreSQL 17 parity: namespace-normalized structure matches; public security and side-by-side isolation pass.",
+  );
 } finally {
   if (started) docker(["rm", "--force", container]);
 }

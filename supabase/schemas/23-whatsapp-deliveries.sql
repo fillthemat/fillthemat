@@ -1,4 +1,4 @@
-CREATE TABLE app.whatsapp_deliveries (
+CREATE TABLE public.whatsapp_deliveries (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     school_id uuid NOT NULL,
     booking_id uuid,
@@ -6,7 +6,7 @@ CREATE TABLE app.whatsapp_deliveries (
     recipient_wa_id text NOT NULL,
     phone_number_id text NOT NULL,
     provider_idempotency_key text NOT NULL,
-    state app.whatsapp_delivery_state DEFAULT 'pending' NOT NULL,
+    state public.whatsapp_delivery_state DEFAULT 'pending' NOT NULL,
     attempts integer DEFAULT 0 NOT NULL,
     provider_id text,
     template_name text,
@@ -25,12 +25,15 @@ CREATE TABLE app.whatsapp_deliveries (
     failure_reason text,
     failure_code integer,
     terminal_cause text,
-    send_outcome app.whatsapp_send_outcome,
+    send_outcome public.whatsapp_send_outcome,
     CONSTRAINT whatsapp_deliveries_provider_key UNIQUE (provider_idempotency_key)
 );
 
-ALTER TABLE app.whatsapp_deliveries ADD CONSTRAINT whatsapp_deliveries_school_id_fk FOREIGN KEY (school_id) REFERENCES app.schools(id) ON DELETE CASCADE;
-ALTER TABLE app.whatsapp_deliveries ADD CONSTRAINT whatsapp_deliveries_booking_fk FOREIGN KEY (school_id, booking_id) REFERENCES app.bookings(school_id, id) ON DELETE CASCADE;
-ALTER TABLE app.whatsapp_deliveries ADD CONSTRAINT whatsapp_deliveries_lead_fk FOREIGN KEY (school_id, lead_id) REFERENCES app.leads(school_id, id) ON DELETE CASCADE;
+ALTER TABLE public.whatsapp_deliveries ADD CONSTRAINT whatsapp_deliveries_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+ALTER TABLE public.whatsapp_deliveries ADD CONSTRAINT whatsapp_deliveries_booking_fk FOREIGN KEY (school_id, booking_id) REFERENCES public.bookings(school_id, id) ON DELETE CASCADE;
+ALTER TABLE public.whatsapp_deliveries ADD CONSTRAINT whatsapp_deliveries_lead_fk FOREIGN KEY (school_id, lead_id) REFERENCES public.leads(school_id, id) ON DELETE CASCADE;
 
-CREATE INDEX whatsapp_deliveries_due_idx ON app.whatsapp_deliveries USING btree (state, next_attempt_at);
+CREATE INDEX whatsapp_deliveries_due_idx ON public.whatsapp_deliveries USING btree (state, next_attempt_at);
+
+ALTER TABLE public.whatsapp_deliveries ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.whatsapp_deliveries FROM PUBLIC, anon, authenticated, service_role;

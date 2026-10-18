@@ -1,4 +1,4 @@
-CREATE TABLE app.bookings (
+CREATE TABLE public.bookings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     school_id uuid NOT NULL,
     contact_id uuid NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE app.bookings (
     conversation_id uuid,
     landing_session_id uuid,
     idempotency_key text NOT NULL,
-    status app.booking_status DEFAULT 'booked' NOT NULL,
+    status public.booking_status DEFAULT 'booked' NOT NULL,
     participant_name_snapshot text NOT NULL,
     participant_age_snapshot integer NOT NULL,
     offering_name_snapshot text NOT NULL,
@@ -31,13 +31,16 @@ CREATE TABLE app.bookings (
     CONSTRAINT bookings_participant_age CHECK (participant_age_snapshot BETWEEN 0 AND 99)
 );
 
-ALTER TABLE app.bookings ADD CONSTRAINT bookings_school_id_fk FOREIGN KEY (school_id) REFERENCES app.schools(id) ON DELETE CASCADE;
-ALTER TABLE app.bookings ADD CONSTRAINT bookings_contact_fk FOREIGN KEY (school_id, contact_id) REFERENCES app.contacts(school_id, id) ON DELETE RESTRICT;
-ALTER TABLE app.bookings ADD CONSTRAINT bookings_participant_fk FOREIGN KEY (school_id, participant_id) REFERENCES app.participants(school_id, id) ON DELETE RESTRICT;
-ALTER TABLE app.bookings ADD CONSTRAINT bookings_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES app.trial_offerings(school_id, id) ON DELETE RESTRICT;
-ALTER TABLE app.bookings ADD CONSTRAINT bookings_window_fk FOREIGN KEY (school_id, trial_window_id) REFERENCES app.trial_windows(school_id, id) ON DELETE RESTRICT;
-ALTER TABLE app.bookings ADD CONSTRAINT bookings_occurrence_fk FOREIGN KEY (school_id, trial_occurrence_id) REFERENCES app.trial_occurrences(school_id, id) ON DELETE RESTRICT;
-ALTER TABLE app.bookings ADD CONSTRAINT bookings_conversation_fk FOREIGN KEY (school_id, conversation_id) REFERENCES app.conversations(school_id, id) ON DELETE SET NULL;
-ALTER TABLE app.bookings ADD CONSTRAINT bookings_landing_session_fk FOREIGN KEY (school_id, landing_session_id) REFERENCES app.landing_sessions(school_id, id) ON DELETE SET NULL;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_contact_fk FOREIGN KEY (school_id, contact_id) REFERENCES public.contacts(school_id, id) ON DELETE RESTRICT;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_participant_fk FOREIGN KEY (school_id, participant_id) REFERENCES public.participants(school_id, id) ON DELETE RESTRICT;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE RESTRICT;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_window_fk FOREIGN KEY (school_id, trial_window_id) REFERENCES public.trial_windows(school_id, id) ON DELETE RESTRICT;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_occurrence_fk FOREIGN KEY (school_id, trial_occurrence_id) REFERENCES public.trial_occurrences(school_id, id) ON DELETE RESTRICT;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_conversation_fk FOREIGN KEY (school_id, conversation_id) REFERENCES public.conversations(school_id, id) ON DELETE SET NULL;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_landing_session_fk FOREIGN KEY (school_id, landing_session_id) REFERENCES public.landing_sessions(school_id, id) ON DELETE SET NULL;
 
-CREATE UNIQUE INDEX bookings_active_participant_occurrence ON app.bookings USING btree (trial_occurrence_id, participant_id) WHERE status <> 'cancelled';
+CREATE UNIQUE INDEX bookings_active_participant_occurrence ON public.bookings USING btree (trial_occurrence_id, participant_id) WHERE status <> 'cancelled';
+
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.bookings FROM PUBLIC, anon, authenticated, service_role;

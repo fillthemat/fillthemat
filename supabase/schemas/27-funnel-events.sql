@@ -1,4 +1,4 @@
-CREATE TABLE app.funnel_events (
+CREATE TABLE public.funnel_events (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     school_id uuid NOT NULL,
     landing_session_id uuid,
@@ -10,6 +10,9 @@ CREATE TABLE app.funnel_events (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-ALTER TABLE app.funnel_events ADD CONSTRAINT funnel_events_school_id_fk FOREIGN KEY (school_id) REFERENCES app.schools(id) ON DELETE CASCADE;
+ALTER TABLE public.funnel_events ADD CONSTRAINT funnel_events_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
 
-CREATE INDEX funnel_events_school_created_idx ON app.funnel_events USING btree (school_id, created_at);
+CREATE INDEX funnel_events_school_created_idx ON public.funnel_events USING btree (school_id, created_at);
+
+ALTER TABLE public.funnel_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.funnel_events FROM PUBLIC, anon, authenticated, service_role;

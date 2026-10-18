@@ -1,4 +1,4 @@
-CREATE TABLE app.trial_windows (
+CREATE TABLE public.trial_windows (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     school_id uuid NOT NULL,
     trial_offering_id uuid NOT NULL,
@@ -17,5 +17,8 @@ CREATE TABLE app.trial_windows (
     CONSTRAINT trial_windows_capacity CHECK (capacity BETWEEN 1 AND 50)
 );
 
-ALTER TABLE app.trial_windows ADD CONSTRAINT trial_windows_school_id_fk FOREIGN KEY (school_id) REFERENCES app.schools(id) ON DELETE CASCADE;
-ALTER TABLE app.trial_windows ADD CONSTRAINT trial_windows_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES app.trial_offerings(school_id, id) ON DELETE CASCADE;
+ALTER TABLE public.trial_windows ADD CONSTRAINT trial_windows_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+ALTER TABLE public.trial_windows ADD CONSTRAINT trial_windows_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE CASCADE;
+
+ALTER TABLE public.trial_windows ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.trial_windows FROM PUBLIC, anon, authenticated, service_role;
