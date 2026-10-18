@@ -58,7 +58,9 @@ enabled = true
 enabled = true
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
-sql_paths = ["./seed.sql"]
+# Only Auth exists at native startup. setup/db:seed applies seeds/10-app.sql after
+# Drizzle migrations; public comparison tables are deliberately not seeded.
+sql_paths = ["./seeds/00-auth.sql"]
 
 [db.network_restrictions]
 # Enable management of network restrictions.

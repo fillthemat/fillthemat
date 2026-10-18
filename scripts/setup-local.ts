@@ -44,7 +44,6 @@ async function main() {
       "Optional: bunx vercel env pull  (real assistant model; scripted local model otherwise).",
     );
   }
-  // seedLocal() leaves the postgres-js pool open; without this, bun never exits.
   process.exit(0);
 }
 
