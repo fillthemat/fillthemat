@@ -2,13 +2,12 @@ import { portFromSiteUrl } from "./local-ports";
 import { fail } from "./local-process";
 
 async function listenPid(port: number): Promise<number | undefined> {
-  const proc = Bun.spawn(["lsof", "-nP", `-iTCP:${port}`], {
+  const proc = Bun.spawn(["lsof", "-nP", `-iTCP:${port}`, "-t"], {
     stdout: "pipe",
     stderr: "inherit",
   });
-  const t = await new Response(proc.stdout).text();
-  console.log(`DEBUG: ${t}`);
-  return Number(t);
+  const pid = await new Response(proc.stdout).text();
+  return Number(pid);
 }
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
@@ -23,9 +22,10 @@ if (port === undefined) {
 }
 
 const pid = await listenPid(port);
-console.log(`DEBUG: ${pid}`);
-
 if (pid) {
   process.kill(pid, "SIGTERM");
   console.log(`Stopped pid ${pid} on port ${port}`);
+} else {
+  console.log(`Nothing to stop: no pid listening to ${port}.`);
+  process.exit(0);
 }
