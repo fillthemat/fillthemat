@@ -77,10 +77,13 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
     ALLOW_SELF_APPROVAL: "true",
     NEXT_PUBLIC_DEV_AUTH: "true",
   };
+
+  console.log(`DEBUG: NEXT_PUBLIC_SITE_URL = ${process.env.NEXT_PUBLIC_SITE_URL}`);
   if (!process.env.NEXT_PUBLIC_SITE_URL) {
     const LOCAL_BASE_URL = "http://127.0.0.1";
     const port = await claimAppPort();
     const siteUrl = `${LOCAL_BASE_URL}:${port}`;
+    console.log(`DEBUG siteUrl = ${siteUrl}`);
     updates["NEXT_PUBLIC_SITE_URL"] = siteUrl;
   }
 
