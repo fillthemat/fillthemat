@@ -9,13 +9,13 @@
 
 ```bash
 bun install
-bun run setup      # start Supabase, write .env.local, migrate, seed
-bun run dev        # http://127.0.0.1:3000 (see worktree contract below)
+bun setup      # start Supabase, write .env.local, migrate, seed
+bun dev        # http://127.0.0.1:3000 (see worktree contract below)
 ```
 
-`bun quickstart` chains those three (`bun install && bun run setup && bun run dev`). If something fails, run `bun run doctor` for a read-only probe of Bun, Docker, Supabase, `.env.local`, and the signing origin.
+If something fails, run `bun run doctor` for a read-only probe of Bun, Docker, Supabase, `.env.local`, and the signing origin.
 
-Stop this checkout's frontend with `bun run dev:stop`. Never `pkill` Next/dev-local by name, and never `supabase stop` from this worktree — see the port contract below.
+Stop this checkout's frontend with `bun run dev:stop`.
 
 ## Seed credentials
 
