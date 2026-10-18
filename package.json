@@ -13,7 +13,6 @@
     "db:migrate:prod": "bun --no-env-file --env-file=.env.production.local scripts/migrate-prod.ts",
     "db:schema:check": "bun --no-env-file scripts/check-declarative-schema.ts",
     "db:schema:diff": "bun --no-env-file scripts/diff-declarative-schema.ts",
-    "db:seed": "bun scripts/seed-local.ts",
     "db:start": "supabase start",
     "db:studio": "bunx drizzle-kit studio",
     "dev": "bun scripts/dev-local.ts",

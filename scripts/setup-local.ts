@@ -30,9 +30,6 @@ async function main() {
     env: { ...process.env },
   });
 
-  const { seedLocal } = await import("./seed-local");
-  await seedLocal();
-
   console.log("");
   console.log("Local stack is ready.");
   console.log(`  App       bun run dev  → ${updatedVars["NEXT_PUBLIC_SITE_URL"]}`);
