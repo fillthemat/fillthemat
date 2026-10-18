@@ -93,7 +93,7 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
   ] as const;
   const supabaseEnv = await getSupabaseEnv();
 
-  console.log(`DEBUG: ${supabaseEnv}`);
+  console.log(`DEBUG: ${JSON.stringify(supabaseEnv)}`);
 
   for (const [sourceKey, targetKey] of SUPABASE_MAPPINGS) {
     const value = supabaseEnv[sourceKey];
