@@ -22,4 +22,18 @@ CREATE UNIQUE INDEX conversations_resume_token_hash ON public.conversations USIN
 CREATE UNIQUE INDEX conversations_school_wa_id_hash ON public.conversations USING btree (school_id, wa_id_hash) WHERE wa_id_hash IS NOT NULL AND ended_at IS NULL;
 
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.conversations FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.conversations FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.conversations to authenticated;
+
+CREATE POLICY conversations_select_own_school
+on public.conversations
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

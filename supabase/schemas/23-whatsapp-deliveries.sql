@@ -36,4 +36,18 @@ ALTER TABLE public.whatsapp_deliveries ADD CONSTRAINT whatsapp_deliveries_lead_f
 CREATE INDEX whatsapp_deliveries_due_idx ON public.whatsapp_deliveries USING btree (state, next_attempt_at);
 
 ALTER TABLE public.whatsapp_deliveries ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.whatsapp_deliveries FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.whatsapp_deliveries FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.whatsapp_deliveries to authenticated;
+
+CREATE POLICY whatsapp_deliveries_select_own_school
+on public.whatsapp_deliveries
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

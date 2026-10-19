@@ -15,4 +15,18 @@ ALTER TABLE public.funnel_events ADD CONSTRAINT funnel_events_school_id_fk FOREI
 CREATE INDEX funnel_events_school_created_idx ON public.funnel_events USING btree (school_id, created_at);
 
 ALTER TABLE public.funnel_events ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.funnel_events FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.funnel_events FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.funnel_events to authenticated;
+
+CREATE POLICY funnel_events_select_own_school
+on public.funnel_events
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

@@ -21,4 +21,18 @@ ALTER TABLE public.whatsapp_booking_intents ADD CONSTRAINT whatsapp_booking_inte
 CREATE UNIQUE INDEX whatsapp_booking_intents_active_pending ON public.whatsapp_booking_intents USING btree (conversation_id) WHERE state = 'pending';
 
 ALTER TABLE public.whatsapp_booking_intents ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.whatsapp_booking_intents FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.whatsapp_booking_intents FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.whatsapp_booking_intents to authenticated;
+
+CREATE POLICY whatsapp_booking_intents_select_own_school
+on public.whatsapp_booking_intents
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

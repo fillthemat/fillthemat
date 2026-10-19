@@ -28,4 +28,18 @@ ALTER TABLE public.email_deliveries ADD CONSTRAINT email_deliveries_lead_fk FORE
 CREATE INDEX email_deliveries_due_idx ON public.email_deliveries USING btree (state, next_attempt_at);
 
 ALTER TABLE public.email_deliveries ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.email_deliveries FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.email_deliveries FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.email_deliveries to authenticated;
+
+CREATE POLICY email_deliveries_select_own_school
+on public.email_deliveries
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

@@ -23,4 +23,18 @@ CREATE TABLE public.trial_offerings (
 ALTER TABLE public.trial_offerings ADD CONSTRAINT trial_offerings_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
 
 ALTER TABLE public.trial_offerings ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.trial_offerings FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.trial_offerings FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.trial_offerings to authenticated;
+
+CREATE POLICY trial_offerings_select_own_school
+on public.trial_offerings
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

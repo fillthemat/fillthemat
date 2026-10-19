@@ -14,4 +14,18 @@ ALTER TABLE public.participants ADD CONSTRAINT participants_school_id_fk FOREIGN
 ALTER TABLE public.participants ADD CONSTRAINT participants_contact_fk FOREIGN KEY (school_id, contact_id) REFERENCES public.contacts(school_id, id) ON DELETE CASCADE;
 
 ALTER TABLE public.participants ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.participants FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.participants FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.participants to authenticated;
+
+CREATE POLICY participants_select_own_school
+on public.participants
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

@@ -11,4 +11,4 @@ CREATE TABLE public.cron_runs (
 );
 
 ALTER TABLE public.cron_runs ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.cron_runs FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.cron_runs FROM PUBLIC, anon, authenticated;

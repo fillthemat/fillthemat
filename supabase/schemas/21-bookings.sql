@@ -43,4 +43,18 @@ ALTER TABLE public.bookings ADD CONSTRAINT bookings_landing_session_fk FOREIGN K
 CREATE UNIQUE INDEX bookings_active_participant_occurrence ON public.bookings USING btree (trial_occurrence_id, participant_id) WHERE status <> 'cancelled';
 
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.bookings FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.bookings FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.bookings to authenticated;
+
+CREATE POLICY bookings_select_own_school
+on public.bookings
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

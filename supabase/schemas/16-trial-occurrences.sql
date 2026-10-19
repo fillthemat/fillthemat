@@ -21,4 +21,18 @@ ALTER TABLE public.trial_occurrences ADD CONSTRAINT trial_occurrences_window_fk 
 ALTER TABLE public.trial_occurrences ADD CONSTRAINT trial_occurrences_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE public.trial_occurrences ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.trial_occurrences FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.trial_occurrences FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.trial_occurrences to authenticated;
+
+CREATE POLICY trial_occurrences_select_own_school
+on public.trial_occurrences
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

@@ -23,4 +23,18 @@ ALTER TABLE public.whatsapp_jobs ADD CONSTRAINT whatsapp_jobs_school_id_fk FOREI
 CREATE INDEX whatsapp_jobs_due_idx ON public.whatsapp_jobs USING btree (state, next_attempt_at);
 
 ALTER TABLE public.whatsapp_jobs ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.whatsapp_jobs FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.whatsapp_jobs FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.whatsapp_jobs to authenticated;
+
+CREATE POLICY whatsapp_jobs_select_own_school
+on public.whatsapp_jobs
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

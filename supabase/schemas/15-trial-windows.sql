@@ -21,4 +21,18 @@ ALTER TABLE public.trial_windows ADD CONSTRAINT trial_windows_school_id_fk FOREI
 ALTER TABLE public.trial_windows ADD CONSTRAINT trial_windows_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE CASCADE;
 
 ALTER TABLE public.trial_windows ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.trial_windows FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.trial_windows FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.trial_windows to authenticated;
+
+CREATE POLICY trial_windows_select_own_school
+on public.trial_windows
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

@@ -36,7 +36,7 @@ CREATE TABLE "public"."bookings" (
 ALTER TABLE "public"."bookings"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."bookings" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."bookings" FROM "anon";
 
 CREATE TABLE "public"."contacts" (
   "id"         uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -55,7 +55,7 @@ CREATE TABLE "public"."contacts" (
 ALTER TABLE "public"."contacts"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."contacts" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."contacts" FROM "anon";
 
 CREATE TABLE "public"."conversations" (
   "id"                 uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -76,7 +76,7 @@ CREATE TABLE "public"."conversations" (
 ALTER TABLE "public"."conversations"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."conversations" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."conversations" FROM "anon";
 
 CREATE TABLE "public"."cron_runs" (
   "id"                       uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -93,7 +93,7 @@ CREATE TABLE "public"."cron_runs" (
 ALTER TABLE "public"."cron_runs"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."cron_runs" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."cron_runs" FROM "anon", "authenticated";
 
 CREATE TABLE "public"."email_deliveries" (
   "id"                       uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -120,7 +120,7 @@ CREATE TABLE "public"."email_deliveries" (
 ALTER TABLE "public"."email_deliveries"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."email_deliveries" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."email_deliveries" FROM "anon";
 
 CREATE TABLE "public"."faqs" (
   "id"         uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -139,7 +139,7 @@ CREATE TABLE "public"."faqs" (
 ALTER TABLE "public"."faqs"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."faqs" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."faqs" FROM "anon";
 
 CREATE TABLE "public"."funnel_events" (
   "id"                 uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -157,7 +157,7 @@ CREATE TABLE "public"."funnel_events" (
 ALTER TABLE "public"."funnel_events"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."funnel_events" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."funnel_events" FROM "anon";
 
 CREATE TABLE "public"."landing_sessions" (
   "id"                   uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -183,7 +183,7 @@ CREATE TABLE "public"."landing_sessions" (
 ALTER TABLE "public"."landing_sessions"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."landing_sessions" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."landing_sessions" FROM "anon";
 
 CREATE TABLE "public"."leads" (
   "id"                 uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -204,7 +204,7 @@ CREATE TABLE "public"."leads" (
 ALTER TABLE "public"."leads"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."leads" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."leads" FROM "anon";
 
 CREATE TABLE "public"."messages" (
   "id"              uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -221,7 +221,7 @@ CREATE TABLE "public"."messages" (
 ALTER TABLE "public"."messages"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."messages" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."messages" FROM "anon";
 
 CREATE TABLE "public"."participants" (
   "id"              uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -239,7 +239,7 @@ CREATE TABLE "public"."participants" (
 ALTER TABLE "public"."participants"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."participants" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."participants" FROM "anon";
 
 CREATE TABLE "public"."schools" (
   "id"                       uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -279,7 +279,7 @@ CREATE TABLE "public"."schools" (
 ALTER TABLE "public"."schools"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."schools" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."schools" FROM "anon";
 
 CREATE TABLE "public"."trial_occurrences" (
   "id"                uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -303,7 +303,7 @@ CREATE TABLE "public"."trial_occurrences" (
 ALTER TABLE "public"."trial_occurrences"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."trial_occurrences" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."trial_occurrences" FROM "anon";
 
 CREATE TABLE "public"."trial_offerings" (
   "id"           uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -330,7 +330,7 @@ CREATE TABLE "public"."trial_offerings" (
 ALTER TABLE "public"."trial_offerings"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."trial_offerings" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."trial_offerings" FROM "anon";
 
 CREATE TABLE "public"."trial_windows" (
   "id"                uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -355,7 +355,7 @@ CREATE TABLE "public"."trial_windows" (
 ALTER TABLE "public"."trial_windows"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."trial_windows" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."trial_windows" FROM "anon";
 
 CREATE TABLE "public"."users" (
   "id"         uuid                     NOT NULL,
@@ -369,7 +369,7 @@ CREATE TABLE "public"."users" (
 ALTER TABLE "public"."users"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."users" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."users" FROM "anon";
 
 CREATE TABLE "public"."whatsapp_booking_intents" (
   "id"               uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -390,7 +390,7 @@ CREATE TABLE "public"."whatsapp_booking_intents" (
 ALTER TABLE "public"."whatsapp_booking_intents"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."whatsapp_booking_intents" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."whatsapp_booking_intents" FROM "anon";
 
 CREATE TABLE "public"."whatsapp_deliveries" (
   "id"                       uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -425,7 +425,7 @@ CREATE TABLE "public"."whatsapp_deliveries" (
 ALTER TABLE "public"."whatsapp_deliveries"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."whatsapp_deliveries" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."whatsapp_deliveries" FROM "anon";
 
 CREATE TABLE "public"."whatsapp_jobs" (
   "id"              uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -450,7 +450,7 @@ CREATE TABLE "public"."whatsapp_jobs" (
 ALTER TABLE "public"."whatsapp_jobs"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."whatsapp_jobs" FROM "anon", "authenticated", "service_role";
+REVOKE ALL ON TABLE "public"."whatsapp_jobs" FROM "anon";
 
 CREATE TYPE "public"."booking_status" AS ENUM (
   'booked',
@@ -558,6 +558,87 @@ CREATE TYPE "public"."whatsapp_send_outcome" AS ENUM (
 ALTER TABLE "public"."whatsapp_deliveries"
   ADD COLUMN "send_outcome" public.whatsapp_send_outcome;
 
+CREATE OR REPLACE FUNCTION public.get_overview_metrics (
+  p_school_id uuid,
+  p_now       timestamp with time zone DEFAULT now()
+)
+  RETURNS TABLE (
+    upcoming_bookings            integer,
+    leads                        integer,
+    eligible_bookings            integer,
+    converted_sessions           integer,
+    chat_assisted_booking_events integer,
+    active_trial_classes         integer,
+    active_class_times           integer,
+    failed_emails                integer
+  )
+  LANGUAGE sql
+  STABLE
+  SET search_path TO ''
+  AS $function$
+    SELECT
+        (
+            SELECT count(*)::integer
+            FROM public.bookings b
+            WHERE b.school_id = s.id
+              AND b.status = 'booked'
+              AND b.start_at >= p_now
+        ),
+        (
+            SELECT count(*)::integer
+            FROM public.leads l
+            WHERE l.school_id = s.id
+        ),
+        (
+            SELECT count(*)::integer
+            FROM public.landing_sessions ls
+            WHERE ls.school_id = s.id
+              AND ls.qualified_at IS NOT NULL
+        ),
+        (
+            SELECT count(*)::integer
+            FROM public.landing_sessions ls
+            WHERE ls.school_id = s.id
+              AND ls.qualified_at IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM public.bookings b
+                  WHERE b.school_id = s.id
+                    AND b.landing_session_id = ls.id
+              )
+        ),
+        (
+            SELECT count(*)::integer
+            FROM public.funnel_events fe
+            WHERE fe.school_id = s.id
+              AND fe.event_type = 'booking_confirmed'
+              AND fe.metadata ->> 'source' = 'chat'
+        ),
+        (
+            SELECT count(*)::integer
+            FROM public.trial_offerings o
+            WHERE o.school_id = s.id
+              AND o.active = true
+        ),
+        (
+            SELECT count(*)::integer
+            FROM public.trial_windows w
+            WHERE w.school_id = s.id
+              AND w.active = true
+        ),
+        (
+            SELECT count(*)::integer
+            FROM public.email_deliveries e
+            WHERE e.school_id = s.id
+              AND e.state = 'failed'
+        )
+    FROM public.schools s
+    WHERE s.id = p_school_id
+      AND s.owner_user_id = (SELECT auth.uid());
+$function$;
+
+REVOKE ALL ON FUNCTION "public"."get_overview_metrics"(uuid, timestamp WITH time zone) FROM PUBLIC, "anon";
+
 CREATE OR REPLACE FUNCTION public.prevent_published_school_identity_change()
   RETURNS TRIGGER
   LANGUAGE plpgsql
@@ -572,7 +653,7 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION "public"."prevent_published_school_identity_change"() FROM PUBLIC, "anon", "authenticated", "service_role";
+REVOKE ALL ON FUNCTION "public"."prevent_published_school_identity_change"() FROM PUBLIC, "anon", "authenticated";
 
 ALTER TABLE "public"."bookings"
   ADD CONSTRAINT "bookings_contact_fk" FOREIGN KEY (school_id, contact_id) REFERENCES public.contacts(school_id, id) ON DELETE RESTRICT;
@@ -722,82 +803,325 @@ CREATE TRIGGER schools_identity_immutable
   FOR EACH ROW
   EXECUTE FUNCTION public.prevent_published_school_identity_change();
 
+CREATE POLICY "bookings_select_own_school" ON "public"."bookings"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "contacts_select_own_school" ON "public"."contacts"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "conversations_select_own_school" ON "public"."conversations"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "email_deliveries_select_own_school" ON "public"."email_deliveries"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "faqs_select_own_school" ON "public"."faqs"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "funnel_events_select_own_school" ON "public"."funnel_events"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "landing_sessions_select_own_school" ON "public"."landing_sessions"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "leads_select_own_school" ON "public"."leads"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "messages_select_own_school" ON "public"."messages"
+  FOR SELECT
+  TO "authenticated"
+  USING ((EXISTS ( SELECT 1
+   FROM (public.conversations c
+     JOIN public.schools s ON ((s.id = c.school_id)))
+  WHERE ((c.id = messages.conversation_id) AND (s.owner_user_id = auth.uid())))));
+
+CREATE POLICY "participants_select_own_school" ON "public"."participants"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "schools_select_own" ON "public"."schools"
+  FOR SELECT
+  TO "authenticated"
+  USING ((owner_user_id = ( SELECT auth.uid() AS uid)));
+
+CREATE POLICY "trial_occurrences_select_own_school" ON "public"."trial_occurrences"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "trial_offerings_select_own_school" ON "public"."trial_offerings"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "trial_windows_select_own_school" ON "public"."trial_windows"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "users_select_own" ON "public"."users"
+  FOR SELECT
+  TO "authenticated"
+  USING ((id = ( SELECT auth.uid() AS uid)));
+
+CREATE POLICY "whatsapp_booking_intents_select_own_school" ON "public"."whatsapp_booking_intents"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "whatsapp_deliveries_select_own_school" ON "public"."whatsapp_deliveries"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "whatsapp_jobs_select_own_school" ON "public"."whatsapp_jobs"
+  FOR SELECT
+  TO "authenticated"
+  USING ((school_id = ( SELECT s.id
+   FROM public.schools s
+  WHERE (s.owner_user_id = auth.uid()))));
+
+GRANT EXECUTE ON FUNCTION "public"."get_overview_metrics"(uuid, timestamp WITH time zone) TO "authenticated";
+
+REVOKE ALL ON FUNCTION "public"."get_overview_metrics"(uuid, timestamp WITH time zone) FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."get_overview_metrics"(uuid, timestamp WITH time zone) TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."get_overview_metrics"(uuid, timestamp WITH time zone) TO "service_role";
+
 REVOKE ALL ON FUNCTION "public"."prevent_published_school_identity_change"() FROM "postgres";
 
 GRANT EXECUTE ON FUNCTION "public"."prevent_published_school_identity_change"() TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."prevent_published_school_identity_change"() TO "service_role";
+
+REVOKE ALL ON TABLE "public"."bookings" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."bookings" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."bookings" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."bookings" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."bookings" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."contacts" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."contacts" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."contacts" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."contacts" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."contacts" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."conversations" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."conversations" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."conversations" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."conversations" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."conversations" TO "service_role";
+
 REVOKE ALL ON TABLE "public"."cron_runs" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."cron_runs" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."cron_runs" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."email_deliveries" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."email_deliveries" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."email_deliveries" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."email_deliveries" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."email_deliveries" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."faqs" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."faqs" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."faqs" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."faqs" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."faqs" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."funnel_events" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."funnel_events" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."funnel_events" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."funnel_events" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."funnel_events" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."landing_sessions" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."landing_sessions" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."landing_sessions" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."landing_sessions" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."landing_sessions" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."leads" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."leads" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."leads" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."leads" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."leads" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."messages" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."messages" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."messages" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."messages" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."messages" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."participants" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."participants" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."participants" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."participants" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."participants" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."schools" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."schools" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."schools" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."schools" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."schools" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."trial_occurrences" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."trial_occurrences" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."trial_occurrences" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_occurrences" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_occurrences" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."trial_offerings" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."trial_offerings" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."trial_offerings" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_offerings" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_offerings" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."trial_windows" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."trial_windows" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."trial_windows" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_windows" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_windows" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."users" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."users" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."users" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."users" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."users" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."whatsapp_booking_intents" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."whatsapp_booking_intents" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."whatsapp_booking_intents" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."whatsapp_booking_intents" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."whatsapp_booking_intents" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."whatsapp_deliveries" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."whatsapp_deliveries" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."whatsapp_deliveries" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."whatsapp_deliveries" TO "postgres";
 
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."whatsapp_deliveries" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."whatsapp_jobs" FROM "authenticated";
+
+GRANT SELECT ON TABLE "public"."whatsapp_jobs" TO "authenticated";
+
 REVOKE ALL ON TABLE "public"."whatsapp_jobs" FROM "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."whatsapp_jobs" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."whatsapp_jobs" TO "service_role";

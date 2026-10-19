@@ -21,4 +21,18 @@ CREATE TABLE public.landing_sessions (
 ALTER TABLE public.landing_sessions ADD CONSTRAINT landing_sessions_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
 
 ALTER TABLE public.landing_sessions ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.landing_sessions FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.landing_sessions FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.landing_sessions to authenticated;
+
+CREATE POLICY landing_sessions_select_own_school
+on public.landing_sessions
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);

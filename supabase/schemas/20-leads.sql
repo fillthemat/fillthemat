@@ -19,4 +19,18 @@ ALTER TABLE public.leads ADD CONSTRAINT leads_contact_fk FOREIGN KEY (school_id,
 ALTER TABLE public.leads ADD CONSTRAINT leads_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE SET NULL;
 
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.leads FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.leads FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.leads to authenticated;
+
+CREATE POLICY leads_select_own_school
+on public.leads
+FOR SELECT
+TO authenticated
+USING (
+    school_id = (
+        SELECT s.id
+        FROM public.schools s
+        WHERE s.owner_user_id = auth.uid()
+    )
+);
