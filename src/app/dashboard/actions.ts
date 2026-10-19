@@ -5,11 +5,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
 import { schools, trialOfferings, trialWindows } from "@/db/schema";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 import { publicSchoolPath } from "@/lib/site-url";
 
 export async function markPreviewedAction() {
-  const { school } = await requireOwnedSchool();
+  const { school } = await requireSchool();
   const db = getDb();
   await db
     .update(schools)
@@ -22,7 +22,7 @@ export async function markPreviewedAction() {
 }
 
 export async function publishSchoolAction() {
-  const { school } = await requireOwnedSchool();
+  const { school } = await requireSchool();
   const db = getDb();
   const [offerings, windows] = await Promise.all([
     db

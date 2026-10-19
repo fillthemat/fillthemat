@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { getDb } from "@/db";
 import { schools, trialOccurrences, trialOfferings, trialWindows } from "@/db/schema";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 import { publicSchoolPath } from "@/lib/site-url";
 import {
   errorState,
@@ -75,7 +75,7 @@ export async function updateProfileAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const published = school.publishedAt != null;
 
     const parsed = profileSchema.safeParse(
@@ -157,7 +157,7 @@ export async function updatePricingAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = pricingSchema.safeParse(formValues(formData, ["pricing"]));
     if (!parsed.success) {
       return errorState(
@@ -182,7 +182,7 @@ export async function updateAgentAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = agentSchema.safeParse(
       formValues(formData, ["welcomeMessage", "agentInstructions"]),
     );
@@ -214,7 +214,7 @@ export async function updateBrandingAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = brandingSchema.safeParse(formValues(formData, ["logoUrl", "primaryColor"]));
     if (!parsed.success) {
       return errorState(
@@ -244,7 +244,7 @@ export async function createOfferingAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = offeringSchema.safeParse({
       ...formValues(formData, OFFERING_EDITOR_FIELDS),
       waiverNotes: "",
@@ -274,7 +274,7 @@ export async function updateOfferingAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const identity = updateOfferingSchema.safeParse(formValues(formData, ["id", "updatedAt"]));
     const parsed = offeringSchema.safeParse({
       ...formValues(formData, OFFERING_EDITOR_FIELDS),
@@ -310,7 +310,7 @@ export async function toggleOfferingAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = toggleOfferingSchema.safeParse(formValues(formData, ["id", "active"]));
     if (!parsed.success) {
       return errorState("That trial class no longer exists. Refresh the page.");
@@ -328,7 +328,7 @@ export async function createWindowAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = windowSchema.safeParse(
       formValues(formData, [
         "trialOfferingId",
@@ -381,7 +381,7 @@ export async function deactivateWindowAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = idSchema.safeParse(formValues(formData, ["id"]));
     if (!parsed.success) {
       return errorState("That class time no longer exists. Refresh the page.");
@@ -401,7 +401,7 @@ export async function updateWindowCapacityAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = capacitySchema.safeParse(formValues(formData, ["id", "capacity"]));
     if (!parsed.success) {
       return errorState("Check the number of spots and try again.", fieldErrorsFrom(parsed.error));
@@ -464,7 +464,7 @@ export async function deleteWindowAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = idSchema.safeParse(formValues(formData, ["id"]));
     if (!parsed.success) {
       return errorState("That class time no longer exists. Refresh the page.");
@@ -498,7 +498,7 @@ export async function createFaqAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = faqSchema.safeParse(formValues(formData, FAQ_EDITOR_FIELDS));
     if (!parsed.success) {
       return errorState(
@@ -517,7 +517,7 @@ export async function updateFaqAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const identity = updateFaqSchema.safeParse(formValues(formData, ["id", "updatedAt"]));
     const parsed = faqSchema.safeParse(formValues(formData, FAQ_EDITOR_FIELDS));
     if (!identity.success || !parsed.success) {
@@ -543,7 +543,7 @@ export async function deleteFaqAction(
   formData: FormData,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = idSchema.safeParse(formValues(formData, ["id"]));
     if (!parsed.success) {
       return errorState("That question no longer exists. Refresh the page.");

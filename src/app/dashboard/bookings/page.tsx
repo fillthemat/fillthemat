@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { getDb } from "@/db";
 import { bookings, emailDeliveries } from "@/db/schema";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 import { cn } from "@/lib/utils";
 import { updateAttendanceAction } from "./actions";
 
@@ -43,7 +43,7 @@ export default async function BookingsPage({
 }: {
   searchParams: Promise<{ filter?: string; status?: string }>;
 }) {
-  const { school } = await requireOwnedSchool();
+  const { school } = await requireSchool();
   const params = await searchParams;
   const { filter = "upcoming" } = params;
   const activeFilter = FILTERS.some((item) => item.id === filter) ? filter : "upcoming";

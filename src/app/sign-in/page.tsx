@@ -8,7 +8,6 @@ export const dynamic = "force-dynamic";
 
 export default async function SignInPage() {
   const user = await getCurrentUser();
-  console.log(`DEBUG: ${JSON.stringify(user)}`);
   if (user) redirect("/");
 
   return (

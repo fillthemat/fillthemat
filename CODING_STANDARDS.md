@@ -18,11 +18,11 @@ _Example_: `src/lib/ai/tools/prepare-booking.ts`; `docs/adr/0003-school-facts-in
 
 ## Database migrations
 
-**Generate metadata; preserve applied history**:
-Never hand-edit `drizzle/meta/*` or an applied migration's SQL. Add a new migration instead, and commit each migration's SQL, snapshot and journal entry together.
+Migration files are generated from the schema files in `supabase/schemas/`, using `pg-delta`. Follow this workflow when modifying the DB schema:
 
-**Regenerate after migration conflicts**:
-After rebasing, delete only your branch's unmerged, unapplied migration and regenerate it with `bun run db:generate` against the rebased history. Never hand-merge journal or snapshot JSON; retain the target branch's metadata as the generation baseline.
+1. Add/update schema file(s) in `supabase/schemas/`
+2. Generate a migration file with `bun db:migrate:gen`
+3. Apply migrations with `bun db:migrate:up`
 
 ## Pages and UI
 

@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/dashboard/page-header";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 import { listTimezones } from "@/lib/timezones";
 import { serializeTimestamp } from "./form-utils";
 import { formatTimezone } from "./format";
@@ -19,7 +19,7 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ section?: string }>;
 }) {
-  const [{ school }, params] = await Promise.all([requireOwnedSchool(), searchParams]);
+  const [{ school }, params] = await Promise.all([requireSchool(), searchParams]);
   const section: SectionId = resolveSection(params.section);
   const meta = sectionMeta(section);
   const location = [school.address, school.city].filter(Boolean).join(", ") || null;
@@ -53,7 +53,7 @@ async function SectionContent({
 }: {
   section: SectionId;
   schoolId: string;
-  school: Awaited<ReturnType<typeof requireOwnedSchool>>["school"];
+  school: Awaited<ReturnType<typeof requireSchool>>["school"];
   location: string | null;
 }) {
   if (section === "profile") {

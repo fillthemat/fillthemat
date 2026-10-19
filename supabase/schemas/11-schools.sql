@@ -56,5 +56,13 @@ CREATE TRIGGER schools_identity_immutable
   EXECUTE FUNCTION public.prevent_published_school_identity_change();
 
 ALTER TABLE public.schools ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.schools FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION public.prevent_published_school_identity_change() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.schools FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.prevent_published_school_identity_change() FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON TABLE public.schools to authenticated;
+
+CREATE POLICY schools_select_own
+on public.schools
+FOR SELECT
+TO authenticated
+USING (owner_user_id = (SELECT auth.uid()))

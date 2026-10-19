@@ -3,10 +3,10 @@ import { formatOwnerDate } from "@/components/dashboard/format";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { getDb } from "@/db";
 import { contacts, leads } from "@/db/schema";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 
 export default async function LeadsPage() {
-  const { school } = await requireOwnedSchool();
+  const { school } = await requireSchool();
   const db = getDb();
   const rows = await db
     .select({

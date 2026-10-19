@@ -4,13 +4,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
 import { bookings, funnelEvents } from "@/db/schema";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
 import { cancelBooking } from "@/lib/schedule/book-slot";
 
 export async function updateAttendanceAction(formData: FormData) {
-  const { school } = await requireOwnedSchool();
+  const { school } = await requireSchool();
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status"));
   if (status !== "showed" && status !== "no_show") return;
@@ -37,7 +37,7 @@ export async function updateAttendanceAction(formData: FormData) {
 }
 
 export async function cancelBookingAction(formData: FormData) {
-  const { school } = await requireOwnedSchool();
+  const { school } = await requireSchool();
   const id = String(formData.get("id") ?? "");
   const result = await cancelBooking({ schoolId: school.id, bookingId: id });
   if (result.ok && !result.replay) {

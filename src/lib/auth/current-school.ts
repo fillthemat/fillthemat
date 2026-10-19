@@ -1,25 +1,26 @@
-import { eq } from "drizzle-orm";
+import "server-only";
 import { redirect } from "next/navigation";
-import { getDb } from "@/db";
-import { type School, schools } from "@/db/schema";
-import { requireUser, type VerifiedUser } from "./current-user";
+import { Tables } from "@/db/types";
+import { getCurrentUser, requireUser, type VerifiedUser } from "@/lib/auth/current-user";
+import { createClient } from "@/lib/supabase/server";
 
-export async function getOwnedSchool(userId: string): Promise<School | null> {
-  const db = getDb();
-  const [school] = await db.select().from(schools).where(eq(schools.ownerUserId, userId)).limit(1);
-  return school ?? null;
+export async function getCurrentSchool(): Promise<Tables<"schools"> | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const supabase = await createClient();
+  const { data } = await supabase.from("schools").select("*").eq("owner_user_id", user.id).limit(1);
+  if (!data) return null;
+
+  return data[0];
 }
 
-export async function requireOwnedSchool(): Promise<{
+export async function requireSchool(): Promise<{
   user: VerifiedUser;
-  school: School;
+  school: Tables<"schools">;
 }> {
   const user = await requireUser();
-  const school = await getOwnedSchool(user.id);
+  const school = await getCurrentSchool();
   if (!school) redirect("/onboarding");
   return { user, school };
-}
-
-export function isSchoolPublic(school: School): boolean {
-  return school.approvedAt != null && school.publishedAt != null;
 }
