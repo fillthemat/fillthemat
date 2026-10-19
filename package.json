@@ -83,8 +83,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@shadcn/lint": "^0.1.0",
-    "@tailwindcss/postcss": "^4",
+    "@shadcn/lint": "^0.2.3",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/bun": "^1.4.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -94,7 +94,7 @@
     "oxlint": "^1.83.0",
     "skills": "^1.5.23",
     "supabase": "^2.121.0",
-    "tailwindcss": "^4",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5",
     "vitest": "^4.1.11"
   },

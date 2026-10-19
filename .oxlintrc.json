@@ -33,7 +33,7 @@
         ]
       }
     ],
-    "shadcn/no-raw-colors": "warn",
+    "shadcn/no-raw-colors": "error",
     "shadcn/no-arbitrary-values": "warn",
     "shadcn/no-inline-styles": "warn",
     "shadcn/no-unknown-classes": "warn",

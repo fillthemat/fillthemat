@@ -57,13 +57,13 @@ export function PublicPagePreview({
         </div>
 
         <div className="rounded-2xl bg-page-100 px-4 py-3 text-sm leading-relaxed text-page-800">
-          <p className="line-clamp-6 break-words whitespace-pre-wrap">
+          <p className="line-clamp-6 wrap-break-word whitespace-pre-wrap">
             {welcomeMessage.trim() || DEFAULT_WELCOME}
           </p>
         </div>
 
         <div
-          className="flex h-10 items-center justify-center rounded-full bg-(--accent) px-4 text-sm font-medium text-white"
+          className="flex h-10 items-center justify-center rounded-full bg-accent px-4 text-sm font-medium text-white"
           style={{ "--accent": accent } as CSSProperties}
         >
           Book a trial class

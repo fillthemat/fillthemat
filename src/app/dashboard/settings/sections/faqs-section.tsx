@@ -239,7 +239,7 @@ function FaqRow({
               <span className="hidden group-open:inline">Hide answer</span>
             </span>
           </summary>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+          <p className="mt-2 max-w-prose text-sm leading-relaxed wrap-break-word whitespace-pre-wrap text-muted-foreground">
             {faq.answer}
           </p>
         </details>

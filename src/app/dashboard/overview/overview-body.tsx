@@ -1,8 +1,8 @@
 import Link from "next/link";
-import type { School } from "@/db/schema";
 import { formatOwnerDateTime } from "@/components/dashboard/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tables } from "@/db/types";
 import { publicSchoolUrl } from "@/lib/site-url";
 import { markPreviewedAction, publishSchoolAction } from "../actions";
 import { sectionHref } from "../settings/sections";
@@ -14,22 +14,18 @@ export async function OverviewBody({
   errorParam,
   headerList,
 }: {
-  school: School;
+  school: Tables<"schools">;
   errorParam?: string;
   headerList: Headers;
 }) {
   const metrics = await loadOverviewMetrics(school.id);
-  const published = school.publishedAt != null;
+  const published = !!school.published_at;
   const publicUrl = published ? publicSchoolUrl(school.slug, headerList) : null;
   const conversion = formatBookingConversion(metrics.convertedSessions, metrics.eligibleSessions);
   const blockers = unpublishedBlockers({
-    approved: school.approvedAt != null,
-    previewed: school.previewedAt != null,
-    hasName: Boolean(school.name),
-    hasSlug: Boolean(school.slug),
-    hasTimezone: Boolean(school.timezone),
-    hasNotificationEmail: Boolean(school.notificationEmail),
-    hasLocation: Boolean(school.city || school.address),
+    approved: !!school.approved_at,
+    previewed: !!school.previewed_at,
+    hasLocation: !!school.city && !!school.address,
     hasOffering: metrics.activeTrialClasses > 0,
     hasWindow: metrics.activeClassTimes > 0,
   });
@@ -57,7 +53,7 @@ export async function OverviewBody({
             <Badge variant={published ? "success" : "muted"}>
               {published ? "Published" : "Unpublished"}
             </Badge>
-            {school.approvedAt ? null : <Badge variant="warning">Awaiting approval</Badge>}
+            {!!school.approved_at ? null : <Badge variant="warning">Awaiting approval</Badge>}
           </div>
           <div className="flex flex-wrap gap-2">
             {publicUrl ? (
@@ -252,7 +248,7 @@ function MetricCell({
   return (
     <div className="flex min-w-0 flex-col gap-2 p-4 md:p-5">
       <p className="text-sm text-foreground">{label}</p>
-      <p className="text-(length:--text-metric) leading-none font-semibold tabular-nums md:text-(length:--text-metric-lg)">
+      <p className="text-metric leading-none font-semibold tabular-nums md:text-metric-lg">
         {value}
       </p>
       <p className="text-xs leading-relaxed text-pretty text-muted-foreground md:text-sm">
@@ -297,20 +293,12 @@ type ReadinessItem = {
 function unpublishedBlockers({
   approved,
   previewed,
-  hasName,
-  hasSlug,
-  hasTimezone,
-  hasNotificationEmail,
   hasLocation,
   hasOffering,
   hasWindow,
 }: {
   approved: boolean;
   previewed: boolean;
-  hasName: boolean;
-  hasSlug: boolean;
-  hasTimezone: boolean;
-  hasNotificationEmail: boolean;
   hasLocation: boolean;
   hasOffering: boolean;
   hasWindow: boolean;
@@ -322,38 +310,10 @@ function unpublishedBlockers({
   if (!previewed) {
     items.push({ id: "preview", label: "Preview the public page" });
   }
-  if (!hasName) {
-    items.push({
-      id: "name",
-      label: "Add a school name",
-      href: sectionHref("profile"),
-    });
-  }
-  if (!hasSlug) {
-    items.push({
-      id: "slug",
-      label: "Add a public page address",
-      href: sectionHref("profile"),
-    });
-  }
-  if (!hasTimezone) {
-    items.push({
-      id: "timezone",
-      label: "Choose a time zone",
-      href: sectionHref("profile"),
-    });
-  }
-  if (!hasNotificationEmail) {
-    items.push({
-      id: "email",
-      label: "Add a notification email",
-      href: sectionHref("profile"),
-    });
-  }
   if (!hasLocation) {
     items.push({
       id: "location",
-      label: "Add a city or street address",
+      label: "Add a city and street address",
       href: sectionHref("profile"),
     });
   }

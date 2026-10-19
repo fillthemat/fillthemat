@@ -59,7 +59,7 @@ export default async function LeadsPage() {
                 </p>
                 {participant ? <p className="text-sm text-pretty">{participant}</p> : null}
                 {lead.statedNeed ? (
-                  <p className="text-sm text-pretty break-words">{lead.statedNeed}</p>
+                  <p className="text-sm text-pretty wrap-break-word">{lead.statedNeed}</p>
                 ) : null}
               </li>
             );
