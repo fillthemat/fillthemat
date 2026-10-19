@@ -23,6 +23,7 @@ Migration files are generated from the schema files in `supabase/schemas/`, usin
 1. Add/update schema file(s) in `supabase/schemas/`
 2. Generate a migration file with `bun db:migrate:gen`
 3. Apply migrations with `bun db:migrate:up`
+4. Keep `src/db/types.ts` up-to-date with `bun db:typegen`
 
 ## Pages and UI
 

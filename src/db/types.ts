@@ -1255,7 +1255,19 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      get_overview_metrics: {
+        Args: { p_now?: string; p_school_id: string };
+        Returns: {
+          active_class_times: number;
+          active_trial_classes: number;
+          chat_assisted_booking_events: number;
+          converted_sessions: number;
+          eligible_bookings: number;
+          failed_emails: number;
+          leads: number;
+          upcoming_bookings: number;
+        }[];
+      };
     };
     Enums: {
       booking_status: "booked" | "showed" | "no_show" | "cancelled";

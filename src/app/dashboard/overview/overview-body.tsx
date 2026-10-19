@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { formatOwnerDateTime } from "@/components/dashboard/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tables } from "@/db/types";
@@ -18,22 +17,22 @@ export async function OverviewBody({
   errorParam?: string;
   headerList: Headers;
 }) {
-  const metrics = await loadOverviewMetrics(school.id);
+  const metrics = await loadOverviewMetrics();
   const published = !!school.published_at;
   const publicUrl = published ? publicSchoolUrl(school.slug, headerList) : null;
-  const conversion = formatBookingConversion(metrics.convertedSessions, metrics.eligibleSessions);
+  const conversion = formatBookingConversion(metrics.converted_sessions, metrics.eligible_bookings);
   const blockers = unpublishedBlockers({
     approved: !!school.approved_at,
     previewed: !!school.previewed_at,
     hasLocation: !!school.city && !!school.address,
-    hasOffering: metrics.activeTrialClasses > 0,
-    hasWindow: metrics.activeClassTimes > 0,
+    hasOffering: metrics.active_trial_classes > 0,
+    hasWindow: metrics.active_class_times > 0,
   });
   const emptyPublished =
     published &&
-    metrics.upcomingBookings === 0 &&
+    metrics.upcoming_bookings === 0 &&
     metrics.leads === 0 &&
-    metrics.eligibleSessions === 0;
+    metrics.eligible_bookings === 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -102,7 +101,7 @@ export async function OverviewBody({
           <div className="grid grid-cols-1 md:grid-cols-3 md:divide-x md:divide-border">
             <MetricCell
               label="Upcoming bookings"
-              value={String(metrics.upcomingBookings)}
+              value={String(metrics.upcoming_bookings)}
               evidence="Scheduled from now"
               action={
                 <Link
@@ -143,7 +142,7 @@ export async function OverviewBody({
             ) : null}
           </p>
         ) : null}
-        {!published && metrics.upcomingBookings === 0 && metrics.leads === 0 ? (
+        {!published && metrics.upcoming_bookings === 0 && metrics.leads === 0 ? (
           <p className="mt-3 text-sm text-pretty text-muted-foreground">
             Counts stay at zero until families use your public page.
           </p>
@@ -158,22 +157,22 @@ export async function OverviewBody({
           <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
             <Detail
               label="Eligible sessions"
-              value={metrics.eligibleSessions}
+              value={metrics.eligible_bookings}
               hint="Public-page sessions with tracking that started on an approved, published page. Preview and known-bot sessions are excluded when the session is created. This does not mean every bot is eliminated, and these are not booking-ready prospects."
             />
             <Detail
               label="Converted sessions"
-              value={metrics.convertedSessions}
+              value={metrics.converted_sessions}
               hint="Eligible sessions that made at least one booking. A later cancellation does not undo that a booking was made. Each session counts once."
             />
             <Detail
               label="Chat-assisted bookings"
-              value={metrics.chatAssistedBookingEvents}
+              value={metrics.chat_assisted_booking_events}
               hint="Recorded booking-confirmation events with source = chat. These are event counts, not the same as converted sessions."
             />
             <Detail
               label="Active trial classes"
-              value={metrics.activeTrialClasses}
+              value={metrics.active_trial_classes}
               hint="Configuration count, not traffic."
               action={
                 <Link
@@ -186,7 +185,7 @@ export async function OverviewBody({
             />
             <Detail
               label="Active class times"
-              value={metrics.activeClassTimes}
+              value={metrics.active_class_times}
               hint="Configuration count, not traffic."
               action={
                 <Link
@@ -201,33 +200,25 @@ export async function OverviewBody({
         </div>
       </details>
 
-      {metrics.failedEmails > 0 ? (
+      {metrics.failed_emails > 0 ? (
         <p role="status" className="text-sm text-warning">
-          {metrics.failedEmails === 1
+          {metrics.failed_emails === 1
             ? "1 email failed to send."
-            : `${metrics.failedEmails} emails failed to send.`}
+            : `${metrics.failed_emails} emails failed to send.`}
         </p>
       ) : null}
 
       <details className="text-sm text-muted-foreground">
         <summary className="cursor-pointer text-sm font-medium text-foreground">
           System status
-          {metrics.failedEmails > 0 ? (
+          {metrics.failed_emails > 0 ? (
             <span className="ml-2 font-normal text-warning">
-              {formatCountLabel(metrics.failedEmails, "email failure")}
+              {formatCountLabel(metrics.failed_emails, "email failure")}
             </span>
           ) : null}
         </summary>
         <dl className="mt-3 grid gap-2">
-          <Detail label="Email failures" value={metrics.failedEmails} />
-          <Detail
-            label="Last maintenance"
-            value={
-              metrics.lastMaintenanceAt
-                ? formatOwnerDateTime(metrics.lastMaintenanceAt, school.timezone)
-                : "Never"
-            }
-          />
+          <Detail label="Email failures" value={metrics.failed_emails} />
         </dl>
       </details>
     </div>
