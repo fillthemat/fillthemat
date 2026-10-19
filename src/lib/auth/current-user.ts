@@ -1,5 +1,6 @@
 import "server-only";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export type VerifiedUser = {
@@ -8,7 +9,7 @@ export type VerifiedUser = {
   name: string | null;
 };
 
-export async function getCurrentUser(): Promise<VerifiedUser | null> {
+export const getCurrentUser = cache(async (): Promise<VerifiedUser | null> => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
 
@@ -19,7 +20,7 @@ export async function getCurrentUser(): Promise<VerifiedUser | null> {
     name: data.claims.user_metadata?.name,
   };
   return user;
-}
+});
 
 export async function requireUser(): Promise<VerifiedUser> {
   const user = await getCurrentUser();

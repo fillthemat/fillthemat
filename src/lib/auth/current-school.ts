@@ -1,10 +1,11 @@
 import "server-only";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { Tables } from "@/db/types";
 import { getCurrentUser, requireUser, type VerifiedUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 
-export async function getCurrentSchool(): Promise<Tables<"schools"> | null> {
+export const getCurrentSchool = cache(async (): Promise<Tables<"schools"> | null> => {
   const user = await getCurrentUser();
   if (!user) return null;
 
@@ -13,7 +14,7 @@ export async function getCurrentSchool(): Promise<Tables<"schools"> | null> {
   if (!data) return null;
 
   return data[0];
-}
+});
 
 export async function requireSchool(): Promise<{
   user: VerifiedUser;
