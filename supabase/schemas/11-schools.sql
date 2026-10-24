@@ -1,7 +1,11 @@
 CREATE TABLE public.schools (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    owner_user_id uuid NOT NULL,
-    slug text NOT NULL,
+    owner_user_id uuid NOT NULL
+        CONSTRAINT schools_owner_user_id_unique UNIQUE
+        CONSTRAINT schools_owner_user_id_users_id_fk REFERENCES public.users(id) ON DELETE CASCADE,
+    slug text NOT NULL
+        CONSTRAINT schools_slug_unique UNIQUE
+        CONSTRAINT schools_slug_format CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(slug) BETWEEN 3 AND 48),
     name text NOT NULL,
     timezone text NOT NULL,
     approved_at timestamp with time zone,
@@ -19,21 +23,16 @@ CREATE TABLE public.schools (
     pricing text,
     welcome_message text,
     agent_instructions text,
-    logo_url text,
-    primary_color text,
+    logo_url text
+        CONSTRAINT schools_logo_url CHECK (logo_url IS NULL OR logo_url ~ '^https://'),
+    primary_color text
+        CONSTRAINT schools_primary_color CHECK (primary_color IS NULL OR primary_color ~ '^#[0-9A-Fa-f]{6}$'),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     whatsapp_phone_number_id text,
     whatsapp_waba_id text,
-    CONSTRAINT schools_school_id_unique PRIMARY KEY (id),
-    CONSTRAINT schools_owner_user_id_unique UNIQUE (owner_user_id),
-    CONSTRAINT schools_slug_unique UNIQUE (slug),
-    CONSTRAINT schools_slug_format CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(slug) BETWEEN 3 AND 48),
-    CONSTRAINT schools_primary_color CHECK (primary_color IS NULL OR primary_color ~ '^#[0-9A-Fa-f]{6}$'),
-    CONSTRAINT schools_logo_url CHECK (logo_url IS NULL OR logo_url ~ '^https://')
+    CONSTRAINT schools_school_id_unique PRIMARY KEY (id)
 );
-
-ALTER TABLE public.schools ADD CONSTRAINT schools_owner_user_id_users_id_fk FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 CREATE UNIQUE INDEX schools_whatsapp_phone_number_id_unique ON public.schools USING btree (whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL;
 

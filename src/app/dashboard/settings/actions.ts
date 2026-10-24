@@ -76,7 +76,7 @@ export async function updateProfileAction(
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const published = school.publishedAt != null;
+    const published = school.published_at != null;
 
     const parsed = profileSchema.safeParse(
       formValues(formData, [

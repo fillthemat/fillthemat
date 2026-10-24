@@ -14,7 +14,7 @@ export async function markPreviewedAction() {
   await db
     .update(schools)
     .set({
-      previewedAt: school.previewedAt ?? new Date(),
+      previewedAt: new Date(school.previewed_at ?? Date.now()),
       updatedAt: new Date(),
     })
     .where(eq(schools.id, school.id));
@@ -36,12 +36,12 @@ export async function publishSchoolAction() {
   ]);
 
   const ready =
-    school.approvedAt &&
-    school.previewedAt &&
+    school.approved_at &&
+    school.previewed_at &&
     school.name &&
     school.slug &&
     school.timezone &&
-    school.notificationEmail &&
+    school.notification_email &&
     (school.city || school.address) &&
     offerings.length > 0 &&
     windows.length > 0;
@@ -53,7 +53,7 @@ export async function publishSchoolAction() {
   await db
     .update(schools)
     .set({
-      publishedAt: school.publishedAt ?? new Date(),
+      publishedAt: new Date(school.published_at ?? Date.now()),
       updatedAt: new Date(),
     })
     .where(and(eq(schools.id, school.id), isNull(schools.publishedAt)));

@@ -28,6 +28,18 @@
       "skillPath": "skills/shadcn/SKILL.md",
       "computedHash": "b864a958765563321f485a96f4d59c0bb6539f4286ab6d8b8b66895b7ebd302d"
     },
+    "sql-code-review": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/sql-code-review/SKILL.md",
+      "computedHash": "7dd337a3271381237c5ace34f9a9a525f73e1a4f93a48321044b00fcd5f95942"
+    },
+    "supabase-postgres-best-practices": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
+      "computedHash": "e14e276241805c97dbcfe40dcbea1a3035269cc7293cac4b1832dda41a835e60"
+    },
     "token-lifecycle": {
       "source": "@marsidev/react-turnstile",
       "sourceType": "node_modules",

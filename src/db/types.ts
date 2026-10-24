@@ -1255,6 +1255,7 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      cancel_dashboard_booking: { Args: { p_booking_id: string }; Returns: string };
       get_overview_metrics: {
         Args: { p_now?: string; p_school_id: string };
         Returns: {
@@ -1267,6 +1268,10 @@ export type Database = {
           leads: number;
           upcoming_bookings: number;
         }[];
+      };
+      update_booking_attendance: {
+        Args: { p_booking_id: string; p_status: string };
+        Returns: boolean;
       };
     };
     Enums: {

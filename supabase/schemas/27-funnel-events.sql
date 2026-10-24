@@ -1,6 +1,7 @@
 CREATE TABLE public.funnel_events (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-    school_id uuid NOT NULL,
+    school_id uuid NOT NULL
+        CONSTRAINT funnel_events_school_id_fk REFERENCES public.schools(id) ON DELETE CASCADE,
     landing_session_id uuid,
     conversation_id uuid,
     booking_id uuid,
@@ -9,8 +10,6 @@ CREATE TABLE public.funnel_events (
     metadata jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-ALTER TABLE public.funnel_events ADD CONSTRAINT funnel_events_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
 
 CREATE INDEX funnel_events_school_created_idx ON public.funnel_events USING btree (school_id, created_at);
 

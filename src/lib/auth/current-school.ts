@@ -1,7 +1,7 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { Tables } from "@/db/types";
+import { type Tables } from "@/db/types";
 import { getCurrentUser, requireUser, type VerifiedUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -13,7 +13,7 @@ export const getCurrentSchool = cache(async (): Promise<Tables<"schools"> | null
   const { data } = await supabase.from("schools").select("*").eq("owner_user_id", user.id).limit(1);
   if (!data) return null;
 
-  return data[0];
+  return data[0] ?? null;
 });
 
 export async function requireSchool(): Promise<{

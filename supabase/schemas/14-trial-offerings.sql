@@ -1,7 +1,9 @@
 CREATE TABLE public.trial_offerings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-    school_id uuid NOT NULL,
-    name text NOT NULL,
+    school_id uuid NOT NULL
+        CONSTRAINT trial_offerings_school_id_fk REFERENCES public.schools(id) ON DELETE CASCADE,
+    name text NOT NULL
+        CONSTRAINT trial_offerings_name_len CHECK (char_length(name) BETWEEN 1 AND 80),
     description text,
     minimum_age integer,
     maximum_age integer,
@@ -16,11 +18,8 @@ CREATE TABLE public.trial_offerings (
         (minimum_age IS NULL OR minimum_age BETWEEN 0 AND 99)
         AND (maximum_age IS NULL OR maximum_age BETWEEN 0 AND 99)
         AND (minimum_age IS NULL OR maximum_age IS NULL OR minimum_age <= maximum_age)
-    ),
-    CONSTRAINT trial_offerings_name_len CHECK (char_length(name) BETWEEN 1 AND 80)
+    )
 );
-
-ALTER TABLE public.trial_offerings ADD CONSTRAINT trial_offerings_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
 
 ALTER TABLE public.trial_offerings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.trial_offerings FROM PUBLIC, anon, authenticated;

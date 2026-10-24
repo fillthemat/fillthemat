@@ -1,6 +1,7 @@
 CREATE TABLE public.landing_sessions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-    school_id uuid NOT NULL,
+    school_id uuid NOT NULL
+        CONSTRAINT landing_sessions_school_id_fk REFERENCES public.schools(id) ON DELETE CASCADE,
     session_key_hash text NOT NULL,
     first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -17,8 +18,6 @@ CREATE TABLE public.landing_sessions (
     CONSTRAINT landing_sessions_school_id_id UNIQUE (school_id, id),
     CONSTRAINT landing_sessions_school_key UNIQUE (school_id, session_key_hash)
 );
-
-ALTER TABLE public.landing_sessions ADD CONSTRAINT landing_sessions_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
 
 ALTER TABLE public.landing_sessions ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.landing_sessions FROM PUBLIC, anon, authenticated;

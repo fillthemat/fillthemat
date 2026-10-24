@@ -57,7 +57,7 @@ async function SectionContent({
   location: string | null;
 }) {
   if (section === "profile") {
-    const published = school.publishedAt != null;
+    const published = school.published_at != null;
     return (
       <ProfileSection
         published={published}
@@ -66,15 +66,15 @@ async function SectionContent({
           name: school.name,
           slug: school.slug,
           timezone: school.timezone,
-          notificationEmail: school.notificationEmail,
+          notificationEmail: school.notification_email,
           phone: school.phone ?? "",
           website: school.website ?? "",
           address: school.address ?? "",
           city: school.city ?? "",
           country: school.country,
-          parkingNotes: school.parkingNotes ?? "",
-          accessNotes: school.accessNotes ?? "",
-          trialGuidance: school.trialGuidance ?? "",
+          parkingNotes: school.parking_notes ?? "",
+          accessNotes: school.access_notes ?? "",
+          trialGuidance: school.trial_guidance ?? "",
         }}
       />
     );
@@ -158,23 +158,23 @@ async function SectionContent({
   if (section === "agent") {
     return (
       <AgentSection
-        welcomeMessage={school.welcomeMessage ?? ""}
-        agentInstructions={school.agentInstructions ?? ""}
+        welcomeMessage={school.welcome_message ?? ""}
+        agentInstructions={school.agent_instructions ?? ""}
         schoolName={school.name}
         location={location}
-        logoUrl={school.logoUrl}
-        primaryColor={school.primaryColor}
+        logoUrl={school.logo_url}
+        primaryColor={school.primary_color}
       />
     );
   }
 
   return (
     <BrandingSection
-      logoUrl={school.logoUrl ?? ""}
-      primaryColor={school.primaryColor ?? ""}
+      logoUrl={school.logo_url ?? ""}
+      primaryColor={school.primary_color ?? ""}
       schoolName={school.name}
       location={location}
-      welcomeMessage={school.welcomeMessage ?? ""}
+      welcomeMessage={school.welcome_message ?? ""}
     />
   );
 }

@@ -1,4 +1,3 @@
-import { and, desc, eq, gte, lt } from "drizzle-orm";
 import Link from "next/link";
 import { CancelBookingButton } from "@/components/dashboard/cancel-booking-button";
 import {
@@ -18,11 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getDb } from "@/db";
-import { bookings, emailDeliveries } from "@/db/schema";
-import { requireSchool } from "@/lib/auth/current-school";
-import { cn } from "@/lib/utils";
 import { updateAttendanceAction } from "./actions";
+import { loadBookings } from "./queries";
 
 const FILTERS = [
   {
@@ -43,39 +39,12 @@ export default async function BookingsPage({
 }: {
   searchParams: Promise<{ filter?: string; status?: string }>;
 }) {
-  const { school } = await requireSchool();
   const params = await searchParams;
   const { filter = "upcoming" } = params;
   const activeFilter = FILTERS.some((item) => item.id === filter) ? filter : "upcoming";
   const statusFilter = resolveStatus(params.status);
-  const db = getDb();
   const now = new Date();
-  const rows = await db
-    .select()
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.schoolId, school.id),
-        activeFilter === "upcoming"
-          ? gte(bookings.startAt, now)
-          : activeFilter === "past"
-            ? lt(bookings.startAt, now)
-            : undefined,
-        statusFilter ? eq(bookings.status, statusFilter) : undefined,
-      ),
-    )
-    .orderBy(desc(bookings.startAt));
-
-  const deliveries = await db
-    .select()
-    .from(emailDeliveries)
-    .where(eq(emailDeliveries.schoolId, school.id));
-  const deliveryByBooking = new Map<string, string>();
-  for (const delivery of deliveries) {
-    if (delivery.bookingId) {
-      deliveryByBooking.set(delivery.bookingId, delivery.state);
-    }
-  }
+  const rows = await loadBookings(activeFilter, statusFilter, now);
 
   const emptyLabel = statusFilter
     ? activeFilter === "upcoming"
@@ -97,32 +66,25 @@ export default async function BookingsPage({
           {FILTERS.map((item) => {
             const current = item.id === activeFilter;
             return (
-              <Link
-                key={item.id}
-                href={item.href}
-                aria-current={current ? "page" : undefined}
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-sm",
-                  current
-                    ? "bg-muted font-medium text-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                )}
-              >
-                {item.label}
-              </Link>
+              <Button key={item.id} asChild variant={current ? "secondary" : "ghost"} size="sm">
+                <Link href={item.href} aria-current={current ? "page" : undefined}>
+                  {item.label}
+                </Link>
+              </Button>
             );
           })}
         </div>
         {statusFilter ? (
           <p className="flex items-center gap-2 text-sm">
             <Badge variant="outline">Booked only</Badge>
-            <Link
-              href={`/dashboard/bookings?filter=${activeFilter}`}
-              className="text-muted-foreground underline-offset-4 hover:underline"
-              aria-label="Remove Booked only filter"
-            >
-              Clear
-            </Link>
+            <Button asChild variant="link" size="sm">
+              <Link
+                href={`/dashboard/bookings?filter=${activeFilter}`}
+                aria-label="Remove Booked only filter"
+              >
+                Clear
+              </Link>
+            </Button>
           </p>
         ) : null}
       </nav>
@@ -137,11 +99,11 @@ export default async function BookingsPage({
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-medium text-pretty">
-                      {booking.participantNameSnapshot} ({booking.participantAgeSnapshot})
+                      {booking.participant_name_snapshot} ({booking.participant_age_snapshot})
                     </p>
-                    <p className="text-sm text-pretty">{booking.offeringNameSnapshot}</p>
+                    <p className="text-sm text-pretty">{booking.offering_name_snapshot}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatBookingWhen(booking.startAt, booking.timezoneSnapshot)}
+                      {formatBookingWhen(new Date(booking.start_at), booking.timezone_snapshot)}
                     </p>
                   </div>
                   <Badge variant={bookingStatusVariant(booking.status)}>
@@ -150,16 +112,16 @@ export default async function BookingsPage({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   <ContactLine
-                    name={booking.contactNameSnapshot}
-                    email={booking.contactEmailSnapshot}
+                    name={booking.contact_name_snapshot}
+                    email={booking.contact_email_snapshot}
                   />
                   <span className="mx-1">·</span>
-                  Email {formatEmailState(deliveryByBooking.get(booking.id))}
+                  Email {formatEmailState(booking.email_deliveries[0]?.state)}
                 </p>
                 <BookingActions
                   id={booking.id}
                   status={booking.status}
-                  startAt={booking.startAt}
+                  startAt={new Date(booking.start_at)}
                   now={now}
                 />
               </li>
@@ -185,12 +147,12 @@ export default async function BookingsPage({
                 {rows.map((booking) => (
                   <TableRow key={booking.id}>
                     <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
-                      {formatBookingWhen(booking.startAt, booking.timezoneSnapshot)}
+                      {formatBookingWhen(new Date(booking.start_at), booking.timezone_snapshot)}
                     </TableCell>
                     <TableCell className="font-medium text-pretty">
-                      {booking.participantNameSnapshot} ({booking.participantAgeSnapshot})
+                      {booking.participant_name_snapshot} ({booking.participant_age_snapshot})
                     </TableCell>
-                    <TableCell className="text-pretty">{booking.offeringNameSnapshot}</TableCell>
+                    <TableCell className="text-pretty">{booking.offering_name_snapshot}</TableCell>
                     <TableCell>
                       <Badge variant={bookingStatusVariant(booking.status)}>
                         {formatBookingStatus(booking.status)}
@@ -198,18 +160,18 @@ export default async function BookingsPage({
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       <ContactLine
-                        name={booking.contactNameSnapshot}
-                        email={booking.contactEmailSnapshot}
+                        name={booking.contact_name_snapshot}
+                        email={booking.contact_email_snapshot}
                       />
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatEmailState(deliveryByBooking.get(booking.id))}
+                      {formatEmailState(booking.email_deliveries[0]?.state)}
                     </TableCell>
                     <TableCell>
                       <BookingActions
                         id={booking.id}
                         status={booking.status}
-                        startAt={booking.startAt}
+                        startAt={new Date(booking.start_at)}
                         now={now}
                       />
                     </TableCell>

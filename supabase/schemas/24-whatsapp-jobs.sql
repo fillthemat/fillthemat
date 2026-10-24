@@ -1,8 +1,10 @@
 CREATE TABLE public.whatsapp_jobs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-    school_id uuid,
+    school_id uuid
+        CONSTRAINT whatsapp_jobs_school_id_fk REFERENCES public.schools(id) ON DELETE SET NULL,
     phone_number_id text NOT NULL,
-    dedupe_key text NOT NULL,
+    dedupe_key text NOT NULL
+        CONSTRAINT whatsapp_jobs_dedupe_key UNIQUE,
     kind text DEFAULT 'inbound_message' NOT NULL,
     payload jsonb NOT NULL,
     state public.whatsapp_job_state DEFAULT 'pending' NOT NULL,
@@ -14,11 +16,8 @@ CREATE TABLE public.whatsapp_jobs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     failure_reason text,
-    terminal_cause text,
-    CONSTRAINT whatsapp_jobs_dedupe_key UNIQUE (dedupe_key)
+    terminal_cause text
 );
-
-ALTER TABLE public.whatsapp_jobs ADD CONSTRAINT whatsapp_jobs_school_id_fk FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE SET NULL;
 
 CREATE INDEX whatsapp_jobs_due_idx ON public.whatsapp_jobs USING btree (state, next_attempt_at);
 
