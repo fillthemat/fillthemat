@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Channel } from "@/lib/channel";
-import { type Transaction, type TransactionOptions, withTransaction } from "@/db";
+import { getDb, type Transaction, type TransactionOptions, withTransaction } from "@/db";
 import {
   contacts,
   emailDeliveries,
@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { hashToken, hashWaId, normalizeEmail } from "@/lib/crypto";
 import { FUNNEL_EVENTS } from "@/lib/funnel";
+import { recipientQuotaExceeded } from "@/lib/security/limits";
 
 export type CreateLeadContact = {
   name: string;
@@ -29,7 +30,7 @@ export type CreateLeadSource = {
 }[Channel];
 
 export type CreateLeadInput = {
-  school: School;
+  school: Pick<School, "id">;
   contact: CreateLeadContact;
   source: CreateLeadSource;
   participantName?: string | null;
@@ -37,6 +38,19 @@ export type CreateLeadInput = {
   offeringId?: string | null;
   statedNeed?: string | null;
 };
+
+/** Keep notification addresses inside the existing privileged lead boundary. */
+async function notificationEmail(schoolId: string, db: Pick<Transaction, "execute"> = getDb()) {
+  const [settings] = await db.execute<{ notification_email: string }>(sql`
+    select notification_email from public.school_settings where school_id = ${schoolId}
+  `);
+  if (!settings) throw new Error("School settings are missing");
+  return settings.notification_email;
+}
+
+export async function ownerLeadQuotaExceeded(schoolId: string) {
+  return recipientQuotaExceeded(schoolId, await notificationEmail(schoolId));
+}
 
 /**
  * Shared lead write path (decision J / Phase 5). Web (`POST /api/leads`) and the
@@ -170,7 +184,7 @@ export async function createLead(input: CreateLeadInput, options: TransactionOpt
       schoolId: input.school.id,
       leadId: row.id,
       kind: "owner_lead",
-      recipient: input.school.notificationEmail,
+      recipient: await notificationEmail(input.school.id, tx),
       providerIdempotencyKey: `owner-lead/${row.id}`,
       nextAttemptAt: new Date(),
       state: "pending",

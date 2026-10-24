@@ -1,15 +1,15 @@
 import { hrTimeToMilliseconds } from "@opentelemetry/core";
 import { addDays } from "date-fns";
-import { and, asc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { getDb } from "@/db";
-import { conversations, messages } from "@/db/schema";
 import { hashToken } from "@/lib/crypto";
-import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
+import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/request-limits";
 import { authSql, loadLocalEnv, requireRow, whileSavingMessages } from "@/test/integration-env";
-import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
+import {
+  deletePublicSchoolOwner as deleteSchoolOwner,
+  seedPublicSchool as seedSchool,
+} from "@/test/seed-public-school";
 import {
   exportedSpans,
   exportedTraces,
@@ -21,8 +21,11 @@ import {
 import { loadWebTranscript, startWebTurn } from "./web-chat";
 
 loadLocalEnv();
-
-const db = getDb();
+if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname)) {
+  throw new Error("Web chat tests require a local database");
+}
+vi.mock("server-only", () => ({}));
+vi.mock("next/headers", () => ({ cookies: async () => ({ getAll: () => [] }) }));
 const sql = authSql();
 const suffix = randomUUID().slice(0, 8);
 const ownerId = randomUUID();
@@ -61,13 +64,9 @@ function streamedReplyId(stream: string) {
 }
 
 async function conversationFor(resumeToken: string) {
-  const [conversation] = await db
-    .select()
-    .from(conversations)
-    .where(
-      and(eq(conversations.resumeTokenHash, hashToken(resumeToken)), isNull(conversations.endedAt)),
-    )
-    .limit(1);
+  const [conversation] =
+    await sql`SELECT id, expires_at AS "expiresAt", generating_at AS "generatingAt"
+    FROM public.conversations WHERE school_id = ${schoolId} AND resume_token_hash = ${hashToken(resumeToken)} AND ended_at IS NULL LIMIT 1`;
   return requireRow(conversation, "conversation");
 }
 
@@ -82,25 +81,15 @@ async function existingConversation({
   expiresAt?: Date;
 }) {
   const resumeToken = randomUUID();
-  const [conversation] = await db
-    .insert(conversations)
-    .values({
-      schoolId,
-      resumeTokenHash: hashToken(resumeToken),
-      generatingAt,
-      expiresAt,
-    })
-    .returning({ id: conversations.id });
-  const conversationId = requireRow(conversation, "conversation").id;
+  const [conversation] =
+    await sql`INSERT INTO public.conversations (school_id, resume_token_hash, generating_at, expires_at)
+    VALUES (${schoolId}, ${hashToken(resumeToken)}, ${generatingAt}, ${expiresAt}) RETURNING id`;
+  const conversationId = requireRow(conversation, "conversation").id as string;
   if (messageIds.length > 0) {
-    await db.insert(messages).values(
-      messageIds.map((messageId, index) => ({
-        conversationId,
-        messageId,
-        role: index % 2 === 0 ? "user" : "assistant",
-        parts: [{ type: "text", text: `Message ${index + 1}` }],
-      })),
-    );
+    for (const [index, messageId] of messageIds.entries()) {
+      await sql`INSERT INTO public.messages (conversation_id, message_id, role, parts)
+        VALUES (${conversationId}, ${messageId}, ${index % 2 === 0 ? "user" : "assistant"}, ${sql.json([{ type: "text", text: `Message ${index + 1}` }])})`;
+    }
   }
   return { resumeToken, conversationId };
 }
@@ -112,16 +101,8 @@ async function savedMessageIds(conversationId: string) {
 }
 
 async function savedMessages(conversationId: string) {
-  return db
-    .select({
-      messageId: messages.messageId,
-      role: messages.role,
-      parts: messages.parts,
-      completion: messages.completion,
-    })
-    .from(messages)
-    .where(eq(messages.conversationId, conversationId))
-    .orderBy(asc(messages.createdAt));
+  return sql`SELECT message_id AS "messageId", role, parts, completion FROM public.messages
+    WHERE conversation_id = ${conversationId} ORDER BY created_at, id`;
 }
 
 beforeAll(async () => {
@@ -167,12 +148,8 @@ describe("a web chat turn with no AI Gateway token", () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1"],
     });
-    await db.insert(messages).values({
-      conversationId,
-      messageId: "historic-reply",
-      role: "assistant",
-      parts: [{ type: "legacy-part", value: "Old reply" }],
-    });
+    await sql`INSERT INTO public.messages (conversation_id, message_id, role, parts)
+      VALUES (${conversationId}, 'historic-reply', 'assistant', '[{"type":"legacy-part","value":"Old reply"}]')`;
     expect(await loadWebTranscript({ slug, preview: false, resumeToken })).toEqual({
       ok: true,
       messages: [
@@ -193,10 +170,7 @@ describe("a web chat turn with no AI Gateway token", () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1", "reply-1"],
     });
-    await db
-      .update(conversations)
-      .set({ endedAt: new Date(), endReason: "message_limit" })
-      .where(eq(conversations.id, conversationId));
+    await sql`UPDATE public.conversations SET ended_at = now(), end_reason = 'message_limit' WHERE id = ${conversationId}`;
     expect(await loadWebTranscript({ slug, preview: false, resumeToken })).toEqual({
       ok: true,
       messages: [],
@@ -392,10 +366,8 @@ describe("a web chat turn's trace", () => {
     await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
 
     const conversation = await conversationFor(resumeToken);
-    const saved = await db
-      .select({ id: messages.id, role: messages.role })
-      .from(messages)
-      .where(eq(messages.conversationId, conversation.id));
+    const saved =
+      await sql`SELECT id, role FROM public.messages WHERE conversation_id = ${conversation.id}`;
     const [turnTrace] = await exportedTraces();
     expect(turnTrace?.metadata).toEqual({
       inboundMessageId: saved.find(({ role }) => role === "user")?.id,
@@ -411,7 +383,7 @@ describe("a web chat turn's trace", () => {
 
     await whileSavingMessages(
       sql,
-      { conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
+      { schema: "public", conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
       async () => {
         await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
       },
@@ -438,6 +410,7 @@ describe("a web chat turn's trace", () => {
         conversationId,
         role: "assistant",
         statement: "raise exception 'disk full'",
+        schema: "public",
       },
       async () => {
         await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
@@ -494,7 +467,7 @@ describe("a web chat turn whose browser disconnects mid-reply", () => {
 
     await whileSavingMessages(
       sql,
-      { conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
+      { schema: "public", conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
       async () => {
         const response = await sendMessage(resumeToken, "question-1", "What can my son try?");
         const body = response.body?.getReader();
@@ -572,26 +545,30 @@ describe("a rejected web chat message", () => {
     if (!transcript.ok) throw new Error(transcript.reason);
     expect(transcript.messages).toHaveLength(MAX_CHAT_MESSAGES_PER_CONVERSATION);
   });
-  it("refuses a resume token belonging to another school and never returns its transcript", async () => {
+  it("starts an independent conversation for the same token at another school without exposing its transcript", async () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1", "reply-1"],
     });
     const input = { slug: otherSlug, preview: false, resumeToken };
 
-    expect(
-      await startWebTurn({
-        ...input,
-        message: {
-          id: "question-2",
-          role: "user",
-          parts: [{ type: "text", text: "Hi!" }],
-        },
-      }),
-    ).toEqual({ ok: false, reason: "invalid_conversation" });
     expect(await loadWebTranscript(input)).toEqual({ ok: true, messages: [] });
+    const result = await startWebTurn({
+      ...input,
+      message: {
+        id: "question-2",
+        role: "user",
+        parts: [{ type: "text", text: "Hi!" }],
+      },
+    });
+    if (!result.ok) throw new Error(result.reason);
+    await result.response.text();
+    const transcript = await loadWebTranscript(input);
+    if (!transcript.ok) throw new Error(transcript.reason);
+    expect(transcript.messages).toHaveLength(2);
+    expect(transcript.messages.map(({ id }) => id)).toContain("question-2");
+    expect(transcript.messages.map(({ id }) => id)).not.toContain("question-1");
     expect(await savedMessageIds(conversationId)).toEqual(["question-1", "reply-1"]);
     expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
-    expect(await exportedTraces()).toEqual([]);
   });
 
   it("refuses send and transcript requests for a missing school", async () => {
@@ -658,10 +635,8 @@ describe("a rejected web chat message", () => {
 
     expect(result).toEqual({ ok: false, reason: "message_limit" });
     expect(await savedMessageIds(conversationId)).toEqual(messageIds.toSorted());
-    const [ended] = await db
-      .select()
-      .from(conversations)
-      .where(eq(conversations.id, conversationId));
+    const [ended] =
+      await sql`SELECT ended_at AS "endedAt", end_reason AS "endReason", generating_at AS "generatingAt" FROM public.conversations WHERE id = ${conversationId}`;
     expect(ended?.endedAt).toBeInstanceOf(Date);
     expect(ended?.endReason).toBe("message_limit");
     expect(ended?.generatingAt).toBeNull();
@@ -703,10 +678,8 @@ describe("a rejected web chat message", () => {
     expect(current.id).not.toBe(conversationId);
     expect(current.generatingAt).toBeNull();
     expect(await savedMessageIds(conversationId)).toEqual(["question-1"]);
-    const [ended] = await db
-      .select()
-      .from(conversations)
-      .where(eq(conversations.id, conversationId));
+    const [ended] =
+      await sql`SELECT ended_at AS "endedAt", end_reason AS "endReason" FROM public.conversations WHERE id = ${conversationId}`;
     expect(ended?.endedAt).toBeInstanceOf(Date);
     expect(ended?.endReason).toBe("inactivity");
     expect(await savedMessages(current.id)).toHaveLength(2);

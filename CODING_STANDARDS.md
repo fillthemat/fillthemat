@@ -6,7 +6,7 @@
 Put shared business code in `src/lib/<area>`, such as `schedule` or `conversations`. Keep dashboard-only queries, actions and forms beside their page in `src/app`.
 
 **Keep API routes focused**:
-Routes in `src/app/api` check requests, call library functions and return responses. They must not import database code; Oxlint checks this.
+Routes in `src/app/api` check requests, call library functions and return responses. They must not import database code; `bun lint` checks this.
 _Example_: `src/app/api/bookings/route.ts` → `src/lib/schedule/book-slot.ts`
 
 **Separate database setup from business work**:
@@ -18,11 +18,14 @@ _Example_: `src/lib/ai/tools/prepare-booking.ts`; `docs/adr/0003-school-facts-in
 
 ## Database migrations
 
-**Generate metadata; preserve applied history**:
-Never hand-edit `drizzle/meta/*` or an applied migration's SQL. Add a new migration instead, and commit each migration's SQL, snapshot and journal entry together.
+Migration files are generated from the schema files in `supabase/schemas/`, using `pg-delta`. Follow this workflow when modifying the DB schema:
 
-**Regenerate after migration conflicts**:
-After rebasing, delete only your branch's unmerged, unapplied migration and regenerate it with `bun run db:generate` against the rebased history. Never hand-merge journal or snapshot JSON; retain the target branch's metadata as the generation baseline.
+1. Add/update table, grant and policy files in `supabase/schemas/`; put invoker function bodies and execution grants in `supabase/schemas/functions/`, grouped by their primary table
+2. Generate a migration file with `bun db:migrate:gen`
+3. Apply migrations with `bun db:migrate:up`
+4. Keep `src/db/types.ts` up-to-date with `bun db:typegen`
+
+Review generated migrations for data moves: add transactional backfills before dropping moved columns. Application functions must use `SECURITY INVOKER`; enforce access with grants and RLS, and mutation invariants with constraints/triggers rather than privileged RPCs.
 
 ## Pages and UI
 
@@ -30,16 +33,16 @@ After rebasing, delete only your branch's unmerged, unapplied migration and rege
 Pages and layouts in `src/app` load data and arrange the screen; nearby components handle page-specific UI. Put shared components in `src/components` and basic controls in `src/components/ui`.
 
 **Change controls through variants**:
-Use a control's `variant` for appearance changes; add new variants inside the control instead of restyling each use. Oxlint checks shadcn styling and static classes; see `docs/decisions/lint-policy.md` for the few exceptions.
+Use a control's `variant` for appearance changes; add new variants inside the control instead of restyling each use. `bun lint` checks shadcn styling and static classes.
 _Example_: `src/components/ui/input.tsx`
 
-## Linting, formatting, and typechecks
+## Quality checks
 
-After making code changes, ensure it's up to standards by running:
+Before completing code changes, committing code, or opening a pull request, run:
 
 - bun typecheck
-- bun lint:fix
-- bun format
+- bun lint --fix
+- bun fmt
 
 ## Everyday style
 

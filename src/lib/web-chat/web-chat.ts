@@ -1,8 +1,12 @@
+import { PostgrestError } from "@supabase/supabase-js";
 import { type UIMessage, validateUIMessages } from "ai";
 import { after } from "next/server";
 import { randomUUID } from "node:crypto";
 import { streamedReply } from "@/lib/ai/assistant";
 import { textFromMessage } from "@/lib/chat/messages";
+import { getSchoolForLandingAccess, loadSchoolCatalog } from "@/lib/schools/public";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { startTurnTrace } from "@/lib/tracing/turn-trace";
 import {
   appendMessage,
   claimGeneration,
@@ -10,9 +14,7 @@ import {
   findConversation,
   findOrCreateConversation,
   loadTranscript,
-} from "@/lib/conversations/conversation-store";
-import { getSchoolForLandingAccess, loadSchoolCatalog } from "@/lib/schools/public";
-import { startTurnTrace } from "@/lib/tracing/turn-trace";
+} from "./conversation-store";
 
 type WebConversationInput = {
   slug: string;
@@ -24,12 +26,7 @@ export type WebTurnResult =
   | { ok: true; response: Response }
   | {
       ok: false;
-      reason:
-        | "not_found"
-        | "invalid_conversation"
-        | "generation_in_progress"
-        | "duplicate"
-        | "message_limit";
+      reason: "not_found" | "generation_in_progress" | "duplicate" | "message_limit";
     };
 
 export type WebTranscriptResult =
@@ -46,11 +43,11 @@ export async function loadWebTranscript({
   if (!school) return { ok: false, reason: "not_found" };
   const conversation = await findConversation({
     schoolId: school.id,
-    identity: { channel: "web", resumeToken },
+    resumeToken,
   });
   return {
     ok: true,
-    messages: conversation ? await loadTranscript(conversation.id) : [],
+    messages: conversation ? await loadTranscript(school.id, conversation.id) : [],
   };
 }
 
@@ -65,23 +62,21 @@ export async function startWebTurn({
   if (!school) return { ok: false, reason: "not_found" };
 
   const now = new Date();
-  const resolved = await findOrCreateConversation({
+  const conversation = await findOrCreateConversation({
     schoolId: school.id,
-    identity: { channel: "web", resumeToken },
+    resumeToken,
     now,
   });
-  if (!resolved.ok) return resolved;
-  const { conversation } = resolved;
-  const lock = await claimGeneration(conversation.id, { now });
+  const lock = await claimGeneration(school.id, conversation.id, now);
   if (!lock) return { ok: false, reason: "generation_in_progress" };
 
   let replyOwnsLock = false;
   try {
-    const history = await loadTranscript(conversation.id);
+    const history = await loadTranscript(school.id, conversation.id);
     if (history.some(({ id }) => id === message.id)) {
       return { ok: false, reason: "duplicate" };
     }
-    if (await endConversationAtMessageLimit(conversation.id, history.length, now)) {
+    if (await endConversationAtMessageLimit(school.id, conversation.id, lock.generation, now)) {
       return { ok: false, reason: "message_limit" };
     }
 
@@ -107,6 +102,8 @@ export async function startWebTurn({
         messages: [...history, message],
       });
       await appendMessage({
+        schoolId: school.id,
+        generation: lock.generation,
         id: inboundMessageId,
         conversationId: conversation.id,
         messageId: message.id,
@@ -114,8 +111,15 @@ export async function startWebTurn({
         parts: message.parts,
       });
 
+      // Owner instructions are private server configuration, not landing RPC data.
+      const { data: settings, error } = await createAdminClient()
+        .from("school_settings")
+        .select("agent_instructions")
+        .eq("school_id", school.id)
+        .single();
+      if (error) throw new PostgrestError(error);
       return streamedReply({
-        school,
+        school: { ...school, agentInstructions: settings.agent_instructions },
         catalog,
         messages: uiMessages,
         now,
@@ -124,6 +128,8 @@ export async function startWebTurn({
           await turn.run(async () => {
             try {
               await appendMessage({
+                schoolId: school.id,
+                generation: lock.generation,
                 id: replyMessageId,
                 conversationId: conversation.id,
                 messageId: reply.id,

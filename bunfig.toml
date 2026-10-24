@@ -1,0 +1,116 @@
+[fmt]
+ignorePatterns = ["dist/**", "*.min.js"]
+
+[fmt.sortImports]
+newlinesBetween = false
+groups = [
+  "type-import",
+  [
+    "value-builtin",
+    "value-external",
+  ],
+  "type-internal",
+  "value-internal",
+  [
+    "type-parent",
+    "type-sibling",
+    "type-index",
+  ],
+  [
+    "value-parent",
+    "value-sibling",
+    "value-index",
+  ],
+  "unknown",
+]
+
+[fmt.sortTailwindcss]
+stylesheet = "./src/app/globals.css"
+functions = ["clsx", "cn"]
+preserveWhitespace = true
+
+[fmt.sortPackageJson]
+sortScripts = true
+
+[lint]
+typeAware = true
+typeCheck = true
+plugins = ["@shadcn/lint"]
+ignorePatterns = [
+  ".next/**",
+  "node_modules/**",
+  "dist/**",
+  "build/**",
+  "public/**",
+  "drizzle/**",
+  ".worktrees/**",
+  ".agent-logs/**",
+]
+
+# Preserve your opt-in-only rule configuration.
+[lint.categories]
+correctness = "off"
+suspicious = "off"
+pedantic = "off"
+perf = "off"
+style = "off"
+restriction = "off"
+nursery = "off"
+
+[lint.rules]
+"react/rules-of-hooks" = "error"
+"react/only-export-components" = ["warn", { allowConstantExport = true }]
+"shadcn/no-restyle" = [
+  "error",
+  { allow = [
+    "layout",
+  ], contracts = [
+    { pattern = "^TableCell$", allow = [
+      "layout",
+      "typography",
+      "text-muted-foreground",
+    ] },
+  ] },
+]
+"shadcn/no-raw-colors" = "warn"
+"shadcn/no-arbitrary-values" = "warn"
+"shadcn/no-inline-styles" = "warn"
+"shadcn/no-unknown-classes" = "warn"
+"shadcn/require-static-classes" = "error"
+
+# Keep database access out of HTTP adapters.
+[[lint.overrides]]
+files = ["src/app/api/**"]
+
+[lint.overrides.rules]
+"no-restricted-imports" = [
+  "error",
+  { patterns = [
+    { group = [
+      "@/db",
+      "@/db/**",
+      "**/db",
+      "**/db/**",
+      "drizzle-orm",
+      "drizzle-orm/**",
+      "postgres",
+      "postgres/**",
+    ], message = "API routes are HTTP adapters. Move database access into a domain module and call its public interface." },
+  ] },
+]
+
+# Tests may import database modules.
+[[lint.overrides]]
+files = ["src/app/api/**/*.test.*", "src/app/api/**/*.spec.*", "src/app/api/**/__tests__/**"]
+
+[lint.overrides.rules]
+"no-restricted-imports" = "off"
+
+# UI primitives are exempt from these styling restrictions.
+[[lint.overrides]]
+files = ["src/components/ui/**"]
+
+[lint.overrides.rules]
+"shadcn/no-restyle" = "off"
+"shadcn/no-arbitrary-values" = "off"
+"shadcn/require-static-classes" = "off"

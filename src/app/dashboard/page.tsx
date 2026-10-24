@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 import { OverviewBody } from "./overview/overview-body";
 import { OverviewSkeleton } from "./overview/overview-skeleton";
 
@@ -11,7 +11,7 @@ export default async function DashboardPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const [{ school }, params, headerList] = await Promise.all([
-    requireOwnedSchool(),
+    requireSchool(),
     searchParams,
     headers(),
   ]);

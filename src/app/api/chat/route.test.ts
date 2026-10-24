@@ -107,7 +107,6 @@ describe("chat request parsing", () => {
 describe("chat refusal statuses", () => {
   it.each([
     ["not_found", 404, "not_found"],
-    ["invalid_conversation", 403, "invalid_conversation"],
     ["generation_in_progress", 409, "generation_in_progress"],
     ["duplicate", 409, "duplicate"],
     ["message_limit", 429, "limit"],

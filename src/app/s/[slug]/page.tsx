@@ -1,9 +1,7 @@
 import { notFound } from "next/navigation";
 import { BookingChat } from "@/components/booking-chat";
 import { LandingSession } from "@/components/landing-session";
-import { getOwnedSchool } from "@/lib/auth/current-school";
-import { getVerifiedClaims } from "@/lib/auth/current-user";
-import { getSchoolBySlug, loadSchoolCatalog } from "@/lib/schools/public";
+import { getSchoolForLandingAccess, loadSchoolCatalog } from "@/lib/schools/public";
 
 export default async function PublicSchoolPage({
   params,
@@ -14,17 +12,11 @@ export default async function PublicSchoolPage({
 }) {
   const { slug } = await params;
   const { preview } = await searchParams;
-  const school = await getSchoolBySlug(slug);
+  const isPreview = preview === "1";
+  const school = await getSchoolForLandingAccess(slug, { preview: isPreview });
   if (!school) notFound();
 
-  const isPreview = preview === "1";
   const published = school.approvedAt != null && school.publishedAt != null;
-  if (!published) {
-    if (!isPreview) notFound();
-    const user = await getVerifiedClaims();
-    const owned = user ? await getOwnedSchool(user.id) : null;
-    if (!owned || owned.id !== school.id) notFound();
-  }
 
   const catalog = await loadSchoolCatalog(school.id);
   const location = [school.address, school.city].filter(Boolean).join(", ") || null;

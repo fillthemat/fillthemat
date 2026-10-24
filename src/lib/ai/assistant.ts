@@ -12,7 +12,7 @@ import {
   type UIMessageChunk,
   type UIMessageStreamOnEndCallback,
 } from "ai";
-import { MAX_AGENT_STEPS } from "@/lib/security/limits";
+import { MAX_AGENT_STEPS } from "@/lib/security/request-limits";
 import type { AssistantContext } from "./context";
 import { assistantInstructions } from "./instructions";
 import { defaultLanguageModel } from "./language-model";
