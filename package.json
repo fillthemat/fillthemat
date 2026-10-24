@@ -87,7 +87,7 @@
     "@vercel/config": "^0.7.0",
     "drizzle-kit": "^0.31.10",
     "skills": "^1.5.23",
-    "supabase": "^2.121.0",
+    "supabase": "^2.122.0",
     "tailwindcss": "^4.3.3",
     "typescript": "7.0.2",
     "vitest": "^4.1.11"
