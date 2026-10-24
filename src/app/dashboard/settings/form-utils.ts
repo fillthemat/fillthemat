@@ -12,16 +12,16 @@ export function sameValues(a: FormValues, b: FormValues): boolean {
  * After a confirmed save, copy server-normalized values into the form except
  * for fields the owner typed while the request was in flight.
  */
-export function applySavedValues(
-  previous: FormValues,
+export function applySavedValues<T extends FormValues>(
+  previous: T,
   saved: FormValues,
   typedDuringSave: readonly string[],
-): FormValues {
-  const next = { ...previous };
+): T {
+  const updates: FormValues = {};
   for (const [field, value] of Object.entries(saved)) {
-    if (!typedDuringSave.includes(field)) next[field] = value;
+    if (!typedDuringSave.includes(field)) updates[field] = value;
   }
-  return next;
+  return { ...previous, ...updates };
 }
 
 /**
@@ -29,16 +29,17 @@ export function applySavedValues(
  * after submit. Those leftover fields are unsaved relative to the new blank
  * baseline.
  */
-export function applyCreateSuccessValues(
-  previous: FormValues,
-  blank: FormValues,
+export function applyCreateSuccessValues<T extends FormValues>(
+  previous: T,
+  blank: T,
   typedDuringSave: readonly string[],
-): FormValues {
-  const next = { ...blank };
+): T {
+  const updates: FormValues = {};
   for (const field of typedDuringSave) {
-    if (field in previous) next[field] = previous[field];
+    const value = previous[field];
+    if (value !== undefined) updates[field] = value;
   }
-  return next;
+  return { ...blank, ...updates };
 }
 
 export function nullToEmpty(value: string | number | null | undefined): string {

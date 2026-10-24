@@ -32,8 +32,8 @@ it.each([
         await tx`insert into auth.users (id) values (${ownerId})`;
         await tx`insert into public.users (id, email) values (${ownerId}, ${`${ownerId}@local.test`})`;
         await tx`
-          insert into public.schools (id, owner_user_id, slug, name, timezone, notification_email)
-          values (${schoolId}, ${ownerId}, ${`fk-${schoolId}`}, 'FK regression', 'UTC', 'fk@local.test')
+          insert into public.schools (id, owner_user_id, slug, timezone)
+          values (${schoolId}, ${ownerId}, ${`fk-${schoolId}`}, 'UTC')
         `;
         await tx`
           insert into public.contacts (id, school_id, name, phone)

@@ -91,15 +91,15 @@ async function SectionContent({
           id: offering.id,
           name: offering.name,
           description: offering.description,
-          minimumAge: offering.minimumAge,
-          maximumAge: offering.maximumAge,
+          minimumAge: offering.minimum_age,
+          maximumAge: offering.maximum_age,
           attire: offering.attire,
           expectations: offering.expectations,
           active: offering.active,
-          updatedAt: serializeTimestamp(offering.updatedAt),
-          windowCount: windows.filter((window) => window.trialOfferingId === offering.id).length,
+          updatedAt: serializeTimestamp(offering.updated_at),
+          windowCount: windows.filter((window) => window.trial_offering_id === offering.id).length,
           activeWindowCount: windows.filter(
-            (window) => window.trialOfferingId === offering.id && window.active,
+            (window) => window.trial_offering_id === offering.id && window.active,
           ).length,
         }))}
       />
@@ -121,17 +121,17 @@ async function SectionContent({
         }))}
         windows={windows.map((window) => ({
           id: window.id,
-          offeringName: window.offeringName,
-          offeringActive: window.offeringActive,
-          dayOfWeek: window.dayOfWeek,
-          startMinute: window.startMinute,
-          durationMinutes: window.durationMinutes,
+          offeringName: window.offering_name,
+          offeringActive: window.offering_active,
+          dayOfWeek: window.day_of_week,
+          startMinute: window.start_minute,
+          durationMinutes: window.duration_minutes,
           capacity: window.capacity,
           label: window.label,
           active: window.active,
-          onCalendar: window.onCalendar,
-          hasUpcomingBooking: window.hasUpcomingBooking,
-          maxUpcomingBooked: window.maxUpcomingBooked,
+          onCalendar: window.on_calendar,
+          hasUpcomingBooking: window.has_upcoming_booking,
+          maxUpcomingBooked: window.max_upcoming_booked,
         }))}
       />
     );
@@ -149,7 +149,7 @@ async function SectionContent({
           id: faq.id,
           question: faq.question,
           answer: faq.answer,
-          updatedAt: serializeTimestamp(faq.updatedAt),
+          updatedAt: serializeTimestamp(faq.updated_at),
         }))}
       />
     );

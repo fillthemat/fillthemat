@@ -1,18 +1,10 @@
-import { and, eq, type SQL, sql } from "drizzle-orm";
-import type { Database } from "@/db";
-import { faqs, trialOfferings } from "@/db/schema";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database, Tables } from "@/db/types";
 import { errorState, type SettingsFormState, successState } from "./form-state";
-import { nullToEmpty, serializeTimestamp } from "./form-utils";
-import { LIMITS } from "./schemas";
+import { nullToEmpty } from "./form-utils";
+import { LIMITS } from "./limits";
 
-/** Compare timestamptz at millisecond precision so ISO round-trips match. */
-function matchesUpdatedAt(
-  column: typeof trialOfferings.updatedAt | typeof faqs.updatedAt,
-  expected: Date,
-): SQL {
-  return sql`date_trunc('milliseconds', ${column}) = date_trunc('milliseconds', ${expected.toISOString()}::timestamptz)`;
-}
-
+type Client = SupabaseClient<Database>;
 export const MISSING_OFFERING = "That trial class no longer exists. Refresh the page.";
 export const MISSING_FAQ = "That question no longer exists. Refresh the page.";
 export const STALE_EDIT =
@@ -28,163 +20,114 @@ export type OfferingEditorInput = {
   waiverNotes?: string | null;
 };
 
-function offeringFormValues(row: {
-  id: string;
-  name: string;
-  description: string | null;
-  minimumAge: number | null;
-  maximumAge: number | null;
-  attire: string | null;
-  expectations: string | null;
-  updatedAt: Date;
-}): Record<string, string> {
+function offeringValues(row: Tables<"trial_offerings">): Record<string, string> {
   return {
     id: row.id,
     name: row.name,
     description: nullToEmpty(row.description),
-    minimumAge: nullToEmpty(row.minimumAge),
-    maximumAge: nullToEmpty(row.maximumAge),
+    minimumAge: nullToEmpty(row.minimum_age),
+    maximumAge: nullToEmpty(row.maximum_age),
     attire: nullToEmpty(row.attire),
     expectations: nullToEmpty(row.expectations),
-    updatedAt: serializeTimestamp(row.updatedAt),
+    updatedAt: row.updated_at,
   };
 }
 
-function faqFormValues(row: {
-  id: string;
-  question: string;
-  answer: string;
-  updatedAt: Date;
-}): Record<string, string> {
+function offeringInput(input: OfferingEditorInput) {
   return {
-    id: row.id,
-    question: row.question,
-    answer: row.answer,
-    updatedAt: serializeTimestamp(row.updatedAt),
+    name: input.name,
+    description: input.description,
+    minimum_age: input.minimumAge,
+    maximum_age: input.maximumAge,
+    attire: input.attire,
+    expectations: input.expectations,
   };
 }
 
-async function offeringOwnedBySchool(db: Database, schoolId: string, id: string) {
-  const [row] = await db
-    .select({ id: trialOfferings.id })
-    .from(trialOfferings)
-    .where(and(eq(trialOfferings.id, id), eq(trialOfferings.schoolId, schoolId)))
-    .limit(1);
-  return row ?? null;
-}
-
-async function faqOwnedBySchool(db: Database, schoolId: string, id: string) {
-  const [row] = await db
-    .select({ id: faqs.id })
-    .from(faqs)
-    .where(and(eq(faqs.id, id), eq(faqs.schoolId, schoolId)))
-    .limit(1);
-  return row ?? null;
+function faqValues(row: Tables<"faqs">) {
+  return { id: row.id, question: row.question, answer: row.answer, updatedAt: row.updated_at };
 }
 
 export async function insertOffering(
-  db: Database,
+  client: Client,
   schoolId: string,
   input: OfferingEditorInput,
 ): Promise<SettingsFormState> {
-  const [created] = await db
-    .insert(trialOfferings)
-    .values({
-      schoolId,
-      name: input.name,
-      description: input.description,
-      minimumAge: input.minimumAge,
-      maximumAge: input.maximumAge,
-      attire: input.attire,
-      expectations: input.expectations,
-      waiverNotes: input.waiverNotes ?? null,
-      active: true,
+  const { data, error } = await client
+    .from("trial_offerings")
+    .insert({
+      ...offeringInput(input),
+      school_id: schoolId,
+      waiver_notes: input.waiverNotes ?? null,
     })
-    .returning();
-  if (!created) return errorState("We could not add that trial class.");
-  return successState(`“${created.name}” added and open for bookings.`, {
-    ...offeringFormValues(created),
-  });
+    .select()
+    .single();
+  if (error) throw error;
+  return successState(`“${data.name}” added and open for bookings.`, offeringValues(data));
 }
 
 export async function updateOffering(
-  db: Database,
+  client: Client,
   schoolId: string,
   id: string,
-  expectedUpdatedAt: Date,
+  expectedUpdatedAt: string,
   input: OfferingEditorInput,
 ): Promise<SettingsFormState> {
-  const [updated] = await db
-    .update(trialOfferings)
-    .set({
-      name: input.name,
-      description: input.description,
-      minimumAge: input.minimumAge,
-      maximumAge: input.maximumAge,
-      attire: input.attire,
-      expectations: input.expectations,
-      updatedAt: new Date(),
+  const { data, error } = await client
+    .from("trial_offerings")
+    .update({
+      ...offeringInput(input),
+      updated_at: new Date().toISOString(),
     })
-    .where(
-      and(
-        eq(trialOfferings.id, id),
-        eq(trialOfferings.schoolId, schoolId),
-        matchesUpdatedAt(trialOfferings.updatedAt, expectedUpdatedAt),
-      ),
-    )
-    .returning();
-
-  if (updated) {
-    return successState(`“${updated.name}” saved. New bookings use these settings.`, {
-      ...offeringFormValues(updated),
-    });
-  }
-
-  if (!(await offeringOwnedBySchool(db, schoolId, id))) {
-    return errorState(MISSING_OFFERING);
-  }
-  return errorState(STALE_EDIT);
+    .eq("id", id)
+    .eq("school_id", schoolId)
+    .eq("updated_at", expectedUpdatedAt)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  if (data)
+    return successState(
+      `“${data.name}” saved. New bookings use these settings.`,
+      offeringValues(data),
+    );
+  const { data: existing, error: readError } = await client
+    .from("trial_offerings")
+    .select("id")
+    .eq("id", id)
+    .eq("school_id", schoolId)
+    .maybeSingle();
+  if (readError) throw readError;
+  return errorState(existing ? STALE_EDIT : MISSING_OFFERING);
 }
 
 export async function setOfferingActive(
-  db: Database,
+  client: Client,
   schoolId: string,
   id: string,
   desiredActive: boolean,
 ): Promise<SettingsFormState> {
-  const [updated] = await db
-    .update(trialOfferings)
-    .set({ active: desiredActive, updatedAt: new Date() })
-    .where(
-      and(
-        eq(trialOfferings.id, id),
-        eq(trialOfferings.schoolId, schoolId),
-        eq(trialOfferings.active, !desiredActive),
-      ),
-    )
-    .returning({
-      id: trialOfferings.id,
-      name: trialOfferings.name,
-      active: trialOfferings.active,
-    });
-
-  if (updated) {
+  const { data, error } = await client
+    .from("trial_offerings")
+    .update({ active: desiredActive, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("school_id", schoolId)
+    .eq("active", !desiredActive)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  if (data)
     return successState(
-      updated.active
-        ? `“${updated.name}” is open for bookings again.`
-        : `“${updated.name}” is no longer offered to families.`,
+      data.active
+        ? `“${data.name}” is open for bookings again.`
+        : `“${data.name}” is no longer offered to families.`,
     );
-  }
-
-  const [existing] = await db
-    .select({
-      id: trialOfferings.id,
-      name: trialOfferings.name,
-      active: trialOfferings.active,
-    })
-    .from(trialOfferings)
-    .where(and(eq(trialOfferings.id, id), eq(trialOfferings.schoolId, schoolId)))
-    .limit(1);
+  const { data: existing, error: readError } = await client
+    .from("trial_offerings")
+    .select("name, active")
+    .eq("id", id)
+    .eq("school_id", schoolId)
+    .maybeSingle();
+  if (readError) throw readError;
   if (!existing) return errorState(MISSING_OFFERING);
   return successState(
     existing.active
@@ -195,79 +138,65 @@ export async function setOfferingActive(
 }
 
 export async function insertFaq(
-  db: Database,
+  client: Client,
   schoolId: string,
   input: { question: string; answer: string },
 ): Promise<SettingsFormState> {
-  const [existing] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(faqs)
-    .where(eq(faqs.schoolId, schoolId));
-  const count = existing?.count ?? 0;
-  if (count >= LIMITS.faqCount) {
+  const { data, error } = await client
+    .rpc("create_settings_faq", {
+      p_school_id: schoolId,
+      p_question: input.question,
+      p_answer: input.answer,
+    })
+    .single();
+  if (error?.message === "faq_limit_reached")
     return errorState(
       `You already have ${LIMITS.faqCount} questions. Delete one before adding another.`,
     );
-  }
-  const [created] = await db
-    .insert(faqs)
-    .values({
-      schoolId,
-      question: input.question,
-      answer: input.answer,
-      sortOrder: count,
-    })
-    .returning();
-  if (!created) return errorState("We could not add that question.");
-  return successState("Question added. Your agent can use this answer now.", {
-    ...faqFormValues(created),
-  });
+  if (error) throw error;
+  return successState("Question added. Your agent can use this answer now.", faqValues(data));
 }
 
 export async function updateFaq(
-  db: Database,
+  client: Client,
   schoolId: string,
   id: string,
-  expectedUpdatedAt: Date,
+  expectedUpdatedAt: string,
   input: { question: string; answer: string },
 ): Promise<SettingsFormState> {
-  const [updated] = await db
-    .update(faqs)
-    .set({
-      question: input.question,
-      answer: input.answer,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(faqs.id, id),
-        eq(faqs.schoolId, schoolId),
-        matchesUpdatedAt(faqs.updatedAt, expectedUpdatedAt),
-      ),
-    )
-    .returning();
-
-  if (updated) {
-    return successState("Question saved. Your agent uses this answer now.", {
-      ...faqFormValues(updated),
-    });
-  }
-
-  if (!(await faqOwnedBySchool(db, schoolId, id))) {
-    return errorState(MISSING_FAQ);
-  }
-  return errorState(STALE_EDIT);
+  const { data, error } = await client
+    .from("faqs")
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("school_id", schoolId)
+    .eq("updated_at", expectedUpdatedAt)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  if (data)
+    return successState("Question saved. Your agent uses this answer now.", faqValues(data));
+  const { data: existing, error: readError } = await client
+    .from("faqs")
+    .select("id")
+    .eq("id", id)
+    .eq("school_id", schoolId)
+    .maybeSingle();
+  if (readError) throw readError;
+  return errorState(existing ? STALE_EDIT : MISSING_FAQ);
 }
 
 export async function deleteFaqRecord(
-  db: Database,
+  client: Client,
   schoolId: string,
   id: string,
 ): Promise<SettingsFormState> {
-  const deleted = await db
-    .delete(faqs)
-    .where(and(eq(faqs.id, id), eq(faqs.schoolId, schoolId)))
-    .returning({ id: faqs.id });
-  if (deleted.length === 0) return errorState(MISSING_FAQ);
+  const { data, error } = await client
+    .from("faqs")
+    .delete()
+    .eq("id", id)
+    .eq("school_id", schoolId)
+    .select("id");
+  if (error) throw error;
+  if (!data.length) return errorState(MISSING_FAQ);
   return successState("Question deleted. Your agent will not use it again.");
 }

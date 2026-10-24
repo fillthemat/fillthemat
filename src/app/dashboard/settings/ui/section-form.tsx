@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { IDLE_STATE, type SettingsFormState } from "../form-state";
 import { applyCreateSuccessValues, applySavedValues, sameValues } from "../form-utils";
 import { useDirtyRegistration } from "./dirty-context";
@@ -31,7 +32,7 @@ export type SaveSuccessMeta = {
  * Controlled form state for one settings section:
  * unsaved tracking, pending/success/error, and inline field errors.
  */
-export function useSettingsForm({
+export function useSettingsForm<T extends Values>({
   action,
   initialValues,
   dirtyKey,
@@ -40,15 +41,15 @@ export function useSettingsForm({
   onPendingChange,
 }: {
   action: SettingsAction;
-  initialValues: Values;
+  initialValues: T;
   dirtyKey: string;
   clearOnSuccess?: boolean;
   onSuccess?: (state: SettingsFormState, meta: SaveSuccessMeta) => void;
   onPendingChange?: (pending: boolean) => void;
 }) {
   const [state, dispatch, pending] = useActionState(action, IDLE_STATE);
-  const [values, setValues] = useState<Values>(initialValues);
-  const [baseline, setBaseline] = useState<Values>(initialValues);
+  const [values, setValues] = useState<T>(initialValues);
+  const [baseline, setBaseline] = useState<T>(initialValues);
   const [editedFields, setEditedFields] = useState<string[]>([]);
   const editedSinceSubmit = useRef<string[]>([]);
   const submittedValues = useRef<Values>(initialValues);
@@ -179,7 +180,7 @@ export function SectionStatus({
       role="status"
       aria-live="polite"
       aria-busy={pending || undefined}
-      className={`min-w-0 flex-1 text-sm leading-relaxed text-pretty ${tone}`}
+      className={cn("min-w-0 flex-1 text-sm leading-relaxed text-pretty", tone)}
     >
       {message}
     </p>

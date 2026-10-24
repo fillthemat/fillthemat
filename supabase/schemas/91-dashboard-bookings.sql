@@ -68,7 +68,7 @@ BEGIN
       AND school_id = v_booking.school_id AND booked_count > 0;
 
     SELECT notification_email INTO v_notification_email
-    FROM public.schools WHERE id = v_booking.school_id;
+    FROM public.school_settings WHERE school_id = v_booking.school_id;
 
     IF v_booking.contact_email_snapshot IS NOT NULL THEN
         INSERT INTO public.email_deliveries (

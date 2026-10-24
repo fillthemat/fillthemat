@@ -1,7 +1,7 @@
 import Link from "next/link";
+import type { CurrentSchool } from "@/lib/auth/current-school";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tables } from "@/db/types";
 import { publicSchoolUrl } from "@/lib/site-url";
 import { markPreviewedAction, publishSchoolAction } from "../actions";
 import { sectionHref } from "../settings/sections";
@@ -13,7 +13,7 @@ export async function OverviewBody({
   errorParam,
   headerList,
 }: {
-  school: Tables<"schools">;
+  school: CurrentSchool;
   errorParam?: string;
   headerList: Headers;
 }) {

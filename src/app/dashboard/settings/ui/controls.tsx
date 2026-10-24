@@ -1,9 +1,25 @@
 "use client";
 
 import { useId } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge as UiBadge } from "@/components/ui/badge";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup as UiFieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -48,6 +64,7 @@ function FieldShell({
   required,
   badge,
   count,
+  disabled,
   children,
 }: {
   label: string;
@@ -59,29 +76,26 @@ function FieldShell({
   required?: boolean;
   badge?: string;
   count?: { value: number; max: number };
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <Field data-invalid={!!error} data-disabled={disabled} className="min-w-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <Label htmlFor={controlId}>
+        <FieldLabel htmlFor={controlId}>
           {label}
           {required ? (
             <span className="ml-1 text-muted-foreground" aria-hidden="true">
               *
             </span>
           ) : null}
-        </Label>
+        </FieldLabel>
         {badge ? <UiBadge variant="muted">{badge}</UiBadge> : null}
       </div>
       {children}
       {helper || count ? (
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-          {helper ? (
-            <p id={helperId} className="text-xs leading-relaxed text-muted-foreground">
-              {helper}
-            </p>
-          ) : null}
+          {helper ? <FieldDescription id={helperId}>{helper}</FieldDescription> : null}
           {count ? (
             <p
               className={cn(
@@ -94,12 +108,8 @@ function FieldShell({
           ) : null}
         </div>
       ) : null}
-      {error ? (
-        <p id={errorId} className="text-xs font-medium text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </div>
+      {error ? <FieldError id={errorId}>{error}</FieldError> : null}
+    </Field>
   );
 }
 
@@ -111,7 +121,7 @@ export function TextField({
   required,
   disabled,
   badge,
-  value,
+  value = "",
   onValueChange,
   type = "text",
   placeholder,
@@ -125,7 +135,7 @@ export function TextField({
   step,
   variant = "default",
 }: BaseFieldProps & {
-  value: string;
+  value: string | undefined;
   onValueChange: (value: string) => void;
   type?: "text" | "email" | "tel" | "url" | "number" | "time";
   placeholder?: string;
@@ -151,6 +161,7 @@ export function TextField({
       required={required}
       badge={badge}
       count={showCount && maxLength ? { value: value.length, max: maxLength } : undefined}
+      disabled={disabled}
     >
       <Input
         id={controlId}
@@ -184,14 +195,14 @@ export function TextAreaField({
   required,
   disabled,
   badge,
-  value,
+  value = "",
   onValueChange,
   placeholder,
   maxLength,
   rows = 4,
   showCount = true,
 }: BaseFieldProps & {
-  value: string;
+  value: string | undefined;
   onValueChange: (value: string) => void;
   placeholder?: string;
   maxLength?: number;
@@ -210,6 +221,7 @@ export function TextAreaField({
       required={required}
       badge={badge}
       count={showCount && maxLength ? { value: value.length, max: maxLength } : undefined}
+      disabled={disabled}
     >
       <Textarea
         id={controlId}
@@ -236,11 +248,11 @@ export function SelectField({
   required,
   disabled,
   badge,
-  value,
+  value = "",
   onValueChange,
   options,
 }: BaseFieldProps & {
-  value: string;
+  value: string | undefined;
   onValueChange: (value: string) => void;
   options: ReadonlyArray<{ value: string; label: string }>;
 }) {
@@ -255,6 +267,7 @@ export function SelectField({
       error={error}
       required={required}
       badge={badge}
+      disabled={disabled}
     >
       <NativeSelect
         id={controlId}
@@ -278,6 +291,7 @@ export function SelectField({
 
 export function FieldGroup({
   title,
+  description,
   children,
 }: {
   title: string;
@@ -285,10 +299,11 @@ export function FieldGroup({
   children: React.ReactNode;
 }) {
   return (
-    <fieldset className="flex flex-col gap-3">
-      <legend className="mb-1 text-base font-semibold">{title}</legend>
-      {children}
-    </fieldset>
+    <FieldSet>
+      <FieldLegend>{title}</FieldLegend>
+      {description ? <FieldDescription>{description}</FieldDescription> : null}
+      <UiFieldGroup>{children}</UiFieldGroup>
+    </FieldSet>
   );
 }
 
@@ -301,16 +316,11 @@ export function Callout({
   title?: string;
   children: React.ReactNode;
 }) {
-  const tones = {
-    neutral: "border-border text-muted-foreground",
-    locked: "border-border text-muted-foreground",
-    warning: "border-warning/40 text-warning",
-  } as const;
   return (
-    <div className={cn("rounded-md border px-3 py-2 text-sm text-pretty", tones[tone])}>
-      {title ? <p className="font-medium text-foreground">{title}</p> : null}
-      <div className={title ? "mt-1" : undefined}>{children}</div>
-    </div>
+    <Alert variant={tone === "warning" ? "destructive" : "default"}>
+      {title ? <AlertTitle>{title}</AlertTitle> : null}
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -340,12 +350,12 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-start gap-2 py-2">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="max-w-prose text-sm leading-relaxed text-pretty text-muted-foreground">
-        {children}
-      </p>
-      {action}
-    </div>
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{children}</EmptyDescription>
+      </EmptyHeader>
+      {action ? <EmptyContent>{action}</EmptyContent> : null}
+    </Empty>
   );
 }

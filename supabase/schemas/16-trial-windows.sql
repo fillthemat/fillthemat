@@ -23,6 +23,13 @@ ALTER TABLE public.trial_windows ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.trial_windows FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT ON TABLE public.trial_windows to authenticated;
+GRANT INSERT ON TABLE public.trial_windows TO authenticated;
+GRANT UPDATE (active, updated_at) ON TABLE public.trial_windows TO authenticated;
+
+CREATE POLICY trial_windows_owner_write ON public.trial_windows
+FOR ALL TO authenticated
+USING (school_id = (SELECT id FROM public.schools WHERE owner_user_id = (SELECT auth.uid())))
+WITH CHECK (school_id = (SELECT id FROM public.schools WHERE owner_user_id = (SELECT auth.uid())));
 
 CREATE POLICY trial_windows_select_own_school
 on public.trial_windows

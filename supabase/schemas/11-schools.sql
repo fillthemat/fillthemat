@@ -6,27 +6,10 @@ CREATE TABLE public.schools (
     slug text NOT NULL
         CONSTRAINT schools_slug_unique UNIQUE
         CONSTRAINT schools_slug_format CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(slug) BETWEEN 3 AND 48),
-    name text NOT NULL,
     timezone text NOT NULL,
     approved_at timestamp with time zone,
     published_at timestamp with time zone,
     previewed_at timestamp with time zone,
-    notification_email text NOT NULL,
-    phone text,
-    website text,
-    address text,
-    country text DEFAULT 'US' NOT NULL,
-    city text,
-    parking_notes text,
-    access_notes text,
-    trial_guidance text,
-    pricing text,
-    welcome_message text,
-    agent_instructions text,
-    logo_url text
-        CONSTRAINT schools_logo_url CHECK (logo_url IS NULL OR logo_url ~ '^https://'),
-    primary_color text
-        CONSTRAINT schools_primary_color CHECK (primary_color IS NULL OR primary_color ~ '^#[0-9A-Fa-f]{6}$'),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     whatsapp_phone_number_id text,

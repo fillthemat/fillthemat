@@ -711,89 +711,116 @@ export type Database = {
           },
         ];
       };
-      schools: {
+      school_settings: {
         Row: {
           access_notes: string | null;
           address: string | null;
           agent_instructions: string | null;
-          approved_at: string | null;
           city: string | null;
           country: string;
           created_at: string;
-          id: string;
           logo_url: string | null;
           name: string;
           notification_email: string;
-          owner_user_id: string;
           parking_notes: string | null;
           phone: string | null;
-          previewed_at: string | null;
           pricing: string | null;
           primary_color: string | null;
-          published_at: string | null;
-          slug: string;
-          timezone: string;
+          school_id: string;
           trial_guidance: string | null;
           updated_at: string;
           website: string | null;
           welcome_message: string | null;
-          whatsapp_phone_number_id: string | null;
-          whatsapp_waba_id: string | null;
         };
         ComputedFields: never;
         Insert: {
           access_notes?: string | null;
           address?: string | null;
           agent_instructions?: string | null;
-          approved_at?: string | null;
           city?: string | null;
           country?: string;
           created_at?: string;
-          id?: string;
           logo_url?: string | null;
-          name: string;
-          notification_email: string;
-          owner_user_id: string;
+          name?: string;
+          notification_email?: string;
           parking_notes?: string | null;
           phone?: string | null;
-          previewed_at?: string | null;
           pricing?: string | null;
           primary_color?: string | null;
-          published_at?: string | null;
-          slug: string;
-          timezone: string;
+          school_id: string;
           trial_guidance?: string | null;
           updated_at?: string;
           website?: string | null;
           welcome_message?: string | null;
-          whatsapp_phone_number_id?: string | null;
-          whatsapp_waba_id?: string | null;
         };
         Update: {
           access_notes?: string | null;
           address?: string | null;
           agent_instructions?: string | null;
-          approved_at?: string | null;
           city?: string | null;
           country?: string;
           created_at?: string;
-          id?: string;
           logo_url?: string | null;
           name?: string;
           notification_email?: string;
-          owner_user_id?: string;
           parking_notes?: string | null;
           phone?: string | null;
-          previewed_at?: string | null;
           pricing?: string | null;
           primary_color?: string | null;
-          published_at?: string | null;
-          slug?: string;
-          timezone?: string;
+          school_id?: string;
           trial_guidance?: string | null;
           updated_at?: string;
           website?: string | null;
           welcome_message?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "school_settings_school_id_fkey";
+            columns: ["school_id"];
+            isOneToOne: true;
+            referencedRelation: "schools";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      schools: {
+        Row: {
+          approved_at: string | null;
+          created_at: string;
+          id: string;
+          owner_user_id: string;
+          previewed_at: string | null;
+          published_at: string | null;
+          slug: string;
+          timezone: string;
+          updated_at: string;
+          whatsapp_phone_number_id: string | null;
+          whatsapp_waba_id: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          approved_at?: string | null;
+          created_at?: string;
+          id?: string;
+          owner_user_id: string;
+          previewed_at?: string | null;
+          published_at?: string | null;
+          slug: string;
+          timezone: string;
+          updated_at?: string;
+          whatsapp_phone_number_id?: string | null;
+          whatsapp_waba_id?: string | null;
+        };
+        Update: {
+          approved_at?: string | null;
+          created_at?: string;
+          id?: string;
+          owner_user_id?: string;
+          previewed_at?: string | null;
+          published_at?: string | null;
+          slug?: string;
+          timezone?: string;
+          updated_at?: string;
           whatsapp_phone_number_id?: string | null;
           whatsapp_waba_id?: string | null;
         };
@@ -1256,6 +1283,25 @@ export type Database = {
     };
     Functions: {
       cancel_dashboard_booking: { Args: { p_booking_id: string }; Returns: string };
+      create_settings_faq: {
+        Args: { p_answer: string; p_question: string; p_school_id: string };
+        Returns: {
+          answer: string;
+          created_at: string;
+          id: string;
+          question: string;
+          school_id: string;
+          sort_order: number;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "faqs";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      delete_settings_window: { Args: { p_window_id: string }; Returns: string };
       get_overview_metrics: {
         Args: { p_now?: string; p_school_id: string };
         Returns: {
@@ -1269,9 +1315,38 @@ export type Database = {
           upcoming_bookings: number;
         }[];
       };
+      get_settings_windows: {
+        Args: { p_school_id: string };
+        Returns: {
+          active: boolean;
+          capacity: number;
+          day_of_week: number;
+          duration_minutes: number;
+          has_upcoming_booking: boolean;
+          id: string;
+          label: string;
+          max_upcoming_booked: number;
+          offering_active: boolean;
+          offering_name: string;
+          on_calendar: boolean;
+          start_minute: number;
+          trial_offering_id: string;
+        }[];
+      };
       update_booking_attendance: {
         Args: { p_booking_id: string; p_status: string };
         Returns: boolean;
+      };
+      update_school_profile: {
+        Args: { p_profile: Json; p_school_id: string; p_slug: string; p_timezone: string };
+        Returns: undefined;
+      };
+      update_settings_window_capacity: {
+        Args: { p_capacity: number; p_window_id: string };
+        Returns: {
+          max_booked: number;
+          result: string;
+        }[];
       };
     };
     Enums: {

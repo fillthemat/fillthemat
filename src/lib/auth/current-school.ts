@@ -5,20 +5,29 @@ import { type Tables } from "@/db/types";
 import { getCurrentUser, requireUser, type VerifiedUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 
-export const getCurrentSchool = cache(async (): Promise<Tables<"schools"> | null> => {
+export type CurrentSchool = Tables<"schools"> &
+  Omit<Tables<"school_settings">, "school_id" | "created_at" | "updated_at">;
+
+export const getCurrentSchool = cache(async (): Promise<CurrentSchool | null> => {
   const user = await getCurrentUser();
   if (!user) return null;
 
   const supabase = await createClient();
-  const { data } = await supabase.from("schools").select("*").eq("owner_user_id", user.id).limit(1);
+  const { data, error } = await supabase
+    .from("schools")
+    .select("*, school_settings(*)")
+    .eq("owner_user_id", user.id)
+    .maybeSingle();
+  if (error) throw error;
   if (!data) return null;
-
-  return data[0] ?? null;
+  if (!data.school_settings) throw new Error("School settings are missing");
+  const { school_settings, ...school } = data;
+  return { ...school_settings, ...school };
 });
 
 export async function requireSchool(): Promise<{
   user: VerifiedUser;
-  school: Tables<"schools">;
+  school: CurrentSchool;
 }> {
   const user = await requireUser();
   const school = await getCurrentSchool();

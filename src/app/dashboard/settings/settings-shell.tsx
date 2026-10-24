@@ -13,7 +13,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { sectionHref, type SectionId, SECTIONS } from "./sections";
 import { DirtyProvider, useDirtyState } from "./ui/dirty-context";
 
@@ -149,26 +150,18 @@ function SettingsNav({ active }: { active: SectionId }) {
           const dirtyHere = isActive && dirtyKeys.some((key) => key.startsWith(section.id));
           return (
             <li key={section.id} className="shrink-0 lg:shrink">
-              <Link
-                href={href}
-                aria-current={isActive ? "page" : undefined}
-                className={cn(
-                  " block touch-manipulation rounded-md px-3 py-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/70",
-                  isActive
-                    ? "bg-muted font-medium text-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                )}
+              <Button
+                asChild
+                variant={isActive ? "secondary" : "ghost"}
+                className="w-full justify-start"
               >
-                <span className="flex items-center gap-2 whitespace-nowrap">
-                  {section.label}
-                  {dirtyHere ? (
-                    <>
-                      <span aria-hidden="true" className="size-1.5 rounded-full bg-warning" />
-                      <span className="sr-only">Unsaved changes</span>
-                    </>
-                  ) : null}
-                </span>
-              </Link>
+                <Link href={href} aria-current={isActive ? "page" : undefined}>
+                  <span className="flex items-center gap-2 whitespace-nowrap">
+                    {section.label}
+                    {dirtyHere ? <Badge variant="warning">Unsaved changes</Badge> : null}
+                  </span>
+                </Link>
+              </Button>
             </li>
           );
         })}
