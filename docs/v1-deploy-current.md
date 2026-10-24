@@ -25,6 +25,7 @@ Do **not** point production at `127.0.0.1` database URLs.
 3. Copy:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - Publishable/anon key → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   - Secret key → `SUPABASE_SECRET_KEY` (server-only school/catalog reads; never expose this key to the browser)
    - Transaction pooler URI (port **6543**, `?pgbouncer=true` or Supavisor transaction mode) → `DATABASE_URL`
    - Direct or session-pooler URI (port **5432**) → `DIRECT_URL`
 4. Set `DIRECT_URL` in Vercel's **Production** environment. Production builds apply pending migrations automatically, never at app startup. `DIRECT_URL` and runtime `DATABASE_URL` must point to the same hosted project. Use the session pooler if the build cannot reach the direct IPv6 address.
@@ -62,6 +63,7 @@ DATABASE_URL=
 DIRECT_URL=
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
 NEXT_PUBLIC_SITE_URL=
 RESEND_API_KEY=
 RESEND_FROM=onboarding@resend.dev
