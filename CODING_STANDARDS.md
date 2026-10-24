@@ -39,7 +39,7 @@ _Example_: `src/components/ui/input.tsx`
 Before completing code changes, committing code, or opening a pull request, run:
 
 - bun typecheck
-- bun lint:fix
+- bun lint --fix
 - bun fmt
 
 ## Everyday style

@@ -45,6 +45,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.84",
     "@ai-sdk/react": "^4.0.131",
+    "@hookform/resolvers": "^6.0.0",
     "@langfuse/client": "5.13.1",
     "@langfuse/otel": "^5.13.0",
     "@langfuse/tracing": "^5.13.0",
@@ -73,6 +74,7 @@
     "radix-ui": "^1.6.7",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-hook-form": "^7.91.0",
     "resend": "^6.25.0",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.5.1"

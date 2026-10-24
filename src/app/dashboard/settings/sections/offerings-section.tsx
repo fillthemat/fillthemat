@@ -1,17 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { SettingsFormState } from "../form-state";
 import { createOfferingAction, toggleOfferingAction, updateOfferingAction } from "../actions";
-import { nullToEmpty } from "../form-utils";
-import { formatAgeRange, formatCount } from "../format";
+import { formatAgeRange, formatCount, nullToEmpty } from "../format";
+import { offeringSchema } from "../schemas";
 import { sectionHref } from "../sections";
 import { Badge, Callout, EmptyState, FieldGroup } from "../ui/controls";
-import { DiscardEditsDialog, useRecordEditor, useTimedAnnouncement } from "../ui/editor-lifecycle";
 import { OfferingFields } from "../ui/offering-fields";
-import { ItemActionForm, SaveBar, type SaveSuccessMeta, useSettingsForm } from "../ui/section-form";
+import { ItemActionForm, SaveBar, useSettingsForm } from "../ui/settings-form";
+import { useTimedAnnouncement } from "../ui/use-timed-announcement";
 
 export type OfferingItem = {
   id: string;
@@ -34,67 +41,31 @@ const BLANK = {
   maximumAge: "",
   attire: "",
   expectations: "",
+  waiverNotes: "",
 };
 
-function offeringValues(offering: OfferingItem) {
-  return {
-    name: offering.name,
-    description: nullToEmpty(offering.description),
-    minimumAge: nullToEmpty(offering.minimumAge),
-    maximumAge: nullToEmpty(offering.maximumAge),
-    attire: nullToEmpty(offering.attire),
-    expectations: nullToEmpty(offering.expectations),
-    updatedAt: offering.updatedAt,
-  };
-}
-
 export function OfferingsSection({ offerings }: { offerings: OfferingItem[] }) {
-  const editor = useRecordEditor("offerings");
+  const [editor, setEditor] = useState<{ offering?: OfferingItem } | null>(null);
   const [announcement, setAnnouncement] = useTimedAnnouncement();
-  const [focusId, setFocusId] = useState<string | null>(null);
-  const nameRef = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLButtonElement | null>(null);
+  const savedId = useRef<string | undefined>(undefined);
   const activeCount = offerings.filter((offering) => offering.active).length;
-
-  useEffect(() => {
-    if (editor.isCreating) {
-      requestAnimationFrame(() => {
-        nameRef.current?.querySelector("input")?.focus();
-      });
-    }
-  }, [editor.isCreating]);
-
-  const openAdd = () => {
+  const open = (button: HTMLButtonElement, offering?: OfferingItem) => {
+    opener.current = button;
+    savedId.current = undefined;
     setAnnouncement(null);
-    editor.requestOpen({ type: "create" });
+    setEditor({ offering });
   };
-
-  const onCreateSuccess = (state: SettingsFormState, meta: SaveSuccessMeta) => {
-    if (state.message) setAnnouncement(state.message);
-    if (meta.preservedEdits) return;
-    const id = state.values?.id;
-    editor.closeImmediate();
-    if (id) setFocusId(id);
-  };
-
-  const onEditSuccess = (id: string, state: SettingsFormState, meta: SaveSuccessMeta) => {
-    if (state.message) setAnnouncement(state.message);
-    if (meta.preservedEdits) return;
-    editor.closeImmediate();
-    setFocusId(id);
-  };
-
   return (
     <div className="flex flex-col gap-6">
       <Callout>
         Age ranges decide who can book. A child outside every range is told they are not eligible.
       </Callout>
-
       {announcement ? (
         <p role="status" aria-live="polite" className="text-sm text-success">
           {announcement}
         </p>
       ) : null}
-
       <section className="flex flex-col gap-3" aria-labelledby="offerings-list">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 id="offerings-list" className="text-sm font-semibold">
@@ -106,95 +77,80 @@ export function OfferingsSection({ offerings }: { offerings: OfferingItem[] }) {
               : `${formatCount(offerings.length, "class")} · ${activeCount} offered to families`}
           </p>
         </div>
-
-        {offerings.length === 0 && !editor.isCreating ? (
-          <EmptyState
-            title="No trial classes yet"
-            action={
-              <Button type="button" variant="outline" onClick={openAdd} disabled={editor.saving}>
-                Add a Trial Class
-              </Button>
-            }
-          >
+        {offerings.length === 0 ? (
+          <EmptyState title="No trial classes yet">
             Add what a family books — for example “Kids beginner trial”.
           </EmptyState>
-        ) : offerings.length === 0 ? null : (
+        ) : (
           <ul className="divide-y divide-border border-y border-border">
             {offerings.map((offering) => (
               <OfferingRow
                 key={offering.id}
                 offering={offering}
-                editing={editor.isEditing(offering.id)}
-                categorySaving={editor.saving}
-                onEdit={() => {
-                  setAnnouncement(null);
-                  editor.requestOpen({ type: "edit", id: offering.id });
-                }}
-                onIdleClose={editor.closeImmediate}
-                onDirtyClose={() => editor.requestCancel(true)}
-                onSuccess={(state, meta) => onEditSuccess(offering.id, state, meta)}
-                onPendingChange={editor.setSaving}
-                editRef={(node) => {
-                  if (node && focusId === offering.id) {
-                    node.focus();
-                    setFocusId(null);
-                  }
-                }}
+                onEdit={(button) => open(button, offering)}
               />
             ))}
           </ul>
         )}
       </section>
-
-      {editor.isCreating ? (
-        <div ref={nameRef}>
-          <CreateOfferingForm
-            onIdleClose={editor.closeImmediate}
-            onDirtyClose={() => editor.requestCancel(true)}
-            onSuccess={onCreateSuccess}
-            onPendingChange={editor.setSaving}
-          />
-        </div>
-      ) : (
-        <div>
-          <Button type="button" variant="outline" onClick={openAdd} disabled={editor.saving}>
-            Add a Trial Class
-          </Button>
-        </div>
-      )}
-
-      <DiscardEditsDialog
-        open={editor.pendingTarget !== null && !editor.saving}
-        onKeepEditing={editor.keepEditing}
-        onDiscard={editor.discardAndSwitch}
-      />
+      <div>
+        <Button type="button" variant="outline" onClick={(event) => open(event.currentTarget)}>
+          Add a Trial Class
+        </Button>
+      </div>
+      <Dialog
+        open={editor !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setEditor(null);
+        }}
+      >
+        <DialogContent
+          className="max-h-[90dvh] overflow-y-auto"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const saved = savedId.current
+              ? document
+                  .getElementById(`offering-${savedId.current}`)
+                  ?.querySelector<HTMLButtonElement>("button")
+              : null;
+            (saved ?? opener.current)?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {editor?.offering ? `Edit “${editor.offering.name}”` : "Add a trial class"}
+            </DialogTitle>
+            <DialogDescription>
+              {editor?.offering
+                ? "Saved changes are used by your agent right away."
+                : "New trial classes are offered to families as soon as they are added."}
+            </DialogDescription>
+          </DialogHeader>
+          {editor ? (
+            <OfferingForm
+              offering={editor.offering}
+              onCancel={() => setEditor(null)}
+              onSuccess={(state) => {
+                setAnnouncement(state.message);
+                savedId.current = editor.offering?.id ?? state.values?.id;
+                setEditor(null);
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function OfferingRow({
   offering,
-  editing,
-  categorySaving,
   onEdit,
-  onIdleClose,
-  onDirtyClose,
-  onSuccess,
-  onPendingChange,
-  editRef,
 }: {
   offering: OfferingItem;
-  editing: boolean;
-  categorySaving: boolean;
-  onEdit: () => void;
-  onIdleClose: () => void;
-  onDirtyClose: () => void;
-  onSuccess: (state: SettingsFormState, meta: SaveSuccessMeta) => void;
-  onPendingChange: (pending: boolean) => void;
-  editRef: (node: HTMLButtonElement | null) => void;
+  onEdit: (button: HTMLButtonElement) => void;
 }) {
   const bookable = offering.active && offering.activeWindowCount > 0;
-
   return (
     <li id={`offering-${offering.id}`} className="flex flex-col gap-3 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -237,14 +193,10 @@ function OfferingRow({
         </div>
         <div className="flex flex-wrap items-start gap-2 sm:justify-end">
           <Button
-            ref={editRef}
             type="button"
             variant="outline"
             size="sm"
-            onClick={onEdit}
-            disabled={categorySaving}
-            aria-expanded={editing}
-            aria-controls={editing ? `offering-editor-${offering.id}` : undefined}
+            onClick={(event) => onEdit(event.currentTarget)}
           >
             Edit
           </Button>
@@ -254,7 +206,6 @@ function OfferingRow({
             extraFields={{ active: offering.active ? "false" : "true" }}
             label={offering.active ? "Stop Offering" : "Offer Again"}
             pendingLabel={offering.active ? "Turning off…" : "Turning on…"}
-            disabled={editing && categorySaving}
             className="sm:items-end"
             confirm={
               offering.active
@@ -273,116 +224,60 @@ function OfferingRow({
           />
         </div>
       </div>
-      {editing ? (
-        <EditOfferingForm
-          offering={offering}
-          onIdleClose={onIdleClose}
-          onDirtyClose={onDirtyClose}
-          onSuccess={onSuccess}
-          onPendingChange={onPendingChange}
-        />
-      ) : null}
     </li>
   );
 }
 
-function CreateOfferingForm({
-  onIdleClose,
-  onDirtyClose,
-  onSuccess,
-  onPendingChange,
-}: {
-  onIdleClose: () => void;
-  onDirtyClose: () => void;
-  onSuccess: (state: SettingsFormState, meta: SaveSuccessMeta) => void;
-  onPendingChange: (pending: boolean) => void;
-}) {
-  const { state, formAction, formRef, pending, values, setField, dirty, errorFor } =
-    useSettingsForm({
-      action: createOfferingAction,
-      initialValues: BLANK,
-      dirtyKey: "offerings:new",
-      clearOnSuccess: true,
-      onSuccess,
-      onPendingChange,
-    });
-
-  return (
-    <form ref={formRef} action={formAction} className="flex flex-col gap-5">
-      <FieldGroup title="Add a trial class">
-        <OfferingFields
-          values={values}
-          setField={setField}
-          errorFor={errorFor}
-          disabled={pending}
-        />
-      </FieldGroup>
-      <SaveBar
-        saveLabel="Add Trial Class"
-        savingLabel="Adding…"
-        pending={pending}
-        dirty={dirty}
-        onCancel={onIdleClose}
-        onCancelDirty={onDirtyClose}
-        state={state}
-        idleHint="New trial classes are offered to families as soon as they are added."
-      />
-    </form>
-  );
-}
-
-function EditOfferingForm({
+function OfferingForm({
   offering,
-  onIdleClose,
-  onDirtyClose,
+  onCancel,
   onSuccess,
-  onPendingChange,
 }: {
-  offering: OfferingItem;
-  onIdleClose: () => void;
-  onDirtyClose: () => void;
-  onSuccess: (state: SettingsFormState, meta: SaveSuccessMeta) => void;
-  onPendingChange: (pending: boolean) => void;
+  offering?: OfferingItem;
+  onCancel: () => void;
+  onSuccess: (state: SettingsFormState) => void;
 }) {
-  const { state, formAction, formRef, pending, values, setField, dirty, errorFor } =
-    useSettingsForm({
-      action: updateOfferingAction,
-      initialValues: offeringValues(offering),
-      dirtyKey: `offerings:edit:${offering.id}`,
-      onSuccess,
-      onPendingChange,
-    });
-
+  const { state, onSubmit, pending, control, dirty } = useSettingsForm({
+    action: offering ? updateOfferingAction : createOfferingAction,
+    schema: offeringSchema,
+    initialValues: offering
+      ? {
+          id: offering.id,
+          updatedAt: offering.updatedAt,
+          name: offering.name,
+          description: nullToEmpty(offering.description),
+          minimumAge: nullToEmpty(offering.minimumAge),
+          maximumAge: nullToEmpty(offering.maximumAge),
+          attire: nullToEmpty(offering.attire),
+          expectations: nullToEmpty(offering.expectations),
+          waiverNotes: "",
+        }
+      : BLANK,
+    onSuccess,
+  });
   return (
-    <form
-      id={`offering-editor-${offering.id}`}
-      ref={formRef}
-      action={formAction}
-      className="flex flex-col gap-5 rounded-md border border-border p-4"
-    >
-      <input type="hidden" name="id" value={offering.id} />
-      <input type="hidden" name="updatedAt" value={values.updatedAt} />
-      <FieldGroup title={`Edit “${offering.name}”`}>
-        <Callout>
-          Bookings already made keep the class name, ages, and instructions from when they were
-          booked. New bookings use these settings.
-        </Callout>
-        <OfferingFields
-          values={values}
-          setField={setField}
-          errorFor={errorFor}
-          disabled={pending}
-        />
+    <form noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
+      <FieldGroup>
+        {offering ? (
+          <Callout>
+            Bookings already made keep the class name, ages, and instructions from when they were
+            booked. New bookings use these settings.
+          </Callout>
+        ) : null}
+        <OfferingFields control={control} disabled={pending} />
       </FieldGroup>
       <SaveBar
-        saveLabel="Save Changes"
-        savingLabel="Saving…"
+        saveLabel={offering ? "Save Changes" : "Add Trial Class"}
+        savingLabel={offering ? "Saving…" : "Adding…"}
         pending={pending}
         dirty={dirty}
-        onCancel={onIdleClose}
-        onCancelDirty={onDirtyClose}
+        onCancel={onCancel}
         state={state}
-        idleHint="Saved changes are used by your agent right away."
+        idleHint={
+          offering
+            ? "Saved changes are used by your agent right away."
+            : "New trial classes are offered to families as soon as they are added."
+        }
       />
     </form>
   );

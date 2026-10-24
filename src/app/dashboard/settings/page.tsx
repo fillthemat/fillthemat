@@ -1,8 +1,7 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { requireSchool } from "@/lib/auth/current-school";
 import { listTimezones } from "@/lib/timezones";
-import { serializeTimestamp } from "./form-utils";
-import { formatTimezone } from "./format";
+import { formatTimezone, serializeTimestamp } from "./format";
 import { loadFaqs, loadOfferings, loadWindows } from "./queries";
 import { resolveSection, type SectionId, sectionMeta } from "./sections";
 import { AgentSection } from "./sections/agent-section";

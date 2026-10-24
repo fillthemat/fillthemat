@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/db/types";
 import { errorState, type SettingsFormState, successState } from "./form-state";
-import { nullToEmpty } from "./form-utils";
+import { nullToEmpty } from "./format";
 import { LIMITS } from "./limits";
 
 type Client = SupabaseClient<Database>;

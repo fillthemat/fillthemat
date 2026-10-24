@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { type Control, Controller, type ControllerRenderProps } from "react-hook-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge as UiBadge } from "@/components/ui/badge";
 import {
@@ -23,281 +24,197 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import type { SettingsValues } from "./settings-form";
 
-type BaseFieldProps = {
-  label: string;
+type FieldProps = {
+  control: Control<SettingsValues, unknown, Record<string, unknown>>;
   name: string;
+  label: string;
   helper?: string;
-  error?: string;
   required?: boolean;
   disabled?: boolean;
-  /** Shown next to the label, e.g. "Locked after publishing". */
   badge?: string;
+  maxLength?: number;
+  showCount?: boolean;
+  /** Rendered inline before the control, e.g. a colour swatch. */
+  adornment?: React.ReactNode;
 };
 
-function describedBy(
-  helperId: string,
-  helper: string | undefined,
-  errorId: string,
-  error: string | undefined,
-): string | undefined {
-  const ids = [helper ? helperId : null, error ? errorId : null].filter(Boolean);
-  return ids.length > 0 ? ids.join(" ") : undefined;
-}
-
-function useFieldIds(name: string) {
-  const uid = useId();
-  return {
-    controlId: `${uid}-${name}`,
-    helperId: `${uid}-${name}-helper`,
-    errorId: `${uid}-${name}-error`,
-  };
-}
-
-function FieldShell({
+function ControlledField({
+  control,
+  name,
   label,
-  controlId,
-  helperId,
-  errorId,
   helper,
-  error,
   required,
-  badge,
-  count,
   disabled,
+  badge,
+  maxLength,
+  showCount,
+  adornment,
   children,
-}: {
-  label: string;
-  controlId: string;
-  helperId: string;
-  errorId: string;
-  helper?: string;
-  error?: string;
-  required?: boolean;
-  badge?: string;
-  count?: { value: number; max: number };
-  disabled?: boolean;
-  children: React.ReactNode;
+}: FieldProps & {
+  children: (props: ControlProps) => React.ReactNode;
 }) {
+  const id = useId();
   return (
-    <Field data-invalid={!!error} data-disabled={disabled} className="min-w-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <FieldLabel htmlFor={controlId}>
-          {label}
-          {required ? (
-            <span className="ml-1 text-muted-foreground" aria-hidden="true">
-              *
-            </span>
+    <Controller
+      control={control}
+      name={name}
+      render={({ field, fieldState }) => (
+        <Field data-invalid={fieldState.invalid} data-disabled={disabled} className="min-w-0">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <FieldLabel htmlFor={id}>
+              {label}
+              {required ? (
+                <span className="ml-1 text-muted-foreground" aria-hidden="true">
+                  *
+                </span>
+              ) : null}
+            </FieldLabel>
+            {badge ? <UiBadge variant="muted">{badge}</UiBadge> : null}
+          </div>
+          {adornment ? (
+            <div className="flex items-center gap-2">
+              {adornment}
+              <div className="min-w-0 flex-1">
+                {children({
+                  ...field,
+                  id,
+                  disabled,
+                  "aria-invalid": fieldState.invalid,
+                  "aria-required": required || undefined,
+                })}
+              </div>
+            </div>
+          ) : (
+            children({
+              ...field,
+              id,
+              disabled,
+              "aria-invalid": fieldState.invalid,
+              "aria-required": required || undefined,
+            })
+          )}
+          {helper || (showCount && maxLength) ? (
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              {helper ? <FieldDescription>{helper}</FieldDescription> : null}
+              {showCount && maxLength ? (
+                <p
+                  className={cn(
+                    "text-xs tabular-nums",
+                    field.value.length > maxLength ? "text-destructive" : "text-muted-foreground",
+                  )}
+                >
+                  {field.value.length.toLocaleString("en-US")} / {maxLength.toLocaleString("en-US")}
+                </p>
+              ) : null}
+            </div>
           ) : null}
-        </FieldLabel>
-        {badge ? <UiBadge variant="muted">{badge}</UiBadge> : null}
-      </div>
-      {children}
-      {helper || count ? (
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-          {helper ? <FieldDescription id={helperId}>{helper}</FieldDescription> : null}
-          {count ? (
-            <p
-              className={cn(
-                "text-xs tabular-nums",
-                count.value > count.max ? "text-destructive" : "text-muted-foreground",
-              )}
-            >
-              {count.value.toLocaleString("en-US")} / {count.max.toLocaleString("en-US")}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-      {error ? <FieldError id={errorId}>{error}</FieldError> : null}
-    </Field>
+          {fieldState.invalid ? <FieldError errors={[fieldState.error]} /> : null}
+        </Field>
+      )}
+    />
   );
 }
 
+// Shared native control props retain RHF's ref, blur and change handlers.
+type ControlProps = ControllerRenderProps<SettingsValues> & {
+  id: string;
+  disabled?: boolean;
+  "aria-invalid": boolean;
+  "aria-required"?: boolean;
+};
+
 export function TextField({
-  label,
-  name,
-  helper,
-  error,
-  required,
-  disabled,
-  badge,
-  value = "",
-  onValueChange,
   type = "text",
   placeholder,
   maxLength,
   autoComplete = "off",
   spellCheck,
   inputMode,
-  showCount = false,
   min,
   max,
   step,
   variant = "default",
-}: BaseFieldProps & {
-  value: string | undefined;
-  onValueChange: (value: string) => void;
+  ...props
+}: FieldProps & {
   type?: "text" | "email" | "tel" | "url" | "number" | "time";
   placeholder?: string;
-  maxLength?: number;
   autoComplete?: string;
   spellCheck?: boolean;
   inputMode?: "text" | "numeric" | "tel" | "email" | "url";
-  showCount?: boolean;
   min?: number;
   max?: number;
   step?: number;
   variant?: "default" | "code" | "uppercase";
 }) {
-  const { controlId, helperId, errorId } = useFieldIds(name);
   return (
-    <FieldShell
-      label={label}
-      controlId={controlId}
-      helperId={helperId}
-      errorId={errorId}
-      helper={helper}
-      error={error}
-      required={required}
-      badge={badge}
-      count={showCount && maxLength ? { value: value.length, max: maxLength } : undefined}
-      disabled={disabled}
-    >
-      <Input
-        id={controlId}
-        name={name}
-        type={type}
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
-        disabled={disabled}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        autoComplete={autoComplete}
-        spellCheck={spellCheck}
-        inputMode={inputMode}
-        min={min}
-        max={max}
-        step={step}
-        aria-describedby={describedBy(helperId, helper, errorId, error)}
-        aria-invalid={error ? true : undefined}
-        aria-required={required || undefined}
-        variant={variant}
-      />
-    </FieldShell>
+    <ControlledField {...props} maxLength={maxLength}>
+      {(field) => (
+        <Input
+          {...field}
+          type={type}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          autoComplete={autoComplete}
+          spellCheck={spellCheck}
+          inputMode={inputMode}
+          min={min}
+          max={max}
+          step={step}
+          variant={variant}
+        />
+      )}
+    </ControlledField>
   );
 }
 
 export function TextAreaField({
-  label,
-  name,
-  helper,
-  error,
-  required,
-  disabled,
-  badge,
-  value = "",
-  onValueChange,
   placeholder,
   maxLength,
   rows = 4,
   showCount = true,
-}: BaseFieldProps & {
-  value: string | undefined;
-  onValueChange: (value: string) => void;
-  placeholder?: string;
-  maxLength?: number;
-  rows?: number;
-  showCount?: boolean;
-}) {
-  const { controlId, helperId, errorId } = useFieldIds(name);
+  ...props
+}: FieldProps & { placeholder?: string; rows?: number }) {
   return (
-    <FieldShell
-      label={label}
-      controlId={controlId}
-      helperId={helperId}
-      errorId={errorId}
-      helper={helper}
-      error={error}
-      required={required}
-      badge={badge}
-      count={showCount && maxLength ? { value: value.length, max: maxLength } : undefined}
-      disabled={disabled}
-    >
-      <Textarea
-        id={controlId}
-        name={name}
-        rows={rows}
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
-        disabled={disabled}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        aria-describedby={describedBy(helperId, helper, errorId, error)}
-        aria-invalid={error ? true : undefined}
-        aria-required={required || undefined}
-      />
-    </FieldShell>
+    <ControlledField {...props} maxLength={maxLength} showCount={showCount}>
+      {(field) => (
+        <Textarea {...field} rows={rows} placeholder={placeholder} maxLength={maxLength} />
+      )}
+    </ControlledField>
   );
 }
 
 export function SelectField({
-  label,
-  name,
-  helper,
-  error,
-  required,
-  disabled,
-  badge,
-  value = "",
-  onValueChange,
   options,
-}: BaseFieldProps & {
-  value: string | undefined;
-  onValueChange: (value: string) => void;
-  options: ReadonlyArray<{ value: string; label: string }>;
-}) {
-  const { controlId, helperId, errorId } = useFieldIds(name);
+  ...props
+}: FieldProps & { options: ReadonlyArray<{ value: string; label: string }> }) {
   return (
-    <FieldShell
-      label={label}
-      controlId={controlId}
-      helperId={helperId}
-      errorId={errorId}
-      helper={helper}
-      error={error}
-      required={required}
-      badge={badge}
-      disabled={disabled}
-    >
-      <NativeSelect
-        id={controlId}
-        name={name}
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
-        disabled={disabled}
-        aria-describedby={describedBy(helperId, helper, errorId, error)}
-        aria-invalid={error ? true : undefined}
-        aria-required={required || undefined}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </NativeSelect>
-    </FieldShell>
+    <ControlledField {...props}>
+      {(field) => (
+        <NativeSelect {...field}>
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </NativeSelect>
+      )}
+    </ControlledField>
   );
 }
 
+/** Omit `title` where a surrounding heading (such as a dialog title) already names the group. */
 export function FieldGroup({
   title,
   description,
   children,
 }: {
-  title: string;
+  title?: string;
   description?: string;
   children: React.ReactNode;
 }) {
+  if (!title) return <UiFieldGroup>{children}</UiFieldGroup>;
   return (
     <FieldSet>
       <FieldLegend>{title}</FieldLegend>

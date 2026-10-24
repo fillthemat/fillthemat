@@ -1,5 +1,6 @@
 "use server";
 
+import type { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { requireSchool } from "@/lib/auth/current-school";
@@ -11,7 +12,7 @@ import {
   type SettingsFormState,
   successState,
 } from "./form-state";
-import { formatCount } from "./format";
+import { formatCount, nullToEmpty } from "./format";
 import {
   deleteFaqRecord,
   insertFaq,
@@ -24,12 +25,9 @@ import {
   agentSchema,
   brandingSchema,
   capacitySchema,
-  FAQ_EDITOR_FIELDS,
   faqSchema,
   fieldErrorsFrom,
-  formValues,
   idSchema,
-  OFFERING_EDITOR_FIELDS,
   offeringSchema,
   pricingSchema,
   profileSchema,
@@ -44,10 +42,6 @@ function revalidateOwnerViews(slug: string) {
   revalidatePath("/dashboard/settings");
   revalidatePath("/dashboard");
   revalidatePath(publicSchoolPath(slug));
-}
-
-function nullToEmpty(value: string | null | undefined): string {
-  return value ?? "";
 }
 
 /**
@@ -74,33 +68,19 @@ async function run(work: () => Promise<SettingsFormState>): Promise<SettingsForm
 }
 
 export async function updateProfileAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
     const published = school.published_at != null;
 
-    const parsed = profileSchema.safeParse(
-      formValues(formData, [
-        "name",
-        "notificationEmail",
-        "phone",
-        "website",
-        "address",
-        "city",
-        "country",
-        "parkingNotes",
-        "accessNotes",
-        "trialGuidance",
-      ]),
-    );
+    const parsed = profileSchema.safeParse(input);
 
     let slug = school.slug;
     let timezone = school.timezone;
     let publicErrors: Record<string, string> = {};
     if (!published) {
-      const address = publicAddressSchema.safeParse(formValues(formData, ["slug", "timezone"]));
+      const address = publicAddressSchema.safeParse(input);
       if (address.success) {
         slug = address.data.slug;
         timezone = address.data.timezone;
@@ -160,110 +140,88 @@ export async function updateProfileAction(
   });
 }
 
-export async function updatePricingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
-): Promise<SettingsFormState> {
+type SettingsColumn =
+  | "pricing"
+  | "welcome_message"
+  | "agent_instructions"
+  | "logo_url"
+  | "primary_color";
+
+function updateSchoolSettings<T extends Record<string, string | null>>(
+  input: Record<string, string>,
+  schema: z.ZodType<T>,
+  columns: { [K in keyof T]: SettingsColumn },
+  errorMessage: string,
+  successMessage: string,
+) {
   return run(async () => {
     const { school } = await requireSchool();
-    const parsed = pricingSchema.safeParse(formValues(formData, ["pricing"]));
+    const parsed = schema.safeParse(input);
     if (!parsed.success) {
-      return errorState(
-        "Check the highlighted field and save again.",
-        fieldErrorsFrom(parsed.error),
-      );
+      return errorState(errorMessage, fieldErrorsFrom(parsed.error));
+    }
+    const updates: Partial<Record<SettingsColumn, string | null>> & { updated_at: string } = {
+      updated_at: new Date().toISOString(),
+    };
+    const values: Record<string, string> = {};
+    for (const key in columns) {
+      updates[columns[key]] = parsed.data[key] ?? null;
+      values[key] = nullToEmpty(parsed.data[key]);
     }
     const supabase = await createClient();
     const { error } = await supabase
       .from("school_settings")
-      .update({ pricing: parsed.data.pricing, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq("school_id", school.id)
       .select("school_id")
       .single();
     if (error) throw error;
     revalidateOwnerViews(school.slug);
-    return successState("Pricing saved. Your agent may share it now.", {
-      pricing: nullToEmpty(parsed.data.pricing),
-    });
+    return successState(successMessage, values);
   });
 }
 
-export async function updateAgentAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+export async function updatePricingAction(
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
-  return run(async () => {
-    const { school } = await requireSchool();
-    const parsed = agentSchema.safeParse(
-      formValues(formData, ["welcomeMessage", "agentInstructions"]),
-    );
-    if (!parsed.success) {
-      return errorState(
-        "Check the highlighted fields and save again.",
-        fieldErrorsFrom(parsed.error),
-      );
-    }
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("school_settings")
-      .update({
-        welcome_message: parsed.data.welcomeMessage,
-        agent_instructions: parsed.data.agentInstructions,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("school_id", school.id)
-      .select("school_id")
-      .single();
-    if (error) throw error;
-    revalidateOwnerViews(school.slug);
-    return successState("Agent settings saved and live on your page.", {
-      welcomeMessage: nullToEmpty(parsed.data.welcomeMessage),
-      agentInstructions: nullToEmpty(parsed.data.agentInstructions),
-    });
-  });
+  return updateSchoolSettings(
+    input,
+    pricingSchema,
+    { pricing: "pricing" },
+    "Check the highlighted field and save again.",
+    "Pricing saved. Your agent may share it now.",
+  );
+}
+
+export async function updateAgentAction(input: Record<string, string>): Promise<SettingsFormState> {
+  return updateSchoolSettings(
+    input,
+    agentSchema,
+    { welcomeMessage: "welcome_message", agentInstructions: "agent_instructions" },
+    "Check the highlighted fields and save again.",
+    "Agent settings saved and live on your page.",
+  );
 }
 
 export async function updateBrandingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
-  return run(async () => {
-    const { school } = await requireSchool();
-    const parsed = brandingSchema.safeParse(formValues(formData, ["logoUrl", "primaryColor"]));
-    if (!parsed.success) {
-      return errorState(
-        "Check the highlighted fields and save again.",
-        fieldErrorsFrom(parsed.error),
-      );
-    }
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("school_settings")
-      .update({
-        logo_url: parsed.data.logoUrl,
-        primary_color: parsed.data.primaryColor,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("school_id", school.id)
-      .select("school_id")
-      .single();
-    if (error) throw error;
-    revalidateOwnerViews(school.slug);
-    return successState("Branding saved and live on your public page.", {
-      logoUrl: nullToEmpty(parsed.data.logoUrl),
-      primaryColor: nullToEmpty(parsed.data.primaryColor),
-    });
-  });
+  return updateSchoolSettings(
+    input,
+    brandingSchema,
+    { logoUrl: "logo_url", primaryColor: "primary_color" },
+    "Check the highlighted fields and save again.",
+    "Branding saved and live on your public page.",
+  );
 }
 
 export async function createOfferingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
     const parsed = offeringSchema.safeParse({
-      ...formValues(formData, OFFERING_EDITOR_FIELDS),
+      ...input,
       waiverNotes: "",
     });
     if (!parsed.success) {
@@ -287,14 +245,13 @@ export async function createOfferingAction(
 }
 
 export async function updateOfferingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const identity = updateOfferingSchema.safeParse(formValues(formData, ["id", "updatedAt"]));
+    const identity = updateOfferingSchema.safeParse(input);
     const parsed = offeringSchema.safeParse({
-      ...formValues(formData, OFFERING_EDITOR_FIELDS),
+      ...input,
       waiverNotes: "",
     });
     if (!identity.success || !parsed.success) {
@@ -323,12 +280,11 @@ export async function updateOfferingAction(
 }
 
 export async function toggleOfferingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const parsed = toggleOfferingSchema.safeParse(formValues(formData, ["id", "active"]));
+    const parsed = toggleOfferingSchema.safeParse(input);
     if (!parsed.success) {
       return errorState("That trial class no longer exists. Refresh the page.");
     }
@@ -346,21 +302,11 @@ export async function toggleOfferingAction(
 }
 
 export async function createWindowAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const parsed = windowSchema.safeParse(
-      formValues(formData, [
-        "trialOfferingId",
-        "dayOfWeek",
-        "startMinute",
-        "durationMinutes",
-        "capacity",
-        "label",
-      ]),
-    );
+    const parsed = windowSchema.safeParse(input);
     if (!parsed.success) {
       return errorState(
         "Check the highlighted fields and add the class time again.",
@@ -397,12 +343,11 @@ export async function createWindowAction(
 }
 
 export async function deactivateWindowAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const parsed = idSchema.safeParse(formValues(formData, ["id"]));
+    const parsed = idSchema.safeParse(input);
     if (!parsed.success) {
       return errorState("That class time no longer exists. Refresh the page.");
     }
@@ -422,12 +367,11 @@ export async function deactivateWindowAction(
 }
 
 export async function updateWindowCapacityAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const parsed = capacitySchema.safeParse(formValues(formData, ["id", "capacity"]));
+    const parsed = capacitySchema.safeParse(input);
     if (!parsed.success) {
       return errorState("Check the number of spots and try again.", fieldErrorsFrom(parsed.error));
     }
@@ -457,12 +401,11 @@ export async function updateWindowCapacityAction(
 }
 
 export async function deleteWindowAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const parsed = idSchema.safeParse(formValues(formData, ["id"]));
+    const parsed = idSchema.safeParse(input);
     if (!parsed.success) {
       return errorState("That class time no longer exists. Refresh the page.");
     }
@@ -483,13 +426,10 @@ export async function deleteWindowAction(
   });
 }
 
-export async function createFaqAction(
-  _prev: SettingsFormState,
-  formData: FormData,
-): Promise<SettingsFormState> {
+export async function createFaqAction(input: Record<string, string>): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const parsed = faqSchema.safeParse(formValues(formData, FAQ_EDITOR_FIELDS));
+    const parsed = faqSchema.safeParse(input);
     if (!parsed.success) {
       return errorState(
         "Check the highlighted fields and add the question again.",
@@ -502,14 +442,11 @@ export async function createFaqAction(
   });
 }
 
-export async function updateFaqAction(
-  _prev: SettingsFormState,
-  formData: FormData,
-): Promise<SettingsFormState> {
+export async function updateFaqAction(input: Record<string, string>): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const identity = updateFaqSchema.safeParse(formValues(formData, ["id", "updatedAt"]));
-    const parsed = faqSchema.safeParse(formValues(formData, FAQ_EDITOR_FIELDS));
+    const identity = updateFaqSchema.safeParse(input);
+    const parsed = faqSchema.safeParse(input);
     if (!identity.success || !parsed.success) {
       return errorState("Check the highlighted fields and save again.", {
         ...(identity.success ? {} : fieldErrorsFrom(identity.error)),
@@ -528,13 +465,10 @@ export async function updateFaqAction(
   });
 }
 
-export async function deleteFaqAction(
-  _prev: SettingsFormState,
-  formData: FormData,
-): Promise<SettingsFormState> {
+export async function deleteFaqAction(input: Record<string, string>): Promise<SettingsFormState> {
   return run(async () => {
     const { school } = await requireSchool();
-    const parsed = idSchema.safeParse(formValues(formData, ["id"]));
+    const parsed = idSchema.safeParse(input);
     if (!parsed.success) {
       return errorState("That question no longer exists. Refresh the page.");
     }

@@ -134,28 +134,6 @@ test("saving shows the value the server stored", async ({ page }) => {
   await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toHaveCount(0);
 });
 
-test("switching categories with unsaved edits asks first", async ({ page }) => {
-  await page.goto("/dashboard/settings?section=pricing");
-  await page.getByLabel(/Prices and conditions/).fill("Trial class: free for first-time students.");
-
-  await page
-    .getByRole("navigation", { name: "Settings categories" })
-    .getByRole("link", { name: /FAQs/ })
-    .click();
-
-  const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Keep Editing" }).click();
-  await expect(page.locator("#section-title")).toHaveText("Pricing");
-
-  await page
-    .getByRole("navigation", { name: "Settings categories" })
-    .getByRole("link", { name: /FAQs/ })
-    .click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Discard Changes" }).click();
-  await expect(page.locator("#section-title")).toHaveText("Frequently asked questions");
-});
-
 test("adding and deleting a question requires confirmation to delete", async ({ page }) => {
   const question = `Is there parking for the trial? ${Date.now()}`;
   await page.goto("/dashboard/settings?section=faqs");
@@ -163,9 +141,12 @@ test("adding and deleting a question requires confirmation to delete", async ({ 
   const addButton = page.getByRole("button", { name: "Add a Question" });
   if (await addButton.isVisible()) await addButton.click();
 
-  await page.getByLabel(/^Question/).fill(question);
-  await page.getByLabel(/^Answer/).fill("Yes, there is a free lot behind us.");
-  await page.getByRole("button", { name: "Add Question" }).click();
+  const editor = page.getByRole("dialog", { name: "Add a question" });
+  await expect(editor).toBeVisible();
+  await editor.getByLabel(/^Question/).fill(question);
+  await editor.getByLabel(/^Answer/).fill("Yes, there is a free lot behind us.");
+  await editor.getByRole("button", { name: "Add Question" }).click();
+  await expect(editor).toBeHidden();
 
   const item = page.getByRole("listitem").filter({ hasText: question });
   await expect(item).toBeVisible();
@@ -183,14 +164,16 @@ test("adding and deleting a question requires confirmation to delete", async ({ 
 test("a class time can be added, then deleted after confirming", async ({ page }) => {
   await page.goto("/dashboard/settings?section=schedule");
 
-  const addButton = page.getByRole("button", { name: "Add a Class Time" });
-  if (await addButton.isVisible()) await addButton.click();
+  await page.getByRole("button", { name: "Add a Class Time" }).click();
 
-  await page.getByLabel(/Day of the week/).selectOption("2");
-  await page.getByLabel(/Start time/).fill("19:15");
-  await page.getByLabel(/Class length in minutes/).fill("45");
-  await page.getByLabel(/^Internal label/).fill("Playwright temp window");
-  await page.getByRole("button", { name: "Add Class Time" }).click();
+  const editor = page.getByRole("dialog", { name: "Add a class time" });
+  await expect(editor).toBeVisible();
+  await editor.getByLabel(/Day of the week/).selectOption("2");
+  await editor.getByLabel(/Start time/).fill("19:15");
+  await editor.getByLabel(/Class length in minutes/).fill("45");
+  await editor.getByLabel(/^Internal label/).fill("Playwright temp window");
+  await editor.getByRole("button", { name: "Add Class Time" }).click();
+  await expect(editor).toBeHidden();
 
   const row = page.getByRole("listitem").filter({ hasText: "Playwright temp window" });
   await expect(row).toBeVisible();
@@ -219,12 +202,15 @@ test("a trial class can be edited, saved, reloaded, and edited again", async ({ 
     .first();
   await row.getByRole("button", { name: "Edit" }).click();
 
-  const name = page.getByLabel(/Class name/);
+  const editor = page.getByRole("dialog");
+  await expect(editor).toBeVisible();
+  const name = editor.getByLabel(/Class name/);
   const original = await name.inputValue();
   const next = `Corrected class ${Date.now()}`;
   await name.fill(next);
-  await page.getByLabel(/Youngest age/).fill("7");
-  await page.getByRole("button", { name: "Save Changes" }).click();
+  await editor.getByLabel(/Youngest age/).fill("7");
+  await editor.getByRole("button", { name: "Save Changes" }).click();
+  await expect(editor).toBeHidden();
 
   const savedRow = page.getByRole("listitem").filter({ hasText: next });
   await expect(page.getByRole("status").filter({ hasText: /saved/i })).toBeVisible();
@@ -234,11 +220,13 @@ test("a trial class can be edited, saved, reloaded, and edited again", async ({ 
   const reloaded = page.getByRole("listitem").filter({ hasText: next });
   await expect(reloaded).toBeVisible();
   await reloaded.getByRole("button", { name: "Edit" }).click();
-  await expect(page.getByLabel(/Class name/)).toHaveValue(next);
-  await expect(page.getByLabel(/Youngest age/)).toHaveValue("7");
+  await expect(editor).toBeVisible();
+  await expect(editor.getByLabel(/Class name/)).toHaveValue(next);
+  await expect(editor.getByLabel(/Youngest age/)).toHaveValue("7");
 
-  await page.getByLabel(/Class name/).fill(original);
-  await page.getByRole("button", { name: "Save Changes" }).click();
+  await editor.getByLabel(/Class name/).fill(original);
+  await editor.getByRole("button", { name: "Save Changes" }).click();
+  await expect(editor).toBeHidden();
   await expect(page.getByRole("status").filter({ hasText: /saved/i })).toBeVisible();
 });
 
@@ -250,34 +238,15 @@ test("cancel on a clean editor closes immediately without asking", async ({ page
     .filter({ hasText: "Kids beginner trial" })
     .first();
   await row.getByRole("button", { name: "Edit" }).click();
-  await expect(page.getByRole("button", { name: "Save Changes" })).toBeVisible();
+  const editor = page.getByRole("dialog");
+  await expect(editor.getByRole("button", { name: "Save Changes" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await editor.getByRole("button", { name: "Cancel" }).click();
+  await expect(editor).toBeHidden();
 
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(0);
   await expect(row.getByRole("button", { name: "Edit" })).toBeVisible();
-});
-
-test("switching records while dirty asks before discarding", async ({ page }) => {
-  await page.goto("/dashboard/settings?section=offerings");
-  const row = page
-    .getByRole("region", { name: "Your trial classes" })
-    .getByRole("listitem")
-    .filter({ hasText: "Kids beginner trial" })
-    .first();
-  await row.getByRole("button", { name: "Edit" }).click();
-  await page.getByLabel(/Class name/).fill("Unsaved draft name");
-
-  await page.getByRole("button", { name: "Add a Trial Class" }).click();
-  const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Keep Editing" }).click();
-  await expect(page.getByLabel(/Class name/)).toHaveValue("Unsaved draft name");
-
-  await page.getByRole("button", { name: "Add a Trial Class" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Discard Changes" }).click();
-  await expect(page.getByRole("group", { name: /Add a trial class/i })).toBeVisible();
 });
 
 test("cancel on a clean FAQ editor closes immediately without asking", async ({ page }) => {
@@ -286,16 +255,20 @@ test("cancel on a clean FAQ editor closes immediately without asking", async ({ 
   const addButton = page.getByRole("button", { name: "Add a Question" });
   if (await addButton.isVisible()) await addButton.click();
 
-  await page.getByLabel(/^Question/).fill(question);
-  await page.getByLabel(/^Answer/).fill("Temporary.");
-  await page.getByRole("button", { name: "Add Question" }).click();
+  const editor = page.getByRole("dialog");
+  await expect(editor).toBeVisible();
+  await editor.getByLabel(/^Question/).fill(question);
+  await editor.getByLabel(/^Answer/).fill("Temporary.");
+  await editor.getByRole("button", { name: "Add Question" }).click();
+  await expect(editor).toBeHidden();
 
   const item = page.getByRole("listitem").filter({ hasText: question });
   await expect(item).toBeVisible();
   await item.getByRole("button", { name: "Edit" }).click();
-  await expect(page.getByRole("button", { name: "Save Changes" })).toBeVisible();
+  await expect(editor.getByRole("button", { name: "Save Changes" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await editor.getByRole("button", { name: "Cancel" }).click();
+  await expect(editor).toBeHidden();
 
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(0);
@@ -312,15 +285,18 @@ test("an FAQ can be edited without deleting it", async ({ page }) => {
   const addButton = page.getByRole("button", { name: "Add a Question" });
   if (await addButton.isVisible()) await addButton.click();
 
-  await page.getByLabel(/^Question/).fill(question);
-  await page.getByLabel(/^Answer/).fill("Yes, there is a free lot.");
-  await page.getByRole("button", { name: "Add Question" }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByLabel(/^Question/).fill(question);
+  await editor.getByLabel(/^Answer/).fill("Yes, there is a free lot.");
+  await editor.getByRole("button", { name: "Add Question" }).click();
+  await expect(editor).toBeHidden();
 
   const item = page.getByRole("listitem").filter({ hasText: question });
   await expect(item).toBeVisible();
   await item.getByRole("button", { name: "Edit" }).click();
-  await page.getByLabel(/^Answer/).fill("Yes — street parking too.");
-  await page.getByRole("button", { name: "Save Changes" }).click();
+  await editor.getByLabel(/^Answer/).fill("Yes — street parking too.");
+  await editor.getByRole("button", { name: "Save Changes" }).click();
+  await expect(editor).toBeHidden();
   await expect(page.getByRole("status").filter({ hasText: /saved/i })).toBeVisible();
 
   await item.locator("summary").click();
