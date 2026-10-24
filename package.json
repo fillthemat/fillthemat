@@ -86,15 +86,11 @@
     "@types/react-dom": "19.3.0",
     "@vercel/config": "^0.7.0",
     "drizzle-kit": "^0.31.10",
-    "skills": "^1.5.23",
+    "skills": "^1.7.4",
     "supabase": "^2.122.0",
     "tailwindcss": "^4.3.3",
     "typescript": "7.0.2",
     "vitest": "^4.1.11"
-  },
-  "overrides": {
-    "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0"
   },
   "ignoreScripts": [
     "sharp",
