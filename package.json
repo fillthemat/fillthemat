@@ -68,7 +68,7 @@
     "drizzle-orm": "^0.45.2",
     "geist": "^1.7.2",
     "langfuse-cli": "^1.2.4",
-    "next": "16.4.2",
+    "next": "^16.5.0-canary.26",
     "postgres": "^3.4.9",
     "postman-cli": "^1.69.0",
     "radix-ui": "^1.6.7",
