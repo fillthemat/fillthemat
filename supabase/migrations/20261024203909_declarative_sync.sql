@@ -106,8 +106,6 @@ CREATE TABLE "public"."faqs" (
 ALTER TABLE "public"."faqs"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."faqs" FROM "anon";
-
 CREATE TABLE "public"."funnel_events" (
   "id"                 uuid                     NOT NULL DEFAULT gen_random_uuid(),
   "school_id"          uuid                     NOT NULL,
@@ -206,28 +204,43 @@ ALTER TABLE "public"."participants"
 
 REVOKE ALL ON TABLE "public"."participants" FROM "anon";
 
+CREATE TABLE "public"."school_profiles" (
+  "school_id"       uuid                     NOT NULL,
+  "name"            text                     NOT NULL DEFAULT ''::text,
+  "phone"           text,
+  "website"         text,
+  "address"         text,
+  "country"         text                     NOT NULL DEFAULT 'US'::text,
+  "city"            text,
+  "parking_notes"   text,
+  "access_notes"    text,
+  "trial_guidance"  text,
+  "pricing"         text,
+  "welcome_message" text,
+  "logo_url"        text,
+  "primary_color"   text,
+  "created_at"      timestamp with time zone NOT NULL DEFAULT now(),
+  "updated_at"      timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT "school_profiles_logo_url" CHECK (((logo_url IS NULL) OR (logo_url ~ '^https://'::text))),
+  CONSTRAINT "school_profiles_pkey" PRIMARY KEY (school_id),
+  CONSTRAINT "school_profiles_primary_color" CHECK (((primary_color IS NULL) OR (primary_color ~ '^#[0-9A-Fa-f]{6}$'::text)))
+);
+
+ALTER TABLE "public"."school_profiles"
+  ENABLE ROW LEVEL SECURITY;
+
 CREATE TABLE "public"."school_settings" (
-  "school_id"          uuid                     NOT NULL,
-  "name"               text                     NOT NULL DEFAULT ''::text,
-  "notification_email" text                     NOT NULL DEFAULT ''::text,
-  "phone"              text,
-  "website"            text,
-  "address"            text,
-  "country"            text                     NOT NULL DEFAULT 'US'::text,
-  "city"               text,
-  "parking_notes"      text,
-  "access_notes"       text,
-  "trial_guidance"     text,
-  "pricing"            text,
-  "welcome_message"    text,
-  "agent_instructions" text,
-  "logo_url"           text,
-  "primary_color"      text,
-  "created_at"         timestamp with time zone NOT NULL DEFAULT now(),
-  "updated_at"         timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT "school_settings_logo_url" CHECK (((logo_url IS NULL) OR (logo_url ~ '^https://'::text))),
-  CONSTRAINT "school_settings_pkey" PRIMARY KEY (school_id),
-  CONSTRAINT "school_settings_primary_color" CHECK (((primary_color IS NULL) OR (primary_color ~ '^#[0-9A-Fa-f]{6}$'::text)))
+  "school_id"                uuid                     NOT NULL,
+  "owner_user_id"            uuid                     NOT NULL,
+  "notification_email"       text                     NOT NULL DEFAULT ''::text,
+  "agent_instructions"       text,
+  "previewed_at"             timestamp with time zone,
+  "whatsapp_phone_number_id" text,
+  "whatsapp_waba_id"         text,
+  "created_at"               timestamp with time zone NOT NULL DEFAULT now(),
+  "updated_at"               timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT "school_settings_owner_user_id_key" UNIQUE (owner_user_id),
+  CONSTRAINT "school_settings_pkey" PRIMARY KEY (school_id)
 );
 
 ALTER TABLE "public"."school_settings"
@@ -236,18 +249,13 @@ ALTER TABLE "public"."school_settings"
 REVOKE ALL ON TABLE "public"."school_settings" FROM "anon";
 
 CREATE TABLE "public"."schools" (
-  "id"                       uuid                     NOT NULL DEFAULT gen_random_uuid(),
-  "owner_user_id"            uuid                     NOT NULL,
-  "slug"                     text                     NOT NULL,
-  "timezone"                 text                     NOT NULL,
-  "approved_at"              timestamp with time zone,
-  "published_at"             timestamp with time zone,
-  "previewed_at"             timestamp with time zone,
-  "created_at"               timestamp with time zone NOT NULL DEFAULT now(),
-  "updated_at"               timestamp with time zone NOT NULL DEFAULT now(),
-  "whatsapp_phone_number_id" text,
-  "whatsapp_waba_id"         text,
-  CONSTRAINT "schools_owner_user_id_unique" UNIQUE (owner_user_id),
+  "id"           uuid                     NOT NULL DEFAULT gen_random_uuid(),
+  "slug"         text                     NOT NULL,
+  "timezone"     text                     NOT NULL,
+  "approved_at"  timestamp with time zone,
+  "published_at" timestamp with time zone,
+  "created_at"   timestamp with time zone NOT NULL DEFAULT now(),
+  "updated_at"   timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "schools_school_id_unique" PRIMARY KEY (id),
   CONSTRAINT "schools_slug_format" CHECK (((slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text) AND ((char_length(slug) >= 3) AND (char_length(slug) <= 48)))),
   CONSTRAINT "schools_slug_unique" UNIQUE (slug)
@@ -255,8 +263,6 @@ CREATE TABLE "public"."schools" (
 
 ALTER TABLE "public"."schools"
   ENABLE ROW LEVEL SECURITY;
-
-REVOKE ALL ON TABLE "public"."schools" FROM "anon";
 
 CREATE TABLE "public"."trial_occurrences" (
   "id"                uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -279,8 +285,6 @@ CREATE TABLE "public"."trial_occurrences" (
 
 ALTER TABLE "public"."trial_occurrences"
   ENABLE ROW LEVEL SECURITY;
-
-REVOKE ALL ON TABLE "public"."trial_occurrences" FROM "anon";
 
 CREATE TABLE "public"."trial_offerings" (
   "id"           uuid                     NOT NULL DEFAULT gen_random_uuid(),
@@ -307,8 +311,6 @@ CREATE TABLE "public"."trial_offerings" (
 ALTER TABLE "public"."trial_offerings"
   ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."trial_offerings" FROM "anon";
-
 CREATE TABLE "public"."trial_windows" (
   "id"                uuid                     NOT NULL DEFAULT gen_random_uuid(),
   "school_id"         uuid                     NOT NULL,
@@ -331,8 +333,6 @@ CREATE TABLE "public"."trial_windows" (
 
 ALTER TABLE "public"."trial_windows"
   ENABLE ROW LEVEL SECURITY;
-
-REVOKE ALL ON TABLE "public"."trial_windows" FROM "anon";
 
 CREATE TABLE "public"."users" (
   "id"         uuid                     NOT NULL,
@@ -699,68 +699,15 @@ CREATE OR REPLACE FUNCTION public.cancel_dashboard_booking (
 )
   RETURNS text
   LANGUAGE plpgsql
-  SECURITY DEFINER
   SET search_path TO ''
   AS $function$
-DECLARE
-    v_booking public.bookings%ROWTYPE;
-    v_notification_email text;
-    v_sequence integer;
+DECLARE v_booking public.bookings%ROWTYPE;
 BEGIN
-    SELECT b.* INTO v_booking
-    FROM public.bookings b
-    WHERE b.id = p_booking_id
-      AND EXISTS (
-          SELECT 1 FROM public.schools s
-          WHERE s.id = b.school_id AND s.owner_user_id = (SELECT auth.uid())
-      )
-    FOR UPDATE;
-
+    SELECT * INTO v_booking FROM public.bookings WHERE id = p_booking_id FOR UPDATE;
     IF NOT FOUND THEN RETURN 'not_found'; END IF;
     IF v_booking.status = 'cancelled' THEN RETURN 'replay'; END IF;
-    IF v_booking.status <> 'booked' OR v_booking.start_at <= now() THEN
-        RETURN 'not_cancellable';
-    END IF;
-
-    v_sequence := v_booking.ics_sequence + 1;
-    UPDATE public.bookings
-    SET status = 'cancelled', cancelled_at = now(),
-        ics_sequence = v_sequence, updated_at = now()
-    WHERE id = v_booking.id;
-
-    UPDATE public.trial_occurrences
-    SET booked_count = booked_count - 1, updated_at = now()
-    WHERE id = v_booking.trial_occurrence_id
-      AND school_id = v_booking.school_id AND booked_count > 0;
-
-    SELECT notification_email INTO v_notification_email
-    FROM public.school_settings WHERE school_id = v_booking.school_id;
-
-    IF v_booking.contact_email_snapshot IS NOT NULL THEN
-        INSERT INTO public.email_deliveries (
-            school_id, booking_id, kind, recipient, provider_idempotency_key
-        ) VALUES (
-            v_booking.school_id, v_booking.id, 'booking_cancellation',
-            v_booking.contact_email_snapshot,
-            'booking-cancellation/' || v_booking.id || '/' || v_sequence
-        );
-    END IF;
-    IF v_notification_email IS NOT NULL AND v_notification_email <> '' THEN
-        INSERT INTO public.email_deliveries (
-            school_id, booking_id, kind, recipient, provider_idempotency_key
-        ) VALUES (
-            v_booking.school_id, v_booking.id, 'owner_cancellation',
-            v_notification_email,
-            'owner-cancellation/' || v_booking.id || '/' || v_sequence
-        );
-    END IF;
-
-    INSERT INTO public.funnel_events (
-        school_id, booking_id, landing_session_id, conversation_id, event_type, metadata
-    ) VALUES (
-        v_booking.school_id, v_booking.id, v_booking.landing_session_id,
-        v_booking.conversation_id, 'booking_cancelled', jsonb_build_object('sequence', v_sequence)
-    );
+    IF v_booking.status <> 'booked' OR v_booking.start_at <= now() THEN RETURN 'not_cancellable'; END IF;
+    UPDATE public.bookings SET status = 'cancelled' WHERE id = p_booking_id;
     RETURN 'cancelled';
 END;
 $function$;
@@ -774,36 +721,46 @@ CREATE OR REPLACE FUNCTION public.create_settings_faq (
 )
   RETURNS SETOF public.faqs
   LANGUAGE plpgsql
-  SECURITY DEFINER
   SET search_path TO ''
   AS $function$
-DECLARE v_count integer;
 BEGIN
-    PERFORM 1 FROM public.schools
-    WHERE id = p_school_id AND owner_user_id = (SELECT auth.uid()) FOR UPDATE;
+    PERFORM 1 FROM public.school_settings
+    WHERE school_id = p_school_id AND owner_user_id = (SELECT auth.uid()) FOR UPDATE;
     IF NOT FOUND THEN RAISE EXCEPTION 'school_not_found' USING ERRCODE = '42501'; END IF;
-    SELECT count(*) INTO v_count FROM public.faqs WHERE school_id = p_school_id;
-    IF v_count >= 20 THEN RAISE EXCEPTION 'faq_limit_reached' USING ERRCODE = '23514'; END IF;
     RETURN QUERY INSERT INTO public.faqs (school_id, question, answer, sort_order)
-    VALUES (p_school_id, p_question, p_answer, v_count) RETURNING *;
+    VALUES (p_school_id, p_question, p_answer, (SELECT count(*)::integer FROM public.faqs WHERE school_id = p_school_id))
+    RETURNING *;
 END;
 $function$;
 
 REVOKE ALL ON FUNCTION "public"."create_settings_faq"(uuid, text, text) FROM PUBLIC, "anon";
+
+CREATE OR REPLACE FUNCTION public.delete_school_after_account()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SET search_path TO ''
+  AS $function$
+BEGIN
+    DELETE FROM public.schools WHERE id = OLD.school_id;
+    RETURN NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION "public"."delete_school_after_account"() FROM PUBLIC, "anon", "authenticated";
 
 CREATE OR REPLACE FUNCTION public.delete_settings_window (
   p_window_id uuid
 )
   RETURNS text
   LANGUAGE plpgsql
-  SECURITY DEFINER
   SET search_path TO ''
   AS $function$
 DECLARE v_school_id uuid;
 BEGIN
     SELECT w.school_id INTO v_school_id FROM public.trial_windows w
-    JOIN public.schools s ON s.id = w.school_id
-    WHERE w.id = p_window_id AND s.owner_user_id = (SELECT auth.uid()) FOR UPDATE OF w;
+    WHERE w.id = p_window_id AND w.school_id = (
+        SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())
+    ) FOR UPDATE;
     IF NOT FOUND THEN RETURN 'not_found'; END IF;
     IF EXISTS (SELECT 1 FROM public.trial_occurrences WHERE trial_window_id = p_window_id AND school_id = v_school_id) THEN
         RETURN 'on_calendar';
@@ -814,6 +771,23 @@ END;
 $function$;
 
 REVOKE ALL ON FUNCTION "public"."delete_settings_window"(uuid) FROM PUBLIC, "anon";
+
+CREATE OR REPLACE FUNCTION public.enforce_faq_limit()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SET search_path TO ''
+  AS $function$
+BEGIN
+    PERFORM 1 FROM public.school_settings WHERE school_id = NEW.school_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'school_not_found' USING ERRCODE = '42501'; END IF;
+    IF (SELECT count(*) FROM public.faqs WHERE school_id = NEW.school_id) >= 20 THEN
+        RAISE EXCEPTION 'faq_limit_reached' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION "public"."enforce_faq_limit"() FROM PUBLIC, "anon", "authenticated";
 
 CREATE OR REPLACE FUNCTION public.get_overview_metrics (
   p_school_id uuid,
@@ -891,7 +865,7 @@ CREATE OR REPLACE FUNCTION public.get_overview_metrics (
         )
     FROM public.schools s
     WHERE s.id = p_school_id
-      AND s.owner_user_id = (SELECT auth.uid());
+      AND s.id = (SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid()));
 $function$;
 
 REVOKE ALL ON FUNCTION "public"."get_overview_metrics"(uuid, timestamp WITH time zone) FROM PUBLIC, "anon";
@@ -926,6 +900,7 @@ CREATE OR REPLACE FUNCTION public.get_settings_windows (
     FROM public.trial_windows w
     JOIN public.trial_offerings o ON o.id = w.trial_offering_id AND o.school_id = w.school_id
     WHERE w.school_id = p_school_id
+      AND w.school_id = (SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid()))
     ORDER BY w.day_of_week, w.start_minute;
 $function$;
 
@@ -934,18 +909,89 @@ REVOKE ALL ON FUNCTION "public"."get_settings_windows"(uuid) FROM PUBLIC, "anon"
 CREATE OR REPLACE FUNCTION public.prevent_published_school_identity_change()
   RETURNS TRIGGER
   LANGUAGE plpgsql
+  SET search_path TO ''
   AS $function$
 BEGIN
-  IF OLD.published_at IS NOT NULL THEN
-    IF NEW.slug IS DISTINCT FROM OLD.slug OR NEW.timezone IS DISTINCT FROM OLD.timezone THEN
-      RAISE EXCEPTION 'slug and timezone are immutable after publish';
+    IF OLD.published_at IS NOT NULL AND (
+        NEW.slug IS DISTINCT FROM OLD.slug OR NEW.timezone IS DISTINCT FROM OLD.timezone
+        OR NEW.published_at IS DISTINCT FROM OLD.published_at
+    ) THEN
+        RAISE EXCEPTION 'slug, timezone and publication timestamp are immutable after publish';
     END IF;
-  END IF;
-  RETURN NEW;
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name = NEW.timezone) THEN
+        RAISE EXCEPTION 'invalid_timezone' USING ERRCODE = '22023';
+    END IF;
+    RETURN NEW;
 END;
 $function$;
 
 REVOKE ALL ON FUNCTION "public"."prevent_published_school_identity_change"() FROM PUBLIC, "anon", "authenticated";
+
+CREATE OR REPLACE FUNCTION public.record_owner_booking_transition()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SET search_path TO ''
+  AS $function$
+DECLARE v_notification_email text;
+BEGIN
+    IF current_user <> 'authenticated' OR NEW.status = OLD.status THEN RETURN NULL; END IF;
+    IF NEW.status IN ('showed', 'no_show') THEN
+        INSERT INTO public.funnel_events (school_id, booking_id, event_type)
+        VALUES (NEW.school_id, NEW.id, NEW.status::text);
+        RETURN NULL;
+    END IF;
+    UPDATE public.trial_occurrences SET booked_count = booked_count - 1
+    WHERE id = NEW.trial_occurrence_id AND school_id = NEW.school_id AND booked_count > 0;
+    SELECT notification_email INTO v_notification_email
+    FROM public.school_settings WHERE school_id = NEW.school_id;
+    IF NEW.contact_email_snapshot IS NOT NULL THEN
+        INSERT INTO public.email_deliveries (school_id, booking_id, kind, recipient, provider_idempotency_key)
+        VALUES (NEW.school_id, NEW.id, 'booking_cancellation', NEW.contact_email_snapshot,
+                'booking-cancellation/' || NEW.id || '/' || NEW.ics_sequence);
+    END IF;
+    IF v_notification_email IS NOT NULL AND v_notification_email <> '' THEN
+        INSERT INTO public.email_deliveries (school_id, booking_id, kind, recipient, provider_idempotency_key)
+        VALUES (NEW.school_id, NEW.id, 'owner_cancellation', v_notification_email,
+                'owner-cancellation/' || NEW.id || '/' || NEW.ics_sequence);
+    END IF;
+    INSERT INTO public.funnel_events (school_id, booking_id, landing_session_id, conversation_id, event_type, metadata)
+    VALUES (NEW.school_id, NEW.id, NEW.landing_session_id, NEW.conversation_id,
+            'booking_cancelled', jsonb_build_object('sequence', NEW.ics_sequence));
+    RETURN NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION "public"."record_owner_booking_transition"() FROM PUBLIC, "anon", "authenticated";
+
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SET search_path TO ''
+  AS $function$
+BEGIN
+    NEW.updated_at := statement_timestamp();
+    RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION "public"."set_updated_at"() FROM PUBLIC, "anon", "authenticated";
+
+CREATE OR REPLACE FUNCTION public.sync_window_capacity()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SET search_path TO ''
+  AS $function$
+BEGIN
+    PERFORM 1 FROM public.trial_occurrences
+    WHERE trial_window_id = NEW.id AND school_id = NEW.school_id AND start_at > now()
+    ORDER BY id FOR UPDATE;
+    UPDATE public.trial_occurrences SET capacity = NEW.capacity
+    WHERE trial_window_id = NEW.id AND school_id = NEW.school_id AND start_at > now();
+    RETURN NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION "public"."sync_window_capacity"() FROM PUBLIC, "anon", "authenticated";
 
 CREATE OR REPLACE FUNCTION public.update_booking_attendance (
   p_booking_id uuid,
@@ -953,35 +999,39 @@ CREATE OR REPLACE FUNCTION public.update_booking_attendance (
 )
   RETURNS boolean
   LANGUAGE plpgsql
-  SECURITY DEFINER
   SET search_path TO ''
   AS $function$
-DECLARE
-    v_school_id uuid;
 BEGIN
     IF p_status NOT IN ('showed', 'no_show') OR p_status IS NULL THEN
         RAISE EXCEPTION 'invalid_attendance_status' USING ERRCODE = '22023';
     END IF;
-
-    UPDATE public.bookings b
-    SET status = p_status::public.booking_status, updated_at = now()
-    WHERE b.id = p_booking_id
-      AND b.status IN ('booked', 'showed', 'no_show')
-      AND EXISTS (
-          SELECT 1 FROM public.schools s
-          WHERE s.id = b.school_id AND s.owner_user_id = (SELECT auth.uid())
-      )
-    RETURNING b.school_id INTO v_school_id;
-
-    IF NOT FOUND THEN RETURN false; END IF;
-
-    INSERT INTO public.funnel_events (school_id, booking_id, event_type)
-    VALUES (v_school_id, p_booking_id, p_status);
-    RETURN true;
+    UPDATE public.bookings SET status = p_status::public.booking_status
+    WHERE id = p_booking_id AND status IN ('booked', 'showed', 'no_show');
+    RETURN FOUND;
 END;
 $function$;
 
 REVOKE ALL ON FUNCTION "public"."update_booking_attendance"(uuid, text) FROM PUBLIC, "anon";
+
+CREATE OR REPLACE FUNCTION public.update_school_agent (
+  p_school_id          uuid,
+  p_welcome_message    text,
+  p_agent_instructions text
+)
+  RETURNS void
+  LANGUAGE plpgsql
+  SET search_path TO ''
+  AS $function$
+BEGIN
+    UPDATE public.school_settings SET agent_instructions = nullif(p_agent_instructions, '')
+    WHERE school_id = p_school_id AND owner_user_id = (SELECT auth.uid());
+    IF NOT FOUND THEN RAISE EXCEPTION 'school_not_found' USING ERRCODE = '42501'; END IF;
+    UPDATE public.school_profiles SET welcome_message = nullif(p_welcome_message, '') WHERE school_id = p_school_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'school_profile_missing'; END IF;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION "public"."update_school_agent"(uuid, text, text) FROM PUBLIC, "anon";
 
 CREATE OR REPLACE FUNCTION public.update_school_profile (
   p_school_id uuid,
@@ -991,32 +1041,27 @@ CREATE OR REPLACE FUNCTION public.update_school_profile (
 )
   RETURNS void
   LANGUAGE plpgsql
-  SECURITY DEFINER
   SET search_path TO ''
   AS $function$
 BEGIN
-    PERFORM 1 FROM public.schools
-    WHERE id = p_school_id AND owner_user_id = (SELECT auth.uid()) FOR UPDATE;
+    PERFORM 1 FROM public.school_settings
+    WHERE school_id = p_school_id AND owner_user_id = (SELECT auth.uid()) FOR UPDATE;
     IF NOT FOUND THEN RAISE EXCEPTION 'school_not_found' USING ERRCODE = '42501'; END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name = p_timezone) THEN
-        RAISE EXCEPTION 'invalid_timezone' USING ERRCODE = '22023';
-    END IF;
-    -- The schools trigger rejects identity changes after publication.
-    UPDATE public.schools SET slug = p_slug, timezone = p_timezone, updated_at = now()
-    WHERE id = p_school_id;
-    INSERT INTO public.school_settings (
-        school_id, name, notification_email, phone, website, address, city, country,
+    UPDATE public.schools SET slug = p_slug, timezone = p_timezone WHERE id = p_school_id;
+    UPDATE public.school_settings SET notification_email = p_profile->>'notification_email'
+    WHERE school_id = p_school_id;
+    INSERT INTO public.school_profiles (
+        school_id, name, phone, website, address, city, country,
         parking_notes, access_notes, trial_guidance
     ) VALUES (
-        p_school_id, p_profile->>'name', p_profile->>'notification_email',
-        p_profile->>'phone', p_profile->>'website', p_profile->>'address', p_profile->>'city',
-        coalesce(p_profile->>'country', 'US'), p_profile->>'parking_notes',
-        p_profile->>'access_notes', p_profile->>'trial_guidance'
+        p_school_id, p_profile->>'name', p_profile->>'phone', p_profile->>'website',
+        p_profile->>'address', p_profile->>'city', coalesce(p_profile->>'country', 'US'),
+        p_profile->>'parking_notes', p_profile->>'access_notes', p_profile->>'trial_guidance'
     ) ON CONFLICT (school_id) DO UPDATE SET
-        name = EXCLUDED.name, notification_email = EXCLUDED.notification_email,
-        phone = EXCLUDED.phone, website = EXCLUDED.website, address = EXCLUDED.address,
-        city = EXCLUDED.city, country = EXCLUDED.country, parking_notes = EXCLUDED.parking_notes,
-        access_notes = EXCLUDED.access_notes, trial_guidance = EXCLUDED.trial_guidance, updated_at = now();
+        name = EXCLUDED.name, phone = EXCLUDED.phone, website = EXCLUDED.website,
+        address = EXCLUDED.address, city = EXCLUDED.city, country = EXCLUDED.country,
+        parking_notes = EXCLUDED.parking_notes, access_notes = EXCLUDED.access_notes,
+        trial_guidance = EXCLUDED.trial_guidance;
 END;
 $function$;
 
@@ -1031,7 +1076,6 @@ CREATE OR REPLACE FUNCTION public.update_settings_window_capacity (
     max_booked integer
   )
   LANGUAGE plpgsql
-  SECURITY DEFINER
   SET search_path TO ''
   AS $function$
 DECLARE v_school_id uuid; v_booked integer;
@@ -1040,25 +1084,42 @@ BEGIN
         RAISE EXCEPTION 'invalid_capacity' USING ERRCODE = '22023';
     END IF;
     SELECT w.school_id INTO v_school_id FROM public.trial_windows w
-    JOIN public.schools s ON s.id = w.school_id
-    WHERE w.id = p_window_id AND s.owner_user_id = (SELECT auth.uid()) FOR UPDATE OF w;
+    WHERE w.id = p_window_id AND w.school_id = (
+        SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())
+    ) FOR UPDATE;
     IF NOT FOUND THEN RETURN QUERY SELECT 'not_found'::text, 0; RETURN; END IF;
-    PERFORM 1 FROM public.trial_occurrences
-    WHERE trial_window_id = p_window_id AND school_id = v_school_id AND start_at > now()
-    ORDER BY id FOR UPDATE;
     SELECT coalesce(max(booked_count), 0) INTO v_booked FROM public.trial_occurrences
     WHERE trial_window_id = p_window_id AND school_id = v_school_id AND start_at > now();
     IF v_booked > p_capacity THEN
         RETURN QUERY SELECT 'below_booked'::text, v_booked; RETURN;
     END IF;
-    UPDATE public.trial_windows SET capacity = p_capacity, updated_at = now() WHERE id = p_window_id;
-    UPDATE public.trial_occurrences SET capacity = p_capacity, updated_at = now()
-    WHERE trial_window_id = p_window_id AND school_id = v_school_id AND start_at > now();
+    UPDATE public.trial_windows SET capacity = p_capacity WHERE id = p_window_id;
     RETURN QUERY SELECT 'updated'::text, v_booked;
 END;
 $function$;
 
 REVOKE ALL ON FUNCTION "public"."update_settings_window_capacity"(uuid, integer) FROM PUBLIC, "anon";
+
+CREATE OR REPLACE FUNCTION public.validate_owner_booking_transition()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SET search_path TO ''
+  AS $function$
+BEGIN
+    IF current_user <> 'authenticated' OR NEW.status = OLD.status THEN RETURN NEW; END IF;
+    IF NEW.status IN ('showed', 'no_show') AND OLD.status IN ('booked', 'showed', 'no_show') THEN
+        RETURN NEW;
+    END IF;
+    IF NEW.status = 'cancelled' AND OLD.status = 'booked' AND OLD.start_at > now() THEN
+        NEW.cancelled_at := now();
+        NEW.ics_sequence := OLD.ics_sequence + 1;
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'invalid_booking_status_change' USING ERRCODE = '22023';
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION "public"."validate_owner_booking_transition"() FROM PUBLIC, "anon", "authenticated";
 
 ALTER TABLE "public"."bookings"
   ADD CONSTRAINT "bookings_participant_age" CHECK (((participant_age_snapshot >= 0) AND (participant_age_snapshot <= 99)));
@@ -1130,6 +1191,9 @@ ALTER TABLE "public"."leads"
 ALTER TABLE "public"."participants"
   ADD CONSTRAINT "participants_school_id_fk" FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
 
+ALTER TABLE "public"."school_profiles"
+  ADD CONSTRAINT "school_profiles_school_id_fkey" FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+
 ALTER TABLE "public"."school_settings"
   ADD CONSTRAINT "school_settings_school_id_fkey" FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
 
@@ -1166,8 +1230,8 @@ ALTER TABLE "public"."trial_occurrences"
 ALTER TABLE "public"."users"
   ADD CONSTRAINT "users_id_auth_users_fk" FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
-ALTER TABLE "public"."schools"
-  ADD CONSTRAINT "schools_owner_user_id_users_id_fk" FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ALTER TABLE "public"."school_settings"
+  ADD CONSTRAINT "school_settings_owner_user_id_fkey" FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE "public"."whatsapp_booking_intents"
   ADD CONSTRAINT "whatsapp_booking_intents_conversation_fk" FOREIGN KEY (school_id, conversation_id) REFERENCES public.conversations(school_id, id) ON DELETE CASCADE;
@@ -1203,7 +1267,7 @@ CREATE INDEX email_deliveries_due_idx ON public.email_deliveries USING btree (st
 
 CREATE INDEX funnel_events_school_created_idx ON public.funnel_events USING btree (school_id, created_at);
 
-CREATE UNIQUE INDEX schools_whatsapp_phone_number_id_unique ON public.schools USING btree (whatsapp_phone_number_id)
+CREATE UNIQUE INDEX school_settings_whatsapp_phone_number_id_unique ON public.school_settings USING btree (whatsapp_phone_number_id)
   WHERE (whatsapp_phone_number_id IS NOT NULL);
 
 CREATE UNIQUE INDEX whatsapp_booking_intents_active_pending ON public.whatsapp_booking_intents USING btree (conversation_id)
@@ -1213,75 +1277,227 @@ CREATE INDEX whatsapp_deliveries_due_idx ON public.whatsapp_deliveries USING btr
 
 CREATE INDEX whatsapp_jobs_due_idx ON public.whatsapp_jobs USING btree (state, next_attempt_at);
 
+CREATE TRIGGER bookings_owner_side_effects
+  AFTER UPDATE OF status ON public.bookings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.record_owner_booking_transition();
+
+CREATE TRIGGER bookings_owner_transition
+  BEFORE UPDATE OF status ON public.bookings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_owner_booking_transition();
+
+CREATE TRIGGER bookings_set_updated_at
+  BEFORE UPDATE ON public.bookings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER contacts_set_updated_at
+  BEFORE UPDATE ON public.contacts
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER conversations_set_updated_at
+  BEFORE UPDATE ON public.conversations
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER email_deliveries_set_updated_at
+  BEFORE UPDATE ON public.email_deliveries
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER faqs_enforce_limit
+  BEFORE INSERT ON public.faqs
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_faq_limit();
+
+CREATE TRIGGER faqs_set_updated_at
+  BEFORE UPDATE ON public.faqs
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER landing_sessions_set_updated_at
+  BEFORE UPDATE ON public.landing_sessions
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER leads_set_updated_at
+  BEFORE UPDATE ON public.leads
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER messages_set_updated_at
+  BEFORE UPDATE ON public.messages
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER participants_set_updated_at
+  BEFORE UPDATE ON public.participants
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER school_profiles_set_updated_at
+  BEFORE UPDATE ON public.school_profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER school_settings_delete_school
+  AFTER DELETE ON public.school_settings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.delete_school_after_account();
+
+CREATE TRIGGER school_settings_set_updated_at
+  BEFORE UPDATE ON public.school_settings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
 CREATE TRIGGER schools_identity_immutable
   BEFORE UPDATE ON public.schools
   FOR EACH ROW
   EXECUTE FUNCTION public.prevent_published_school_identity_change();
 
+CREATE TRIGGER schools_set_updated_at
+  BEFORE UPDATE ON public.schools
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER trial_occurrences_set_updated_at
+  BEFORE UPDATE ON public.trial_occurrences
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER trial_offerings_set_updated_at
+  BEFORE UPDATE ON public.trial_offerings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER trial_windows_set_updated_at
+  BEFORE UPDATE ON public.trial_windows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER trial_windows_sync_capacity
+  AFTER UPDATE OF capacity ON public.trial_windows
+  FOR EACH ROW
+  WHEN ((old.capacity IS DISTINCT FROM new.capacity))
+  EXECUTE FUNCTION public.sync_window_capacity();
+
+CREATE TRIGGER users_set_updated_at
+  BEFORE UPDATE ON public.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER whatsapp_booking_intents_set_updated_at
+  BEFORE UPDATE ON public.whatsapp_booking_intents
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER whatsapp_deliveries_set_updated_at
+  BEFORE UPDATE ON public.whatsapp_deliveries
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER whatsapp_jobs_set_updated_at
+  BEFORE UPDATE ON public.whatsapp_jobs
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
 CREATE POLICY "bookings_select_own_school" ON "public"."bookings"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "bookings_update_own_school" ON "public"."bookings"
+  FOR UPDATE
+  TO "authenticated"
+  USING ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))))
+  WITH CHECK ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))));
 
 CREATE POLICY "contacts_select_own_school" ON "public"."contacts"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "conversations_select_own_school" ON "public"."conversations"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "email_deliveries_owner_trigger_insert" ON "public"."email_deliveries"
+  FOR INSERT
+  TO "authenticated"
+  WITH CHECK (((pg_trigger_depth() > 0) AND (pg_my_temp_schema() = (0)::oid) AND (school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid))))));
 
 CREATE POLICY "email_deliveries_select_own_school" ON "public"."email_deliveries"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "faqs_owner_write" ON "public"."faqs"
   FOR ALL
   TO "authenticated"
-  USING ((school_id = ( SELECT schools.id
-   FROM public.schools
-  WHERE (schools.owner_user_id = ( SELECT auth.uid() AS uid)))))
-  WITH CHECK ((school_id = ( SELECT schools.id
-   FROM public.schools
-  WHERE (schools.owner_user_id = ( SELECT auth.uid() AS uid)))));
+  USING ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))))
+  WITH CHECK ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))));
+
+CREATE POLICY "faqs_public_read" ON "public"."faqs"
+  FOR SELECT
+  TO "anon", "authenticated"
+  USING ((EXISTS ( SELECT 1
+   FROM public.schools s
+  WHERE ((s.id = faqs.school_id) AND (s.approved_at IS NOT NULL) AND (s.published_at IS NOT NULL)))));
 
 CREATE POLICY "faqs_select_own_school" ON "public"."faqs"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "funnel_events_owner_trigger_insert" ON "public"."funnel_events"
+  FOR INSERT
+  TO "authenticated"
+  WITH CHECK (((pg_trigger_depth() > 0) AND (pg_my_temp_schema() = (0)::oid) AND (school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid))))));
 
 CREATE POLICY "funnel_events_select_own_school" ON "public"."funnel_events"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "landing_sessions_select_own_school" ON "public"."landing_sessions"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "leads_select_own_school" ON "public"."leads"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "messages_select_own_school" ON "public"."messages"
@@ -1289,70 +1505,135 @@ CREATE POLICY "messages_select_own_school" ON "public"."messages"
   TO "authenticated"
   USING ((EXISTS ( SELECT 1
    FROM (public.conversations c
-     JOIN public.schools s ON ((s.id = c.school_id)))
+     JOIN public.school_settings s ON ((s.school_id = c.school_id)))
   WHERE ((c.id = messages.conversation_id) AND (s.owner_user_id = auth.uid())))));
 
 CREATE POLICY "participants_select_own_school" ON "public"."participants"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
+
+CREATE POLICY "school_profiles_owner_access" ON "public"."school_profiles"
+  FOR ALL
+  TO "authenticated"
+  USING ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))))
+  WITH CHECK ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))));
+
+CREATE POLICY "school_profiles_public_read" ON "public"."school_profiles"
+  FOR SELECT
+  TO "anon", "authenticated"
+  USING ((EXISTS ( SELECT 1
+   FROM public.schools s
+  WHERE ((s.id = school_profiles.school_id) AND (s.approved_at IS NOT NULL) AND (s.published_at IS NOT NULL)))));
 
 CREATE POLICY "school_settings_owner_access" ON "public"."school_settings"
   FOR ALL
   TO "authenticated"
-  USING ((school_id = ( SELECT schools.id
-   FROM public.schools
-  WHERE (schools.owner_user_id = ( SELECT auth.uid() AS uid)))))
-  WITH CHECK ((school_id = ( SELECT schools.id
-   FROM public.schools
-  WHERE (schools.owner_user_id = ( SELECT auth.uid() AS uid)))));
+  USING ((owner_user_id = ( SELECT auth.uid() AS uid)))
+  WITH CHECK ((owner_user_id = ( SELECT auth.uid() AS uid)));
 
 CREATE POLICY "schools_select_own" ON "public"."schools"
   FOR SELECT
   TO "authenticated"
-  USING ((owner_user_id = ( SELECT auth.uid() AS uid)));
+  USING ((id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))));
+
+CREATE POLICY "schools_select_public" ON "public"."schools"
+  FOR SELECT
+  TO "anon", "authenticated"
+  USING (((approved_at IS NOT NULL) AND (published_at IS NOT NULL)));
+
+CREATE POLICY "schools_update_own" ON "public"."schools"
+  FOR UPDATE
+  TO "authenticated"
+  USING ((id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))))
+  WITH CHECK ((id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))));
+
+CREATE POLICY "trial_occurrences_owner_trigger_update" ON "public"."trial_occurrences"
+  FOR UPDATE
+  TO "authenticated"
+  USING (((pg_trigger_depth() > 0) AND (pg_my_temp_schema() = (0)::oid) AND (school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid))))))
+  WITH CHECK (((pg_trigger_depth() > 0) AND (pg_my_temp_schema() = (0)::oid) AND (school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid))))));
+
+CREATE POLICY "trial_occurrences_public_read" ON "public"."trial_occurrences"
+  FOR SELECT
+  TO "anon", "authenticated"
+  USING (((EXISTS ( SELECT 1
+   FROM public.schools s
+  WHERE ((s.id = trial_occurrences.school_id) AND (s.approved_at IS NOT NULL) AND (s.published_at IS NOT NULL)))) AND (EXISTS ( SELECT 1
+   FROM public.trial_windows w
+  WHERE ((w.id = trial_occurrences.trial_window_id) AND w.active)))));
 
 CREATE POLICY "trial_occurrences_select_own_school" ON "public"."trial_occurrences"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "trial_offerings_owner_write" ON "public"."trial_offerings"
   FOR ALL
   TO "authenticated"
-  USING ((school_id = ( SELECT schools.id
-   FROM public.schools
-  WHERE (schools.owner_user_id = ( SELECT auth.uid() AS uid)))))
-  WITH CHECK ((school_id = ( SELECT schools.id
-   FROM public.schools
-  WHERE (schools.owner_user_id = ( SELECT auth.uid() AS uid)))));
+  USING ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))))
+  WITH CHECK ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))));
+
+CREATE POLICY "trial_offerings_public_read" ON "public"."trial_offerings"
+  FOR SELECT
+  TO "anon", "authenticated"
+  USING ((active AND (EXISTS ( SELECT 1
+   FROM public.schools s
+  WHERE ((s.id = trial_offerings.school_id) AND (s.approved_at IS NOT NULL) AND (s.published_at IS NOT NULL))))));
 
 CREATE POLICY "trial_offerings_select_own_school" ON "public"."trial_offerings"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "trial_windows_owner_write" ON "public"."trial_windows"
   FOR ALL
   TO "authenticated"
-  USING ((school_id = ( SELECT schools.id
-   FROM public.schools
-  WHERE (schools.owner_user_id = ( SELECT auth.uid() AS uid)))))
-  WITH CHECK ((school_id = ( SELECT schools.id
-   FROM public.schools
-  WHERE (schools.owner_user_id = ( SELECT auth.uid() AS uid)))));
+  USING ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))))
+  WITH CHECK ((school_id = ( SELECT school_settings.school_id
+   FROM public.school_settings
+  WHERE (school_settings.owner_user_id = ( SELECT auth.uid() AS uid)))));
+
+CREATE POLICY "trial_windows_public_read" ON "public"."trial_windows"
+  FOR SELECT
+  TO "anon", "authenticated"
+  USING ((active AND (EXISTS ( SELECT 1
+   FROM public.schools s
+  WHERE ((s.id = trial_windows.school_id) AND (s.approved_at IS NOT NULL) AND (s.published_at IS NOT NULL)))) AND (EXISTS ( SELECT 1
+   FROM public.trial_offerings o
+  WHERE ((o.id = trial_windows.trial_offering_id) AND o.active)))));
 
 CREATE POLICY "trial_windows_select_own_school" ON "public"."trial_windows"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "users_select_own" ON "public"."users"
@@ -1363,22 +1644,22 @@ CREATE POLICY "users_select_own" ON "public"."users"
 CREATE POLICY "whatsapp_booking_intents_select_own_school" ON "public"."whatsapp_booking_intents"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "whatsapp_deliveries_select_own_school" ON "public"."whatsapp_deliveries"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 CREATE POLICY "whatsapp_jobs_select_own_school" ON "public"."whatsapp_jobs"
   FOR SELECT
   TO "authenticated"
-  USING ((school_id = ( SELECT s.id
-   FROM public.schools s
+  USING ((school_id = ( SELECT s.school_id
+   FROM public.school_settings s
   WHERE (s.owner_user_id = auth.uid()))));
 
 GRANT EXECUTE ON FUNCTION "public"."cancel_dashboard_booking"(uuid) TO "authenticated";
@@ -1397,6 +1678,12 @@ GRANT EXECUTE ON FUNCTION "public"."create_settings_faq"(uuid, text, text) TO "p
 
 GRANT EXECUTE ON FUNCTION "public"."create_settings_faq"(uuid, text, text) TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."delete_school_after_account"() FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."delete_school_after_account"() TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."delete_school_after_account"() TO "service_role";
+
 GRANT EXECUTE ON FUNCTION "public"."delete_settings_window"(uuid) TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."delete_settings_window"(uuid) FROM "postgres";
@@ -1404,6 +1691,12 @@ REVOKE ALL ON FUNCTION "public"."delete_settings_window"(uuid) FROM "postgres";
 GRANT EXECUTE ON FUNCTION "public"."delete_settings_window"(uuid) TO "postgres";
 
 GRANT EXECUTE ON FUNCTION "public"."delete_settings_window"(uuid) TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."enforce_faq_limit"() FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."enforce_faq_limit"() TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."enforce_faq_limit"() TO "service_role";
 
 GRANT EXECUTE ON FUNCTION "public"."get_overview_metrics"(uuid, timestamp WITH time zone) TO "authenticated";
 
@@ -1427,6 +1720,24 @@ GRANT EXECUTE ON FUNCTION "public"."prevent_published_school_identity_change"() 
 
 GRANT EXECUTE ON FUNCTION "public"."prevent_published_school_identity_change"() TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."record_owner_booking_transition"() FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."record_owner_booking_transition"() TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."record_owner_booking_transition"() TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."set_updated_at"() FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."set_updated_at"() TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."set_updated_at"() TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."sync_window_capacity"() FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."sync_window_capacity"() TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."sync_window_capacity"() TO "service_role";
+
 GRANT EXECUTE ON FUNCTION "public"."update_booking_attendance"(uuid, text) TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."update_booking_attendance"(uuid, text) FROM "postgres";
@@ -1434,6 +1745,14 @@ REVOKE ALL ON FUNCTION "public"."update_booking_attendance"(uuid, text) FROM "po
 GRANT EXECUTE ON FUNCTION "public"."update_booking_attendance"(uuid, text) TO "postgres";
 
 GRANT EXECUTE ON FUNCTION "public"."update_booking_attendance"(uuid, text) TO "service_role";
+
+GRANT EXECUTE ON FUNCTION "public"."update_school_agent"(uuid, text, text) TO "authenticated";
+
+REVOKE ALL ON FUNCTION "public"."update_school_agent"(uuid, text, text) FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."update_school_agent"(uuid, text, text) TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."update_school_agent"(uuid, text, text) TO "service_role";
 
 GRANT EXECUTE ON FUNCTION "public"."update_school_profile"(uuid, text, text, jsonb) TO "authenticated";
 
@@ -1451,7 +1770,17 @@ GRANT EXECUTE ON FUNCTION "public"."update_settings_window_capacity"(uuid, integ
 
 GRANT EXECUTE ON FUNCTION "public"."update_settings_window_capacity"(uuid, integer) TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."validate_owner_booking_transition"() FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."validate_owner_booking_transition"() TO "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."validate_owner_booking_transition"() TO "service_role";
+
 REVOKE ALL ON TABLE "public"."bookings" FROM "authenticated";
+
+REVOKE ALL ("status") ON TABLE "public"."bookings" FROM "authenticated";
+
+GRANT UPDATE ("status") ON TABLE "public"."bookings" TO "authenticated";
 
 GRANT SELECT ON TABLE "public"."bookings" TO "authenticated";
 
@@ -1489,6 +1818,26 @@ GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON
 
 REVOKE ALL ON TABLE "public"."email_deliveries" FROM "authenticated";
 
+REVOKE ALL ("booking_id") ON TABLE "public"."email_deliveries" FROM "authenticated";
+
+GRANT INSERT ("booking_id") ON TABLE "public"."email_deliveries" TO "authenticated";
+
+REVOKE ALL ("kind") ON TABLE "public"."email_deliveries" FROM "authenticated";
+
+GRANT INSERT ("kind") ON TABLE "public"."email_deliveries" TO "authenticated";
+
+REVOKE ALL ("provider_idempotency_key") ON TABLE "public"."email_deliveries" FROM "authenticated";
+
+GRANT INSERT ("provider_idempotency_key") ON TABLE "public"."email_deliveries" TO "authenticated";
+
+REVOKE ALL ("recipient") ON TABLE "public"."email_deliveries" FROM "authenticated";
+
+GRANT INSERT ("recipient") ON TABLE "public"."email_deliveries" TO "authenticated";
+
+REVOKE ALL ("school_id") ON TABLE "public"."email_deliveries" FROM "authenticated";
+
+GRANT INSERT ("school_id") ON TABLE "public"."email_deliveries" TO "authenticated";
+
 GRANT SELECT ON TABLE "public"."email_deliveries" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."email_deliveries" FROM "postgres";
@@ -1497,9 +1846,13 @@ GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."email_deliveries" TO "service_role";
 
+REVOKE ALL ON TABLE "public"."faqs" FROM "anon";
+
+GRANT SELECT ON TABLE "public"."faqs" TO "anon";
+
 REVOKE ALL ON TABLE "public"."faqs" FROM "authenticated";
 
-GRANT DELETE, SELECT, UPDATE ON TABLE "public"."faqs" TO "authenticated";
+GRANT DELETE, INSERT, SELECT, UPDATE ON TABLE "public"."faqs" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."faqs" FROM "postgres";
 
@@ -1508,6 +1861,30 @@ GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."faqs" TO "service_role";
 
 REVOKE ALL ON TABLE "public"."funnel_events" FROM "authenticated";
+
+REVOKE ALL ("booking_id") ON TABLE "public"."funnel_events" FROM "authenticated";
+
+GRANT INSERT ("booking_id") ON TABLE "public"."funnel_events" TO "authenticated";
+
+REVOKE ALL ("conversation_id") ON TABLE "public"."funnel_events" FROM "authenticated";
+
+GRANT INSERT ("conversation_id") ON TABLE "public"."funnel_events" TO "authenticated";
+
+REVOKE ALL ("event_type") ON TABLE "public"."funnel_events" FROM "authenticated";
+
+GRANT INSERT ("event_type") ON TABLE "public"."funnel_events" TO "authenticated";
+
+REVOKE ALL ("landing_session_id") ON TABLE "public"."funnel_events" FROM "authenticated";
+
+GRANT INSERT ("landing_session_id") ON TABLE "public"."funnel_events" TO "authenticated";
+
+REVOKE ALL ("metadata") ON TABLE "public"."funnel_events" FROM "authenticated";
+
+GRANT INSERT ("metadata") ON TABLE "public"."funnel_events" TO "authenticated";
+
+REVOKE ALL ("school_id") ON TABLE "public"."funnel_events" FROM "authenticated";
+
+GRANT INSERT ("school_id") ON TABLE "public"."funnel_events" TO "authenticated";
 
 GRANT SELECT ON TABLE "public"."funnel_events" TO "authenticated";
 
@@ -1557,9 +1934,39 @@ GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."participants" TO "service_role";
 
+REVOKE ALL ON TABLE "public"."school_profiles" FROM "anon";
+
+GRANT SELECT ON TABLE "public"."school_profiles" TO "anon";
+
+REVOKE ALL ON TABLE "public"."school_profiles" FROM "authenticated";
+
+GRANT INSERT, SELECT, UPDATE ON TABLE "public"."school_profiles" TO "authenticated";
+
+REVOKE ALL ON TABLE "public"."school_profiles" FROM "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."school_profiles" TO "postgres";
+
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."school_profiles" TO "service_role";
+
 REVOKE ALL ON TABLE "public"."school_settings" FROM "authenticated";
 
-GRANT INSERT, SELECT, UPDATE ON TABLE "public"."school_settings" TO "authenticated";
+REVOKE ALL ("agent_instructions") ON TABLE "public"."school_settings" FROM "authenticated";
+
+GRANT UPDATE ("agent_instructions") ON TABLE "public"."school_settings" TO "authenticated";
+
+REVOKE ALL ("notification_email") ON TABLE "public"."school_settings" FROM "authenticated";
+
+GRANT UPDATE ("notification_email") ON TABLE "public"."school_settings" TO "authenticated";
+
+REVOKE ALL ("previewed_at") ON TABLE "public"."school_settings" FROM "authenticated";
+
+GRANT UPDATE ("previewed_at") ON TABLE "public"."school_settings" TO "authenticated";
+
+REVOKE ALL ("updated_at") ON TABLE "public"."school_settings" FROM "authenticated";
+
+GRANT UPDATE ("updated_at") ON TABLE "public"."school_settings" TO "authenticated";
+
+GRANT SELECT ON TABLE "public"."school_settings" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."school_settings" FROM "postgres";
 
@@ -1567,7 +1974,23 @@ GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."school_settings" TO "service_role";
 
+REVOKE ALL ON TABLE "public"."schools" FROM "anon";
+
+GRANT SELECT ON TABLE "public"."schools" TO "anon";
+
 REVOKE ALL ON TABLE "public"."schools" FROM "authenticated";
+
+REVOKE ALL ("published_at") ON TABLE "public"."schools" FROM "authenticated";
+
+GRANT UPDATE ("published_at") ON TABLE "public"."schools" TO "authenticated";
+
+REVOKE ALL ("slug") ON TABLE "public"."schools" FROM "authenticated";
+
+GRANT UPDATE ("slug") ON TABLE "public"."schools" TO "authenticated";
+
+REVOKE ALL ("timezone") ON TABLE "public"."schools" FROM "authenticated";
+
+GRANT UPDATE ("timezone") ON TABLE "public"."schools" TO "authenticated";
 
 GRANT SELECT ON TABLE "public"."schools" TO "authenticated";
 
@@ -1577,7 +2000,19 @@ GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."schools" TO "service_role";
 
+REVOKE ALL ON TABLE "public"."trial_occurrences" FROM "anon";
+
+GRANT SELECT ON TABLE "public"."trial_occurrences" TO "anon";
+
 REVOKE ALL ON TABLE "public"."trial_occurrences" FROM "authenticated";
+
+REVOKE ALL ("booked_count") ON TABLE "public"."trial_occurrences" FROM "authenticated";
+
+GRANT UPDATE ("booked_count") ON TABLE "public"."trial_occurrences" TO "authenticated";
+
+REVOKE ALL ("capacity") ON TABLE "public"."trial_occurrences" FROM "authenticated";
+
+GRANT UPDATE ("capacity") ON TABLE "public"."trial_occurrences" TO "authenticated";
 
 GRANT SELECT ON TABLE "public"."trial_occurrences" TO "authenticated";
 
@@ -1586,6 +2021,10 @@ REVOKE ALL ON TABLE "public"."trial_occurrences" FROM "postgres";
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_occurrences" TO "postgres";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_occurrences" TO "service_role";
+
+REVOKE ALL ON TABLE "public"."trial_offerings" FROM "anon";
+
+GRANT SELECT ON TABLE "public"."trial_offerings" TO "anon";
 
 REVOKE ALL ON TABLE "public"."trial_offerings" FROM "authenticated";
 
@@ -1597,17 +2036,25 @@ GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."trial_offerings" TO "service_role";
 
+REVOKE ALL ON TABLE "public"."trial_windows" FROM "anon";
+
+GRANT SELECT ON TABLE "public"."trial_windows" TO "anon";
+
 REVOKE ALL ON TABLE "public"."trial_windows" FROM "authenticated";
 
 REVOKE ALL ("active") ON TABLE "public"."trial_windows" FROM "authenticated";
 
 GRANT UPDATE ("active") ON TABLE "public"."trial_windows" TO "authenticated";
 
+REVOKE ALL ("capacity") ON TABLE "public"."trial_windows" FROM "authenticated";
+
+GRANT UPDATE ("capacity") ON TABLE "public"."trial_windows" TO "authenticated";
+
 REVOKE ALL ("updated_at") ON TABLE "public"."trial_windows" FROM "authenticated";
 
 GRANT UPDATE ("updated_at") ON TABLE "public"."trial_windows" TO "authenticated";
 
-GRANT INSERT, SELECT ON TABLE "public"."trial_windows" TO "authenticated";
+GRANT DELETE, INSERT, SELECT ON TABLE "public"."trial_windows" TO "authenticated";
 
 REVOKE ALL ON TABLE "public"."trial_windows" FROM "postgres";
 
