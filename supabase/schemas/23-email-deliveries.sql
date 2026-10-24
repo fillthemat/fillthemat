@@ -26,6 +26,10 @@ CREATE TABLE public.email_deliveries (
 
 CREATE INDEX email_deliveries_due_idx ON public.email_deliveries USING btree (state, next_attempt_at);
 
+CREATE TRIGGER email_deliveries_set_updated_at
+BEFORE UPDATE ON public.email_deliveries
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.email_deliveries ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.email_deliveries FROM PUBLIC, anon, authenticated;
 

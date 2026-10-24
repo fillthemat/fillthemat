@@ -19,6 +19,10 @@ CREATE TABLE public.landing_sessions (
     CONSTRAINT landing_sessions_school_key UNIQUE (school_id, session_key_hash)
 );
 
+CREATE TRIGGER landing_sessions_set_updated_at
+BEFORE UPDATE ON public.landing_sessions
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.landing_sessions ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.landing_sessions FROM PUBLIC, anon, authenticated;
 

@@ -17,6 +17,10 @@ CREATE TABLE public.leads (
     CONSTRAINT leads_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE SET NULL (trial_offering_id)
 );
 
+CREATE TRIGGER leads_set_updated_at
+BEFORE UPDATE ON public.leads
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.leads FROM PUBLIC, anon, authenticated;
 

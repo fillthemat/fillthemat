@@ -1,6 +1,21 @@
 -- Side-by-side copies of Drizzle app objects; public already exists in Supabase.
 CREATE SCHEMA IF NOT EXISTS public;
 
+-- Shared timestamp behavior; attach a BEFORE UPDATE trigger to every table
+-- with updated_at. Keep this in the database so all writers use the same clock.
+CREATE FUNCTION public.set_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+    NEW.updated_at := statement_timestamp();
+    RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.set_updated_at() FROM PUBLIC, anon, authenticated;
+
 CREATE TYPE public.booking_status AS ENUM ('booked', 'showed', 'no_show', 'cancelled');
 CREATE TYPE public.conversation_end_reason AS ENUM ('inactivity', 'message_limit');
 CREATE TYPE public.cron_result AS ENUM ('success', 'error');

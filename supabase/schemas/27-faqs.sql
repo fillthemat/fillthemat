@@ -12,6 +12,10 @@ CREATE TABLE public.faqs (
     CONSTRAINT faqs_school_id_id UNIQUE (school_id, id)
 );
 
+CREATE TRIGGER faqs_set_updated_at
+BEFORE UPDATE ON public.faqs
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.faqs ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.faqs FROM PUBLIC, anon, authenticated;
 

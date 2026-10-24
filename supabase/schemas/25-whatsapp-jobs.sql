@@ -21,6 +21,10 @@ CREATE TABLE public.whatsapp_jobs (
 
 CREATE INDEX whatsapp_jobs_due_idx ON public.whatsapp_jobs USING btree (state, next_attempt_at);
 
+CREATE TRIGGER whatsapp_jobs_set_updated_at
+BEFORE UPDATE ON public.whatsapp_jobs
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.whatsapp_jobs ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.whatsapp_jobs FROM PUBLIC, anon, authenticated;
 

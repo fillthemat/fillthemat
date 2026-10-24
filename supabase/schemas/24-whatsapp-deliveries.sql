@@ -34,6 +34,10 @@ CREATE TABLE public.whatsapp_deliveries (
 
 CREATE INDEX whatsapp_deliveries_due_idx ON public.whatsapp_deliveries USING btree (state, next_attempt_at);
 
+CREATE TRIGGER whatsapp_deliveries_set_updated_at
+BEFORE UPDATE ON public.whatsapp_deliveries
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.whatsapp_deliveries ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.whatsapp_deliveries FROM PUBLIC, anon, authenticated;
 

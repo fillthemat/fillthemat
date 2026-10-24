@@ -19,6 +19,10 @@ CREATE TABLE public.school_settings (
     updated_at timestamptz DEFAULT now() NOT NULL
 );
 
+CREATE TRIGGER school_settings_set_updated_at
+BEFORE UPDATE ON public.school_settings
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.school_settings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.school_settings FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.school_settings TO authenticated;

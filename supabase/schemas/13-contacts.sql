@@ -12,6 +12,10 @@ CREATE TABLE public.contacts (
     CONSTRAINT contacts_school_phone UNIQUE (school_id, phone)
 );
 
+CREATE TRIGGER contacts_set_updated_at
+BEFORE UPDATE ON public.contacts
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.contacts FROM PUBLIC, anon, authenticated;
 

@@ -19,6 +19,10 @@ CREATE TABLE public.trial_windows (
     CONSTRAINT trial_windows_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE CASCADE
 );
 
+CREATE TRIGGER trial_windows_set_updated_at
+BEFORE UPDATE ON public.trial_windows
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.trial_windows ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.trial_windows FROM PUBLIC, anon, authenticated;
 

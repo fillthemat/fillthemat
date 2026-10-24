@@ -41,6 +41,10 @@ CREATE TABLE public.bookings (
 
 CREATE UNIQUE INDEX bookings_active_participant_occurrence ON public.bookings USING btree (trial_occurrence_id, participant_id) WHERE status <> 'cancelled';
 
+CREATE TRIGGER bookings_set_updated_at
+BEFORE UPDATE ON public.bookings
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.bookings FROM PUBLIC, anon, authenticated;
 

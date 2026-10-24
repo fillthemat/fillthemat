@@ -12,6 +12,10 @@ CREATE TABLE public.participants (
     CONSTRAINT participants_contact_fk FOREIGN KEY (school_id, contact_id) REFERENCES public.contacts(school_id, id) ON DELETE CASCADE
 );
 
+CREATE TRIGGER participants_set_updated_at
+BEFORE UPDATE ON public.participants
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.participants ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.participants FROM PUBLIC, anon, authenticated;
 

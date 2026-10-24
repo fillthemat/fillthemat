@@ -19,6 +19,10 @@ CREATE TABLE public.whatsapp_booking_intents (
 
 CREATE UNIQUE INDEX whatsapp_booking_intents_active_pending ON public.whatsapp_booking_intents USING btree (conversation_id) WHERE state = 'pending';
 
+CREATE TRIGGER whatsapp_booking_intents_set_updated_at
+BEFORE UPDATE ON public.whatsapp_booking_intents
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.whatsapp_booking_intents ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.whatsapp_booking_intents FROM PUBLIC, anon, authenticated;
 

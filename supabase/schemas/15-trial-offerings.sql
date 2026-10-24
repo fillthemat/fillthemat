@@ -21,6 +21,10 @@ CREATE TABLE public.trial_offerings (
     )
 );
 
+CREATE TRIGGER trial_offerings_set_updated_at
+BEFORE UPDATE ON public.trial_offerings
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.trial_offerings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.trial_offerings FROM PUBLIC, anon, authenticated;
 

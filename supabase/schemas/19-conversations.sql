@@ -20,6 +20,10 @@ CREATE TABLE public.conversations (
 CREATE UNIQUE INDEX conversations_resume_token_hash ON public.conversations USING btree (resume_token_hash) WHERE ended_at IS NULL;
 CREATE UNIQUE INDEX conversations_school_wa_id_hash ON public.conversations USING btree (school_id, wa_id_hash) WHERE wa_id_hash IS NOT NULL AND ended_at IS NULL;
 
+CREATE TRIGGER conversations_set_updated_at
+BEFORE UPDATE ON public.conversations
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.conversations FROM PUBLIC, anon, authenticated;
 

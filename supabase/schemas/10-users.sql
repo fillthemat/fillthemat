@@ -8,6 +8,10 @@ CREATE TABLE public.users (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE TRIGGER users_set_updated_at
+BEFORE UPDATE ON public.users
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.users FROM PUBLIC, anon, authenticated;
 

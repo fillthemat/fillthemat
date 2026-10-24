@@ -37,11 +37,21 @@ CREATE TRIGGER schools_identity_immutable
   FOR EACH ROW
   EXECUTE FUNCTION public.prevent_published_school_identity_change();
 
+CREATE TRIGGER schools_set_updated_at
+BEFORE UPDATE ON public.schools
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.schools ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.schools FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.prevent_published_school_identity_change() FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT ON TABLE public.schools to authenticated;
+GRANT UPDATE (previewed_at, published_at) ON TABLE public.schools TO authenticated;
+
+CREATE POLICY schools_update_own ON public.schools
+FOR UPDATE TO authenticated
+USING (owner_user_id = (SELECT auth.uid()))
+WITH CHECK (owner_user_id = (SELECT auth.uid()));
 
 CREATE POLICY schools_select_own
 on public.schools

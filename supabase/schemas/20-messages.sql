@@ -11,6 +11,10 @@ CREATE TABLE public.messages (
     CONSTRAINT messages_conversation_message_id UNIQUE (conversation_id, message_id)
 );
 
+CREATE TRIGGER messages_set_updated_at
+BEFORE UPDATE ON public.messages
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.messages FROM PUBLIC, anon, authenticated;
 

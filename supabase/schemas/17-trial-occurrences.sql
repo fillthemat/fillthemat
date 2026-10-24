@@ -19,6 +19,10 @@ CREATE TABLE public.trial_occurrences (
     CONSTRAINT trial_occurrences_offering_fk FOREIGN KEY (school_id, trial_offering_id) REFERENCES public.trial_offerings(school_id, id) ON DELETE RESTRICT
 );
 
+CREATE TRIGGER trial_occurrences_set_updated_at
+BEFORE UPDATE ON public.trial_occurrences
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 ALTER TABLE public.trial_occurrences ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.trial_occurrences FROM PUBLIC, anon, authenticated;
 
