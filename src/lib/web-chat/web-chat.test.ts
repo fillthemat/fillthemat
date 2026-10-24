@@ -56,7 +56,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getSchool.mockResolvedValue({ id: "school-id" });
   mocks.catalog.mockResolvedValue({ offerings: [], windows: [], occurrences: [], faqs: [] });
-  mocks.resolve.mockResolvedValue({ ok: true, conversation: { id: "conversation-id" } });
+  mocks.resolve.mockResolvedValue({ id: "conversation-id" });
   mocks.claim.mockResolvedValue({ generation: "generation", release: mocks.release });
   mocks.transcript.mockResolvedValue([]);
   mocks.limit.mockResolvedValue(false);
@@ -89,9 +89,7 @@ it("loads transcripts only after a token-scoped lookup and never creates on GET"
   expect(mocks.transcript).toHaveBeenCalledWith("school-id", "conversation-id");
 });
 
-it("does not accept a token from another school or write during a live generation", async () => {
-  mocks.resolve.mockResolvedValueOnce({ ok: false, reason: "invalid_conversation" });
-  expect(await startWebTurn(input)).toEqual({ ok: false, reason: "invalid_conversation" });
+it("does not write during a live generation", async () => {
   mocks.claim.mockResolvedValueOnce(undefined);
   expect(await startWebTurn(input)).toEqual({ ok: false, reason: "generation_in_progress" });
   expect(mocks.append).not.toHaveBeenCalled();

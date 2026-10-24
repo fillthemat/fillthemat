@@ -66,7 +66,7 @@ function streamedReplyId(stream: string) {
 async function conversationFor(resumeToken: string) {
   const [conversation] =
     await sql`SELECT id, expires_at AS "expiresAt", generating_at AS "generatingAt"
-    FROM public.conversations WHERE resume_token_hash = ${hashToken(resumeToken)} AND ended_at IS NULL LIMIT 1`;
+    FROM public.conversations WHERE school_id = ${schoolId} AND resume_token_hash = ${hashToken(resumeToken)} AND ended_at IS NULL LIMIT 1`;
   return requireRow(conversation, "conversation");
 }
 
@@ -545,26 +545,30 @@ describe("a rejected web chat message", () => {
     if (!transcript.ok) throw new Error(transcript.reason);
     expect(transcript.messages).toHaveLength(MAX_CHAT_MESSAGES_PER_CONVERSATION);
   });
-  it("refuses a resume token belonging to another school and never returns its transcript", async () => {
+  it("starts an independent conversation for the same token at another school without exposing its transcript", async () => {
     const { resumeToken, conversationId } = await existingConversation({
       messageIds: ["question-1", "reply-1"],
     });
     const input = { slug: otherSlug, preview: false, resumeToken };
 
-    expect(
-      await startWebTurn({
-        ...input,
-        message: {
-          id: "question-2",
-          role: "user",
-          parts: [{ type: "text", text: "Hi!" }],
-        },
-      }),
-    ).toEqual({ ok: false, reason: "invalid_conversation" });
     expect(await loadWebTranscript(input)).toEqual({ ok: true, messages: [] });
+    const result = await startWebTurn({
+      ...input,
+      message: {
+        id: "question-2",
+        role: "user",
+        parts: [{ type: "text", text: "Hi!" }],
+      },
+    });
+    if (!result.ok) throw new Error(result.reason);
+    await result.response.text();
+    const transcript = await loadWebTranscript(input);
+    if (!transcript.ok) throw new Error(transcript.reason);
+    expect(transcript.messages).toHaveLength(2);
+    expect(transcript.messages.map(({ id }) => id)).toContain("question-2");
+    expect(transcript.messages.map(({ id }) => id)).not.toContain("question-1");
     expect(await savedMessageIds(conversationId)).toEqual(["question-1", "reply-1"]);
     expect((await conversationFor(resumeToken)).generatingAt).toBeNull();
-    expect(await exportedTraces()).toEqual([]);
   });
 
   it("refuses send and transcript requests for a missing school", async () => {

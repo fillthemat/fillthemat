@@ -26,12 +26,7 @@ export type WebTurnResult =
   | { ok: true; response: Response }
   | {
       ok: false;
-      reason:
-        | "not_found"
-        | "invalid_conversation"
-        | "generation_in_progress"
-        | "duplicate"
-        | "message_limit";
+      reason: "not_found" | "generation_in_progress" | "duplicate" | "message_limit";
     };
 
 export type WebTranscriptResult =
@@ -67,13 +62,11 @@ export async function startWebTurn({
   if (!school) return { ok: false, reason: "not_found" };
 
   const now = new Date();
-  const resolved = await findOrCreateConversation({
+  const conversation = await findOrCreateConversation({
     schoolId: school.id,
     resumeToken,
     now,
   });
-  if (!resolved.ok) return resolved;
-  const { conversation } = resolved;
   const lock = await claimGeneration(school.id, conversation.id, now);
   if (!lock) return { ok: false, reason: "generation_in_progress" };
 

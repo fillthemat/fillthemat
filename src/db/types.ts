@@ -1384,26 +1384,7 @@ export type Database = {
       };
       resolve_web_conversation: {
         Args: { p_now: string; p_school_id: string; p_token_hash: string };
-        Returns: {
-          contact_id: string | null;
-          created_at: string;
-          end_reason: Database["public"]["Enums"]["conversation_end_reason"] | null;
-          ended_at: string | null;
-          expires_at: string;
-          generating_at: string | null;
-          id: string;
-          landing_session_id: string | null;
-          resume_token_hash: string;
-          school_id: string;
-          updated_at: string;
-          wa_id_hash: string | null;
-        }[];
-        SetofOptions: {
-          from: "*";
-          to: "conversations";
-          isOneToOne: false;
-          isSetofReturn: true;
-        };
+        Returns: string;
       };
       update_booking_attendance: {
         Args: { p_booking_id: string; p_status: string };

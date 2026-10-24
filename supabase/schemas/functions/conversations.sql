@@ -1,28 +1,22 @@
 -- Service-only transaction boundaries. Public clients must go through the
 -- application, which checks school visibility and holds the raw resume token.
 CREATE FUNCTION public.resolve_web_conversation(p_school_id uuid, p_token_hash text, p_now timestamptz)
-RETURNS SETOF public.conversations
+RETURNS uuid
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
-DECLARE v_current public.conversations%ROWTYPE;
+DECLARE v_id uuid; v_expires_at timestamptz;
 BEGIN
-    -- The partial unique index alone cannot protect ownership after expiry.
-    -- Serialize the entire identity, including ended rows, across all schools.
-    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_token_hash, 0));
-    IF EXISTS (SELECT 1 FROM public.conversations WHERE resume_token_hash = p_token_hash AND school_id <> p_school_id) THEN
-        RAISE EXCEPTION 'invalid_conversation' USING ERRCODE = '22023';
+    -- Serialize first creation: there may not be a row to lock yet.
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_school_id::text || ':' || p_token_hash, 0));
+    -- Coordinate with message saves/deadline extensions, which lock this row.
+    SELECT id, expires_at INTO v_id, v_expires_at FROM public.conversations
+    WHERE school_id = p_school_id AND resume_token_hash = p_token_hash AND ended_at IS NULL FOR UPDATE;
+    IF FOUND THEN
+        IF v_expires_at > p_now THEN RETURN v_id; END IF;
+        UPDATE public.conversations SET ended_at = p_now, end_reason = 'inactivity' WHERE id = v_id;
     END IF;
-    SELECT * INTO v_current FROM public.conversations
-    WHERE resume_token_hash = p_token_hash AND ended_at IS NULL FOR UPDATE;
-    IF FOUND AND v_current.expires_at > p_now THEN
-        RETURN NEXT v_current; RETURN;
-    END IF;
-    IF v_current.id IS NOT NULL THEN
-        UPDATE public.conversations SET ended_at = p_now, end_reason = 'inactivity' WHERE id = v_current.id;
-        UPDATE public.whatsapp_booking_intents SET state = 'expired'
-        WHERE conversation_id = v_current.id AND state = 'pending';
-    END IF;
-    RETURN QUERY INSERT INTO public.conversations (school_id, resume_token_hash, expires_at)
-    VALUES (p_school_id, p_token_hash, p_now + interval '30 days') RETURNING *;
+    INSERT INTO public.conversations (school_id, resume_token_hash, expires_at)
+    VALUES (p_school_id, p_token_hash, p_now + interval '30 days') RETURNING id INTO v_id;
+    RETURN v_id;
 END;
 $$;
 
@@ -61,7 +55,6 @@ BEGIN
     IF NOT FOUND THEN RAISE EXCEPTION 'generation_lost' USING ERRCODE = '22023'; END IF;
     IF (SELECT count(*) FROM public.messages WHERE conversation_id = p_conversation_id) < 30 THEN RETURN false; END IF;
     UPDATE public.conversations SET ended_at = p_now, end_reason = 'message_limit' WHERE id = p_conversation_id;
-    UPDATE public.whatsapp_booking_intents SET state = 'expired' WHERE conversation_id = p_conversation_id AND state = 'pending';
     RETURN true;
 END;
 $$;

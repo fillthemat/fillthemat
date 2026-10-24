@@ -26,19 +26,13 @@ export async function findOrCreateConversation({
   resumeToken,
   now = new Date(),
 }: Identity) {
-  const { data, error } = await createAdminClient()
-    .rpc("resolve_web_conversation", {
-      p_school_id: schoolId,
-      p_token_hash: hashToken(resumeToken),
-      p_now: now.toISOString(),
-    })
-    .select("id")
-    .single();
-  if (error?.code === "22023" && error.message === "invalid_conversation") {
-    return { ok: false as const, reason: "invalid_conversation" as const };
-  }
+  const { data, error } = await createAdminClient().rpc("resolve_web_conversation", {
+    p_school_id: schoolId,
+    p_token_hash: hashToken(resumeToken),
+    p_now: now.toISOString(),
+  });
   if (error) throw new PostgrestError(error);
-  return { ok: true as const, conversation: data };
+  return { id: data };
 }
 
 export async function claimGeneration(schoolId: string, conversationId: string, now = new Date()) {

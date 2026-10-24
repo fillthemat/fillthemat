@@ -49,8 +49,13 @@ The secret bypasses RLS: do not use it for public catalog or dashboard queries.
 
 `functions/conversations.sql` contains service-role-only invoker RPCs for atomic
 conversation resolution, message append/deadline extension and message-limit
-termination. Browser roles cannot call them. Resolution serializes token identity
-across ended and active conversations; saved messages carry a generation fence so
+termination. Browser roles cannot call them. Resolution serializes each school/token
+pair, returning only the conversation ID. Tokens are scoped to schools: using the
+same token at another school creates an independent conversation, never access to
+the original transcript. Expired conversations are retained as history; resolving
+a web conversation does not touch WhatsApp booking intents. The advisory lock
+settles concurrent first creation; a row lock coordinates expiry with message
+saves and deadline extensions. Saved messages carry a generation fence so
 an abandoned worker cannot save into a successor's turn. Generation claim/release
 are conditional table updates, scoped to both school and conversation.
 

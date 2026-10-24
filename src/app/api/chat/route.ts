@@ -8,7 +8,6 @@ export const maxDuration = 300;
 
 const refusals = {
   not_found: { status: 404, error: CHAT_ERRORS.notFound },
-  invalid_conversation: { status: 403, error: CHAT_ERRORS.invalidConversation },
   generation_in_progress: {
     status: 409,
     error: CHAT_ERRORS.generationInProgress,

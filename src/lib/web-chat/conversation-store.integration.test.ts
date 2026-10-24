@@ -58,8 +58,7 @@ afterAll(async () => {
 
 async function conversation(resumeToken = randomUUID()) {
   const result = await findOrCreateConversation({ schoolId, resumeToken });
-  if (!result.ok) throw new Error(result.reason);
-  return { id: result.conversation.id, resumeToken };
+  return { id: result.id, resumeToken };
 }
 
 it("allows service-only RPCs and denies anonymous reads, writes and forged replies", async () => {
@@ -109,41 +108,59 @@ it("allows service-only RPCs and denies anonymous reads, writes and forged repli
   ).toBe("42501");
 });
 
-it("settles concurrent first turns and keeps token ownership across schools after expiry", async () => {
+it("settles concurrent first turns and replaces an expired conversation only once", async () => {
   const resumeToken = randomUUID();
   const results = await Promise.all(
     Array.from({ length: 4 }, () => findOrCreateConversation({ schoolId, resumeToken })),
   );
-  const ids = results.map((result) => (result.ok ? result.conversation.id : "failed"));
+  const ids = results.map((result) => result.id);
   expect(new Set(ids).size).toBe(1);
   await sql`UPDATE public.conversations SET expires_at = now() - interval '1 minute' WHERE id = ${ids[0]!}`;
-  expect(await findOrCreateConversation({ schoolId: otherSchoolId, resumeToken })).toEqual({
-    ok: false,
-    reason: "invalid_conversation",
-  });
   expect(await findConversation({ schoolId, resumeToken })).toBeNull();
-  const replacement = await conversation(resumeToken);
-  expect(replacement.id).not.toBe(ids[0]);
-  expect(await findOrCreateConversation({ schoolId: otherSchoolId, resumeToken })).toEqual({
-    ok: false,
-    reason: "invalid_conversation",
-  });
+  const replacements = await Promise.all(
+    Array.from({ length: 4 }, () => conversation(resumeToken)),
+  );
+  expect(new Set(replacements.map(({ id }) => id)).size).toBe(1);
+  expect(replacements[0]!.id).not.toBe(ids[0]);
+  const [ended] =
+    await sql`SELECT ended_at, end_reason FROM public.conversations WHERE id = ${ids[0]!}`;
+  expect(ended!.ended_at).toBeInstanceOf(Date);
+  expect(ended!.end_reason).toBe("inactivity");
 });
 
-it("does not let two schools claim the same new token concurrently", async () => {
+it("scopes the same token to independent school conversations and transcripts", async () => {
   const resumeToken = randomUUID();
   const results = await Promise.all(
     [schoolId, otherSchoolId].map((schoolId) =>
       findOrCreateConversation({ schoolId, resumeToken }),
     ),
   );
-  expect(results.filter((result) => result.ok)).toHaveLength(1);
-  expect(results.filter((result) => !result.ok)).toEqual([
-    { ok: false, reason: "invalid_conversation" },
-  ]);
+  const first = results[0]!;
+  const other = results[1]!;
+  expect(first.id).not.toBe(other.id);
   expect(
     await sql`SELECT id FROM public.conversations WHERE resume_token_hash = ${hashToken(resumeToken)}`,
-  ).toHaveLength(1);
+  ).toHaveLength(2);
+  const lock = (await claimGeneration(schoolId, first.id))!;
+  await appendMessage({
+    id: randomUUID(),
+    schoolId,
+    conversationId: first.id,
+    generation: lock.generation,
+    messageId: "private",
+    role: "user",
+    parts: [{ type: "text", text: "Only the first school" }],
+  });
+  await lock.release();
+  expect(await loadTranscript(otherSchoolId, first.id)).toEqual([]);
+  expect(await loadTranscript(otherSchoolId, other.id)).toEqual([]);
+  expect(await loadTranscript(schoolId, first.id)).toHaveLength(1);
+  await sql`UPDATE public.conversations SET expires_at = now() - interval '1 minute' WHERE id = ${first.id}`;
+  const replacement = await conversation(resumeToken);
+  expect(replacement.id).not.toBe(first.id);
+  expect(await findOrCreateConversation({ schoolId: otherSchoolId, resumeToken })).toEqual(other);
+  expect(await findConversation({ schoolId: otherSchoolId, resumeToken })).toEqual(other);
+  expect(await loadTranscript(schoolId, first.id)).toHaveLength(1);
 });
 
 it("claims one generation, recovers abandoned claims and fences stale saves/releases", async () => {
@@ -179,6 +196,34 @@ it("claims one generation, recovers abandoned claims and fences stale saves/rele
   const next = await claimGeneration(schoolId, current.id);
   expect(next).toBeDefined();
   await next!.release();
+});
+
+it("rechecks expiry after a concurrent deadline extension commits", async () => {
+  const current = await conversation();
+  await sql`UPDATE public.conversations SET expires_at = now() - interval '1 minute' WHERE id = ${current.id}`;
+  const inspector = authSql();
+  let resolving: ReturnType<typeof findOrCreateConversation> | undefined;
+  try {
+    await sql.begin(async (tx) => {
+      // Simulate an accepted message extending the deadline while resolution
+      // still sees the previously committed, expired version of this row.
+      await tx`UPDATE public.conversations SET expires_at = now() + interval '30 days' WHERE id = ${current.id}`;
+      resolving = findOrCreateConversation({ schoolId, resumeToken: current.resumeToken });
+      await vi.waitFor(async () => {
+        const blocked = await inspector`SELECT 1 FROM pg_stat_activity
+          WHERE datname = current_database() AND pid <> pg_backend_pid()
+            AND wait_event_type = 'Lock' AND query LIKE '%resolve_web_conversation%'`;
+        expect(blocked.length).toBeGreaterThan(0);
+      });
+    });
+    expect(await resolving).toEqual({ id: current.id });
+    expect(await findConversation({ schoolId, resumeToken: current.resumeToken })).toEqual({
+      id: current.id,
+    });
+  } finally {
+    await resolving;
+    await inspector.end();
+  }
 });
 
 it("saves transcripts idempotently, slides only accepted user deadlines, and isolates tenants", async () => {
