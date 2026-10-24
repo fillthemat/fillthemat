@@ -30,9 +30,6 @@ async function main() {
     env: { ...process.env },
   });
 
-  const { seedLocal } = await import("./seed-local");
-  await seedLocal();
-
   console.log("");
   console.log("Local stack is ready.");
   console.log(`  App       bun run dev  → ${updatedVars["NEXT_PUBLIC_SITE_URL"]}`);
@@ -44,7 +41,6 @@ async function main() {
       "Optional: bunx vercel env pull  (real assistant model; scripted local model otherwise).",
     );
   }
-  // seedLocal() leaves the postgres-js pool open; without this, bun never exits.
   process.exit(0);
 }
 
@@ -92,8 +88,6 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
     ["PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"],
   ] as const;
   const supabaseEnv = await getSupabaseEnv();
-
-  console.log(`DEBUG: ${JSON.stringify(supabaseEnv)}`);
 
   for (const [sourceKey, targetKey] of SUPABASE_MAPPINGS) {
     const value = supabaseEnv[sourceKey];

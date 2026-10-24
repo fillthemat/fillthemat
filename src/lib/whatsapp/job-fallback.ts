@@ -1,6 +1,6 @@
 import { and, desc, eq, lte, sql } from "drizzle-orm";
 import type { Database } from "@/db";
-import { schools, type WhatsAppJob, whatsappDeliveries, whatsappJobs } from "@/db/schema";
+import { schools, whatsappDeliveries, type WhatsAppJob, whatsappJobs } from "@/db/schema";
 import { jobRecipientWaId } from "./parse";
 
 /** Enqueue in the job-death transaction: a crash cannot strand a dead job without its apology. */

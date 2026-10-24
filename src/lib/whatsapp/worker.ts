@@ -6,8 +6,8 @@ import { getDb, type TransactionOptions } from "@/db";
 import {
   schools,
   type WhatsAppBookingIntent,
-  type WhatsAppJob,
   whatsappDeliveries,
+  type WhatsAppJob,
 } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
 import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
@@ -209,7 +209,7 @@ async function handleAssistantTurn(
     messages: [...history, inboundUIMessage],
   });
 
-  const catalog = await loadSchoolCatalog(ctx.schoolId);
+  const catalog = await loadSchoolCatalog(ctx.schoolId, { anonymous: true });
   const db = getDb();
   const [school] = await db.select().from(schools).where(eq(schools.id, ctx.schoolId)).limit(1);
   if (!school) throw new InternalFailure("school_missing");

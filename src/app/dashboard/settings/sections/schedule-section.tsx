@@ -4,16 +4,26 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { FieldGroup as UiFieldGroup } from "@/components/ui/field";
+import type { SettingsFormState } from "../form-state";
+import {
   createWindowAction,
   deactivateWindowAction,
   deleteWindowAction,
   updateWindowCapacityAction,
 } from "../actions";
 import { DAY_NAMES, formatCount, formatDuration, formatTimeRange, WEEK_ORDER } from "../format";
-import { LIMITS } from "../schemas";
+import { capacitySchema, LIMITS, windowSchema } from "../schemas";
 import { sectionHref } from "../sections";
 import { Badge, EmptyState, FieldGroup, SelectField, TextField } from "../ui/controls";
-import { ItemActionForm, SaveBar, useSettingsForm } from "../ui/section-form";
+import { ItemActionForm, SaveBar, useSettingsForm } from "../ui/settings-form";
+import { useTimedAnnouncement } from "../ui/use-timed-announcement";
 
 export type ScheduleWindowItem = {
   id: string;
@@ -51,31 +61,14 @@ export function ScheduleSection({
   timezoneLabel: string;
 }) {
   const [adding, setAdding] = useState(false);
-  const addRef = useRef<HTMLDivElement>(null);
+  const [announcement, setAnnouncement] = useTimedAnnouncement();
+  const opener = useRef<HTMLButtonElement | null>(null);
   const activeCount = windows.filter((item) => item.active).length;
 
-  const blank = {
-    trialOfferingId: offerings[0]?.id ?? "",
-    dayOfWeek: "1",
-    startMinute: "18:00",
-    durationMinutes: "60",
-    capacity: "8",
-    label: "",
-  };
-
-  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
-    useSettingsForm({
-      action: createWindowAction,
-      initialValues: blank,
-      dirtyKey: "schedule:new",
-      clearOnSuccess: true,
-    });
-
-  const openAddForm = () => {
+  const openAdd = (button: HTMLButtonElement) => {
+    opener.current = button;
+    setAnnouncement(null);
     setAdding(true);
-    requestAnimationFrame(() => {
-      addRef.current?.querySelector("select")?.focus();
-    });
   };
 
   if (offerings.length === 0) {
@@ -97,6 +90,12 @@ export function ScheduleSection({
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">Times are in {timezoneLabel}.</p>
 
+      {announcement ? (
+        <p role="status" aria-live="polite" className="text-sm text-success">
+          {announcement}
+        </p>
+      ) : null}
+
       <section className="flex flex-col gap-4" aria-labelledby="schedule-list">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 id="schedule-list" className="text-sm font-semibold">
@@ -113,11 +112,13 @@ export function ScheduleSection({
           <EmptyState
             title="No class times yet"
             action={
-              adding ? null : (
-                <Button type="button" variant="outline" onClick={openAddForm}>
-                  Add a Class Time
-                </Button>
-              )
+              <Button
+                type="button"
+                variant="outline"
+                onClick={(event) => openAdd(event.currentTarget)}
+              >
+                Add a Class Time
+              </Button>
             }
           >
             Add the weekly times a family can try a class.
@@ -144,98 +145,143 @@ export function ScheduleSection({
         )}
       </section>
 
-      {adding ? (
-        <form ref={formRef} action={formAction} className="flex flex-col gap-5">
-          <div ref={addRef}>
-            <FieldGroup title="Add a class time">
-              <SelectField
-                label="Trial class"
-                name="trialOfferingId"
-                required
-                value={values.trialOfferingId}
-                onValueChange={(value) => setField("trialOfferingId", value)}
-                error={errorFor("trialOfferingId")}
-                options={offerings.map((offering) => ({
-                  value: offering.id,
-                  label: offering.active ? offering.name : `${offering.name} (not offered)`,
-                }))}
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <SelectField
-                  label="Day of the week"
-                  name="dayOfWeek"
-                  value={values.dayOfWeek}
-                  onValueChange={(value) => setField("dayOfWeek", value)}
-                  error={errorFor("dayOfWeek")}
-                  options={DAY_OPTIONS}
-                />
-                <TextField
-                  label="Start time"
-                  name="startMinute"
-                  type="time"
-                  value={values.startMinute}
-                  onValueChange={(value) => setField("startMinute", value)}
-                  error={errorFor("startMinute")}
-                  helper={`Local time in ${timezoneLabel}.`}
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <TextField
-                  label="Class length in minutes"
-                  name="durationMinutes"
-                  type="number"
-                  inputMode="numeric"
-                  min={LIMITS.durationMin}
-                  max={LIMITS.durationMax}
-                  step={5}
-                  value={values.durationMinutes}
-                  onValueChange={(value) => setField("durationMinutes", value)}
-                  error={errorFor("durationMinutes")}
-                  helper={`Between ${LIMITS.durationMin} and ${LIMITS.durationMax} minutes.`}
-                />
-                <TextField
-                  label="Spots per class"
-                  name="capacity"
-                  type="number"
-                  inputMode="numeric"
-                  min={LIMITS.capacityMin}
-                  max={LIMITS.capacityMax}
-                  value={values.capacity}
-                  onValueChange={(value) => setField("capacity", value)}
-                  error={errorFor("capacity")}
-                />
-              </div>
-              <TextField
-                label="Internal label"
-                name="label"
-                maxLength={LIMITS.windowLabel}
-                value={values.label}
-                onValueChange={(value) => setField("label", value)}
-                error={errorFor("label")}
-                helper="Optional. Families do not see it."
-                placeholder="Main mat with Coach Ana…"
-              />
-            </FieldGroup>
-          </div>
-
-          <SaveBar
-            saveLabel="Add Class Time"
-            savingLabel="Adding…"
-            pending={pending}
-            dirty={dirty}
-            onDiscard={reset}
-            state={state}
-            idleHint="New class times become bookable right away."
-          />
-        </form>
-      ) : (
+      {windows.length > 0 ? (
         <div>
-          <Button type="button" variant="outline" onClick={openAddForm}>
+          <Button type="button" variant="outline" onClick={(event) => openAdd(event.currentTarget)}>
             Add a Class Time
           </Button>
         </div>
-      )}
+      ) : null}
+
+      <Dialog
+        open={adding}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setAdding(false);
+        }}
+      >
+        <DialogContent
+          className="max-h-[90dvh] overflow-y-auto"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            opener.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Add a class time</DialogTitle>
+            <DialogDescription>New class times become bookable right away.</DialogDescription>
+          </DialogHeader>
+          {adding ? (
+            <WindowForm
+              offerings={offerings}
+              timezoneLabel={timezoneLabel}
+              onCancel={() => setAdding(false)}
+              onSuccess={(state) => {
+                setAnnouncement(state.message);
+                setAdding(false);
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function WindowForm({
+  offerings,
+  timezoneLabel,
+  onCancel,
+  onSuccess,
+}: {
+  offerings: ScheduleOfferingOption[];
+  timezoneLabel: string;
+  onCancel: () => void;
+  onSuccess: (state: SettingsFormState) => void;
+}) {
+  const { state, onSubmit, pending, control, dirty } = useSettingsForm({
+    action: createWindowAction,
+    schema: windowSchema,
+    initialValues: {
+      trialOfferingId: offerings[0]?.id ?? "",
+      dayOfWeek: "1",
+      startMinute: "18:00",
+      durationMinutes: "60",
+      capacity: "8",
+      label: "",
+    },
+    onSuccess,
+  });
+
+  return (
+    <form noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
+      <FieldGroup>
+        <SelectField
+          label="Trial class"
+          name="trialOfferingId"
+          required
+          control={control}
+          options={offerings.map((offering) => ({
+            value: offering.id,
+            label: offering.active ? offering.name : `${offering.name} (not offered)`,
+          }))}
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SelectField
+            label="Day of the week"
+            name="dayOfWeek"
+            control={control}
+            options={DAY_OPTIONS}
+          />
+          <TextField
+            label="Start time"
+            name="startMinute"
+            type="time"
+            control={control}
+            helper={`Local time in ${timezoneLabel}.`}
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextField
+            label="Class length in minutes"
+            name="durationMinutes"
+            type="number"
+            inputMode="numeric"
+            min={LIMITS.durationMin}
+            max={LIMITS.durationMax}
+            step={5}
+            control={control}
+            helper={`Between ${LIMITS.durationMin} and ${LIMITS.durationMax} minutes.`}
+          />
+          <TextField
+            label="Spots per class"
+            name="capacity"
+            type="number"
+            inputMode="numeric"
+            min={LIMITS.capacityMin}
+            max={LIMITS.capacityMax}
+            control={control}
+          />
+        </div>
+        <TextField
+          label="Internal label"
+          name="label"
+          maxLength={LIMITS.windowLabel}
+          control={control}
+          helper="Optional. Families do not see it."
+          placeholder="Main mat with Coach Ana…"
+        />
+      </FieldGroup>
+
+      <SaveBar
+        saveLabel="Add Class Time"
+        savingLabel="Adding…"
+        pending={pending}
+        dirty={dirty}
+        onCancel={onCancel}
+        state={state}
+        idleHint="New class times become bookable right away."
+      />
+    </form>
   );
 }
 
@@ -330,21 +376,15 @@ function CapacityForm({
   capacity: number;
   minimum: number;
 }) {
-  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
-    useSettingsForm({
-      action: updateWindowCapacityAction,
-      initialValues: { capacity: String(capacity) },
-      dirtyKey: `schedule:capacity:${id}`,
-    });
+  const { state, onSubmit, pending, control, dirty, reset } = useSettingsForm({
+    action: updateWindowCapacityAction,
+    initialValues: { id, capacity: String(capacity) },
+    schema: capacitySchema,
+  });
 
   return (
-    <form
-      ref={formRef}
-      action={formAction}
-      className="flex flex-col gap-3 sm:flex-row sm:items-end"
-    >
-      <input type="hidden" name="id" value={id} />
-      <div className="w-full sm:max-w-40">
+    <form noValidate onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <UiFieldGroup className="w-full sm:max-w-40">
         <TextField
           label="Spots per class"
           name="capacity"
@@ -352,16 +392,14 @@ function CapacityForm({
           inputMode="numeric"
           min={Math.max(LIMITS.capacityMin, minimum)}
           max={LIMITS.capacityMax}
-          value={values.capacity}
-          onValueChange={(value) => setField("capacity", value)}
-          error={errorFor("capacity")}
+          control={control}
           helper={
             minimum > 0
               ? `At least ${minimum} — that many students are already booked.`
               : `Between ${LIMITS.capacityMin} and ${LIMITS.capacityMax}.`
           }
         />
-      </div>
+      </UiFieldGroup>
       <div className="flex flex-wrap items-center gap-2 pb-1">
         <Button
           type="submit"

@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
 import { schools } from "@/db/schema";
-import { getOwnedSchool } from "@/lib/auth/current-school";
+import { getCurrentSchool } from "@/lib/auth/current-school";
 import { requireUser } from "@/lib/auth/current-user";
 import { allowSelfApproval } from "@/lib/dev-flags";
 import { isValidTimezone } from "@/lib/timezones";
@@ -12,8 +12,8 @@ import { onboardingSchema } from "@/lib/validation";
 
 export async function createSchoolAction(formData: FormData) {
   const user = await requireUser();
-  const existing = await getOwnedSchool(user.id);
-  if (existing) redirect("/dashboard");
+  const school = await getCurrentSchool();
+  if (school) redirect("/dashboard");
 
   const parsed = onboardingSchema.safeParse({
     name: formData.get("name"),

@@ -1,6 +1,8 @@
 import { type UIMessage, validateUIMessages } from "ai";
+import { sql } from "drizzle-orm";
 import { after } from "next/server";
 import { randomUUID } from "node:crypto";
+import { getDb } from "@/db";
 import { streamedReply } from "@/lib/ai/assistant";
 import { textFromMessage } from "@/lib/chat/messages";
 import {
@@ -114,8 +116,13 @@ export async function startWebTurn({
         parts: message.parts,
       });
 
+      // Owner instructions are private server configuration, not landing RPC data.
+      const [settings] = await getDb().execute<{ agent_instructions: string | null }>(sql`
+        select agent_instructions from public.school_settings where school_id = ${school.id}
+      `);
+      if (!settings) throw new Error("School settings are missing");
       return streamedReply({
-        school,
+        school: { ...school, agentInstructions: settings.agent_instructions },
         catalog,
         messages: uiMessages,
         now,

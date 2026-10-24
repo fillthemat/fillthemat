@@ -14,41 +14,15 @@ Code review MUST read and apply [CODING_STANDARDS.md](CODING_STANDARDS.md).
 
 ## Verification
 
-Before opening a PR, run `bun run verify`
+Before opening a PR, run `bun run verify`.
 
 ## Local development
 
-Before running the app, changing env files, Supabase config, auth, or onboarding docs, read **`docs/local-development.md`**. That is the source of truth for running the stack (the landed `bun run setup` bootstrap, seed credentials, degradable vendors, and the worktree port contract). Do not add a vendored skill for this; keep third-party skills in `skills-lock.json` only.
-
-### Worktree port contract
-
-Each worktree shares the machine's one Supabase/Docker stack but owns the Next.js origin written by `bun run setup` (`NEXT_PUBLIC_SITE_URL`). Treat that assignment as a core assumption:
-
-- Create worktrees at `.worktrees/<name>` from the repo root (`git worktree add .worktrees/<name> -b <branch>`). That directory is gitignored.
-- Run `bun run setup` in the worktree and use the app origin it prints.
-- Do not pass `--port` to `bun run dev` or manually edit `NEXT_PUBLIC_SITE_URL` in `.env.local`.
-- Assume eligible origins (`http://127.0.0.1:3000`, `:3010`, … `:3090`) are reserved for this repo.
-- If that port is occupied, stop and report the collision; do not silently choose another port.
-- Stop this worktree's Next process with `bun run dev:stop`. Do not `pkill` Next/dev-local by name.
-- Do not stop or recreate Supabase from a child worktree; other agents may be using it.
-- All agent work ends in a GitHub pull request: push the branch and open a PR with a body written using the `pr` skill before cleaning up the worktree. Exception: push wayfinder research branches (`research/*`) without a PR and never merge them; link findings from the ticket.
-- When the PR is ready to be merged, use `bun run pr:queue <n>` for passing PRs; do not use `gh pr merge` or `--auto`. GitHub rechecks the combined changes before merging.
-- When the worktree is finished: in that tree run `bun run dev:stop`, then from the repo root `git worktree remove .worktrees/<name>`. Do not delete `.git/fillthemat-ports/*` by hand — the next `bun run setup` reuses the port once the directory is gone. Delete the branch separately if you no longer need it (`git branch -d <branch>`).
+See [docs/local-development.md](docs/local-development.md).
 
 ## Agent skills
 
-Before deploy checks or production schema diagnosis, read `docs/agents/supabase-mcp.md` for read-only inspection and migration verification.
-
-`skills-lock.json` is the only source of truth for project skills. Do not vendor skill files or commit generated skill directories (`.agents/skills/`, `.pi/skills/`).
-
-At the start of a session:
-
-1. Read `skills-lock.json`.
-2. If those skills are missing locally, run `bun run skills:install`.
-3. Load and follow every installed skill that applies to the current task.
-4. If the task needs a running app or local Supabase, follow `docs/local-development.md`.
-
-`bun run skills:install` restores every skill listed in the lockfile. Add or refresh skills with `bun run skills:update` or `bunx skills add <package> --skill <name> -y`.
+Install with `bun skills:install`.
 
 ### Issue tracker
 

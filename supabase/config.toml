@@ -50,16 +50,17 @@ max_client_conn = 100
 [db.migrations]
 # If disabled, migrations will be skipped during a db push or reset.
 enabled = true
-# Specifies an ordered list of schema files, directories, or glob patterns that describe your database.
-# Supports paths relative to supabase directory: "./schemas/*.sql", "./database".
-schema_paths = []
+# pg-delta discovers every per-table file in schemas/ and resolves dependencies;
+# do not set legacy schema_paths. Numeric prefixes also support sequential replay.
 
 [db.seed]
 # If enabled, seeds the database after migrations during a db reset.
 enabled = true
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
-sql_paths = ["./seed.sql"]
+# Seeds run after public-schema migrations: Auth first, then the demo school,
+# its owner-editable settings, trial schedule, booking, and lead.
+sql_paths = ["./seeds/*.sql"]
 
 [db.network_restrictions]
 # Enable management of network restrictions.
@@ -410,25 +411,9 @@ enabled = true
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"
 
-# Experimental features may be deprecated any time
 [experimental]
 stack = true
-# # Configures Postgres storage engine to use OrioleDB (S3)
-# orioledb_version = ""
-# # Configures S3 bucket URL, eg. <bucket_name>.s3-<region>.amazonaws.com
-# s3_host = "env(S3_HOST)"
-# # Configures S3 bucket region, eg. us-east-1
-# s3_region = "env(S3_REGION)"
-# # Configures AWS_ACCESS_KEY_ID for S3 bucket
-# s3_access_key = "env(S3_ACCESS_KEY)"
-# # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
-# s3_secret_key = "env(S3_SECRET_KEY)"
 
-# pg-delta is the schema diff engine for db diff / db pull / db remote commit.
-# Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]
 enabled = true
-# Directory under `supabase/` where declarative files are written.
-# declarative_schema_path = "./schemas"
-# JSON string passed through to pg-delta SQL formatting.
-# format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+declarative_schema_path = "./schemas"

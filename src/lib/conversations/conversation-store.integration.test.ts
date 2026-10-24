@@ -4,8 +4,8 @@ import { authSql, loadLocalEnv } from "@/test/integration-env";
 import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
 import {
   attachConversationContact,
-  type ConversationIdentity,
   claimGeneration,
+  type ConversationIdentity,
   endConversation,
   findConversation,
   findOrCreateConversation,

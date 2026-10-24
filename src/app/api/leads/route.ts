@@ -1,8 +1,8 @@
 import { attemptPendingForLead } from "@/lib/email/deliveries";
-import { createLead } from "@/lib/leads/create-lead";
+import { createLead, ownerLeadQuotaExceeded } from "@/lib/leads/create-lead";
 import { getRequestIp } from "@/lib/request";
 import { getPublicSchoolBySlug } from "@/lib/schools/public";
-import { recipientQuotaExceeded, requestBodyTooLarge } from "@/lib/security/limits";
+import { requestBodyTooLarge } from "@/lib/security/limits";
 import { verifyTurnstile } from "@/lib/security/turnstile";
 import { leadRequestSchema } from "@/lib/validation";
 
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   if (!(await verifyTurnstile(body.turnstileToken, ip))) {
     return Response.json({ error: "verification_failed" }, { status: 403 });
   }
-  if (await recipientQuotaExceeded(school.id, school.notificationEmail)) {
+  if (await ownerLeadQuotaExceeded(school.id)) {
     return Response.json({ error: "rate_limited" }, { status: 429 });
   }
 

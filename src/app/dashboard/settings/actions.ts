@@ -1,19 +1,18 @@
 "use server";
 
-import { and, eq, gt, sql } from "drizzle-orm";
+import type { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
-import { getDb } from "@/db";
-import { schools, trialOccurrences, trialOfferings, trialWindows } from "@/db/schema";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 import { publicSchoolPath } from "@/lib/site-url";
+import { createClient } from "@/lib/supabase/server";
 import {
   errorState,
   GENERIC_SERVER_ERROR,
   type SettingsFormState,
   successState,
 } from "./form-state";
-import { formatCount } from "./format";
+import { formatCount, nullToEmpty } from "./format";
 import {
   deleteFaqRecord,
   insertFaq,
@@ -26,12 +25,9 @@ import {
   agentSchema,
   brandingSchema,
   capacitySchema,
-  FAQ_EDITOR_FIELDS,
   faqSchema,
   fieldErrorsFrom,
-  formValues,
   idSchema,
-  OFFERING_EDITOR_FIELDS,
   offeringSchema,
   pricingSchema,
   profileSchema,
@@ -48,10 +44,6 @@ function revalidateOwnerViews(slug: string) {
   revalidatePath(publicSchoolPath(slug));
 }
 
-function nullToEmpty(value: string | null | undefined): string {
-  return value ?? "";
-}
-
 /**
  * Every action returns a `SettingsFormState`; unexpected failures become a
  * server error the owner can act on instead of a silent no-op.
@@ -65,39 +57,30 @@ async function run(work: () => Promise<SettingsFormState>): Promise<SettingsForm
     return await work();
   } catch (error) {
     unstable_rethrow(error);
-    console.error("[settings] action failed", error);
+    console.error(
+      JSON.stringify({
+        event: "settings_action_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
     return errorState(GENERIC_SERVER_ERROR);
   }
 }
 
 export async function updateProfileAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const published = school.publishedAt != null;
+    const { school } = await requireSchool();
+    const published = school.published_at != null;
 
-    const parsed = profileSchema.safeParse(
-      formValues(formData, [
-        "name",
-        "notificationEmail",
-        "phone",
-        "website",
-        "address",
-        "city",
-        "country",
-        "parkingNotes",
-        "accessNotes",
-        "trialGuidance",
-      ]),
-    );
+    const parsed = profileSchema.safeParse(input);
 
     let slug = school.slug;
     let timezone = school.timezone;
     let publicErrors: Record<string, string> = {};
     if (!published) {
-      const address = publicAddressSchema.safeParse(formValues(formData, ["slug", "timezone"]));
+      const address = publicAddressSchema.safeParse(input);
       if (address.success) {
         slug = address.data.slug;
         timezone = address.data.timezone;
@@ -114,26 +97,31 @@ export async function updateProfileAction(
     }
 
     const values = parsed.data;
-    const db = getDb();
-    await db
-      .update(schools)
-      .set({
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("update_school_profile", {
+      p_school_id: school.id,
+      p_slug: slug,
+      p_timezone: timezone,
+      p_profile: {
         name: values.name,
-        slug,
-        timezone,
-        notificationEmail: values.notificationEmail,
+        notification_email: values.notificationEmail,
         phone: values.phone,
         website: values.website,
         address: values.address,
         city: values.city,
         country: values.country,
-        parkingNotes: values.parkingNotes,
-        accessNotes: values.accessNotes,
-        trialGuidance: values.trialGuidance,
-        updatedAt: new Date(),
-      })
-      .where(eq(schools.id, school.id));
+        parking_notes: values.parkingNotes,
+        access_notes: values.accessNotes,
+        trial_guidance: values.trialGuidance,
+      },
+    });
+    if (error?.code === "23505")
+      return errorState("That public page address is already taken.", {
+        slug: "Choose another address.",
+      });
+    if (error) throw error;
     revalidateOwnerViews(school.slug);
+    if (slug !== school.slug) revalidatePath(publicSchoolPath(slug));
 
     return successState("School details saved. Your agent uses them now.", {
       name: values.name,
@@ -152,101 +140,88 @@ export async function updateProfileAction(
   });
 }
 
-export async function updatePricingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
-): Promise<SettingsFormState> {
+type SettingsColumn =
+  | "pricing"
+  | "welcome_message"
+  | "agent_instructions"
+  | "logo_url"
+  | "primary_color";
+
+function updateSchoolSettings<T extends Record<string, string | null>>(
+  input: Record<string, string>,
+  schema: z.ZodType<T>,
+  columns: { [K in keyof T]: SettingsColumn },
+  errorMessage: string,
+  successMessage: string,
+) {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = pricingSchema.safeParse(formValues(formData, ["pricing"]));
+    const { school } = await requireSchool();
+    const parsed = schema.safeParse(input);
     if (!parsed.success) {
-      return errorState(
-        "Check the highlighted field and save again.",
-        fieldErrorsFrom(parsed.error),
-      );
+      return errorState(errorMessage, fieldErrorsFrom(parsed.error));
     }
-    const db = getDb();
-    await db
-      .update(schools)
-      .set({ pricing: parsed.data.pricing, updatedAt: new Date() })
-      .where(eq(schools.id, school.id));
+    const updates: Partial<Record<SettingsColumn, string | null>> & { updated_at: string } = {
+      updated_at: new Date().toISOString(),
+    };
+    const values: Record<string, string> = {};
+    for (const key in columns) {
+      updates[columns[key]] = parsed.data[key] ?? null;
+      values[key] = nullToEmpty(parsed.data[key]);
+    }
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("school_settings")
+      .update(updates)
+      .eq("school_id", school.id)
+      .select("school_id")
+      .single();
+    if (error) throw error;
     revalidateOwnerViews(school.slug);
-    return successState("Pricing saved. Your agent may share it now.", {
-      pricing: nullToEmpty(parsed.data.pricing),
-    });
+    return successState(successMessage, values);
   });
 }
 
-export async function updateAgentAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+export async function updatePricingAction(
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
-  return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = agentSchema.safeParse(
-      formValues(formData, ["welcomeMessage", "agentInstructions"]),
-    );
-    if (!parsed.success) {
-      return errorState(
-        "Check the highlighted fields and save again.",
-        fieldErrorsFrom(parsed.error),
-      );
-    }
-    const db = getDb();
-    await db
-      .update(schools)
-      .set({
-        welcomeMessage: parsed.data.welcomeMessage,
-        agentInstructions: parsed.data.agentInstructions,
-        updatedAt: new Date(),
-      })
-      .where(eq(schools.id, school.id));
-    revalidateOwnerViews(school.slug);
-    return successState("Agent settings saved and live on your page.", {
-      welcomeMessage: nullToEmpty(parsed.data.welcomeMessage),
-      agentInstructions: nullToEmpty(parsed.data.agentInstructions),
-    });
-  });
+  return updateSchoolSettings(
+    input,
+    pricingSchema,
+    { pricing: "pricing" },
+    "Check the highlighted field and save again.",
+    "Pricing saved. Your agent may share it now.",
+  );
+}
+
+export async function updateAgentAction(input: Record<string, string>): Promise<SettingsFormState> {
+  return updateSchoolSettings(
+    input,
+    agentSchema,
+    { welcomeMessage: "welcome_message", agentInstructions: "agent_instructions" },
+    "Check the highlighted fields and save again.",
+    "Agent settings saved and live on your page.",
+  );
 }
 
 export async function updateBrandingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
-  return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = brandingSchema.safeParse(formValues(formData, ["logoUrl", "primaryColor"]));
-    if (!parsed.success) {
-      return errorState(
-        "Check the highlighted fields and save again.",
-        fieldErrorsFrom(parsed.error),
-      );
-    }
-    const db = getDb();
-    await db
-      .update(schools)
-      .set({
-        logoUrl: parsed.data.logoUrl,
-        primaryColor: parsed.data.primaryColor,
-        updatedAt: new Date(),
-      })
-      .where(eq(schools.id, school.id));
-    revalidateOwnerViews(school.slug);
-    return successState("Branding saved and live on your public page.", {
-      logoUrl: nullToEmpty(parsed.data.logoUrl),
-      primaryColor: nullToEmpty(parsed.data.primaryColor),
-    });
-  });
+  return updateSchoolSettings(
+    input,
+    brandingSchema,
+    { logoUrl: "logo_url", primaryColor: "primary_color" },
+    "Check the highlighted fields and save again.",
+    "Branding saved and live on your public page.",
+  );
 }
 
 export async function createOfferingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
+    const { school } = await requireSchool();
     const parsed = offeringSchema.safeParse({
-      ...formValues(formData, OFFERING_EDITOR_FIELDS),
+      ...input,
       waiverNotes: "",
     });
     if (!parsed.success) {
@@ -255,7 +230,7 @@ export async function createOfferingAction(
         fieldErrorsFrom(parsed.error),
       );
     }
-    const result = await insertOffering(getDb(), school.id, {
+    const result = await insertOffering(await createClient(), school.id, {
       name: parsed.data.name,
       description: parsed.data.description,
       minimumAge: parsed.data.minimumAge,
@@ -270,14 +245,13 @@ export async function createOfferingAction(
 }
 
 export async function updateOfferingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const identity = updateOfferingSchema.safeParse(formValues(formData, ["id", "updatedAt"]));
+    const { school } = await requireSchool();
+    const identity = updateOfferingSchema.safeParse(input);
     const parsed = offeringSchema.safeParse({
-      ...formValues(formData, OFFERING_EDITOR_FIELDS),
+      ...input,
       waiverNotes: "",
     });
     if (!identity.success || !parsed.success) {
@@ -287,10 +261,10 @@ export async function updateOfferingAction(
       });
     }
     const result = await updateOffering(
-      getDb(),
+      await createClient(),
       school.id,
       identity.data.id,
-      new Date(identity.data.updatedAt),
+      identity.data.updatedAt,
       {
         name: parsed.data.name,
         description: parsed.data.description,
@@ -306,16 +280,20 @@ export async function updateOfferingAction(
 }
 
 export async function toggleOfferingAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = toggleOfferingSchema.safeParse(formValues(formData, ["id", "active"]));
+    const { school } = await requireSchool();
+    const parsed = toggleOfferingSchema.safeParse(input);
     if (!parsed.success) {
       return errorState("That trial class no longer exists. Refresh the page.");
     }
-    const result = await setOfferingActive(getDb(), school.id, parsed.data.id, parsed.data.active);
+    const result = await setOfferingActive(
+      await createClient(),
+      school.id,
+      parsed.data.id,
+      parsed.data.active,
+    );
     if (result.status === "success" && result.values?.unchanged !== "true") {
       revalidateOwnerViews(school.slug);
     }
@@ -324,134 +302,97 @@ export async function toggleOfferingAction(
 }
 
 export async function createWindowAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = windowSchema.safeParse(
-      formValues(formData, [
-        "trialOfferingId",
-        "dayOfWeek",
-        "startMinute",
-        "durationMinutes",
-        "capacity",
-        "label",
-      ]),
-    );
+    const { school } = await requireSchool();
+    const parsed = windowSchema.safeParse(input);
     if (!parsed.success) {
       return errorState(
         "Check the highlighted fields and add the class time again.",
         fieldErrorsFrom(parsed.error),
       );
     }
-    const db = getDb();
-    const [offering] = await db
-      .select({ id: trialOfferings.id })
-      .from(trialOfferings)
-      .where(
-        and(
-          eq(trialOfferings.id, parsed.data.trialOfferingId),
-          eq(trialOfferings.schoolId, school.id),
-        ),
-      )
-      .limit(1);
+    const supabase = await createClient();
+    const { data: offering, error: readError } = await supabase
+      .from("trial_offerings")
+      .select("id")
+      .eq("id", parsed.data.trialOfferingId)
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (readError) throw readError;
     if (!offering) {
       return errorState("Check the highlighted fields and try again.", {
         trialOfferingId: "Choose one of your trial classes.",
       });
     }
-    await db.insert(trialWindows).values({
-      schoolId: school.id,
-      trialOfferingId: offering.id,
-      dayOfWeek: parsed.data.dayOfWeek,
-      startMinute: parsed.data.startMinute,
-      durationMinutes: parsed.data.durationMinutes,
+    const { error } = await supabase.from("trial_windows").insert({
+      school_id: school.id,
+      trial_offering_id: offering.id,
+      day_of_week: parsed.data.dayOfWeek,
+      start_minute: parsed.data.startMinute,
+      duration_minutes: parsed.data.durationMinutes,
       capacity: parsed.data.capacity,
       label: parsed.data.label,
       active: true,
     });
+    if (error) throw error;
     revalidateOwnerViews(school.slug);
     return successState("Class time added to your weekly schedule.");
   });
 }
 
 export async function deactivateWindowAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = idSchema.safeParse(formValues(formData, ["id"]));
+    const { school } = await requireSchool();
+    const parsed = idSchema.safeParse(input);
     if (!parsed.success) {
       return errorState("That class time no longer exists. Refresh the page.");
     }
-    const db = getDb();
-    await db
-      .update(trialWindows)
-      .set({ active: false, updatedAt: new Date() })
-      .where(and(eq(trialWindows.id, parsed.data.id), eq(trialWindows.schoolId, school.id)));
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("trial_windows")
+      .update({ active: false, updated_at: new Date().toISOString() })
+      .eq("id", parsed.data.id)
+      .eq("school_id", school.id)
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return errorState("That class time no longer exists. Refresh the page.");
     revalidateOwnerViews(school.slug);
     return successState("Class time turned off. Bookings families already made are unchanged.");
   });
 }
 
 export async function updateWindowCapacityAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = capacitySchema.safeParse(formValues(formData, ["id", "capacity"]));
+    const { school } = await requireSchool();
+    const parsed = capacitySchema.safeParse(input);
     if (!parsed.success) {
       return errorState("Check the number of spots and try again.", fieldErrorsFrom(parsed.error));
     }
     const { id, capacity } = parsed.data;
-    const db = getDb();
-    const [existing] = await db
-      .select({ id: trialWindows.id })
-      .from(trialWindows)
-      .where(and(eq(trialWindows.id, id), eq(trialWindows.schoolId, school.id)))
-      .limit(1);
-    if (!existing) {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .rpc("update_settings_window_capacity", { p_window_id: id, p_capacity: capacity })
+      .single();
+    if (error) throw error;
+    if (data.result === "not_found") {
       return errorState("That class time no longer exists. Refresh the page.");
     }
 
-    const [maxBooked] = await db
-      .select({
-        max: sql<number>`coalesce(max(${trialOccurrences.bookedCount}), 0)::int`,
-      })
-      .from(trialOccurrences)
-      .where(
-        and(
-          eq(trialOccurrences.schoolId, school.id),
-          eq(trialOccurrences.trialWindowId, id),
-          gt(trialOccurrences.startAt, new Date()),
-        ),
-      );
-    const booked = maxBooked?.max ?? 0;
-    if (booked > capacity) {
+    const booked = data.max_booked;
+    if (data.result === "below_booked") {
       return errorState(
         `An upcoming class already has ${formatCount(booked, "student")} booked. Keep at least ${booked} spots.`,
         { capacity: `Use ${booked} or more.` },
       );
     }
 
-    await db
-      .update(trialWindows)
-      .set({ capacity, updatedAt: new Date() })
-      .where(and(eq(trialWindows.id, id), eq(trialWindows.schoolId, school.id)));
-    await db
-      .update(trialOccurrences)
-      .set({ capacity, updatedAt: new Date() })
-      .where(
-        and(
-          eq(trialOccurrences.schoolId, school.id),
-          eq(trialOccurrences.trialWindowId, id),
-          gt(trialOccurrences.startAt, new Date()),
-          sql`${trialOccurrences.bookedCount} <= ${capacity}`,
-        ),
-      );
     revalidateOwnerViews(school.slug);
     return successState(`Saved. Upcoming classes now hold ${formatCount(capacity, "student")}.`, {
       capacity: String(capacity),
@@ -460,66 +401,52 @@ export async function updateWindowCapacityAction(
 }
 
 export async function deleteWindowAction(
-  _prev: SettingsFormState,
-  formData: FormData,
+  input: Record<string, string>,
 ): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = idSchema.safeParse(formValues(formData, ["id"]));
+    const { school } = await requireSchool();
+    const parsed = idSchema.safeParse(input);
     if (!parsed.success) {
       return errorState("That class time no longer exists. Refresh the page.");
     }
-    const db = getDb();
-    const [occurrence] = await db
-      .select({ id: trialOccurrences.id })
-      .from(trialOccurrences)
-      .where(
-        and(
-          eq(trialOccurrences.schoolId, school.id),
-          eq(trialOccurrences.trialWindowId, parsed.data.id),
-        ),
-      )
-      .limit(1);
-    if (occurrence) {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("delete_settings_window", {
+      p_window_id: parsed.data.id,
+    });
+    if (error) throw error;
+    if (data === "not_found")
+      return errorState("That class time no longer exists. Refresh the page.");
+    if (data === "on_calendar") {
       return errorState(
         "This class time is already on your calendar, so it cannot be deleted. Turn it off instead — upcoming bookings stay valid.",
       );
     }
-    await db
-      .delete(trialWindows)
-      .where(and(eq(trialWindows.id, parsed.data.id), eq(trialWindows.schoolId, school.id)));
     revalidateOwnerViews(school.slug);
     return successState("Class time deleted.");
   });
 }
 
-export async function createFaqAction(
-  _prev: SettingsFormState,
-  formData: FormData,
-): Promise<SettingsFormState> {
+export async function createFaqAction(input: Record<string, string>): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = faqSchema.safeParse(formValues(formData, FAQ_EDITOR_FIELDS));
+    const { school } = await requireSchool();
+    const parsed = faqSchema.safeParse(input);
     if (!parsed.success) {
       return errorState(
         "Check the highlighted fields and add the question again.",
         fieldErrorsFrom(parsed.error),
       );
     }
-    const result = await insertFaq(getDb(), school.id, parsed.data);
+    const result = await insertFaq(await createClient(), school.id, parsed.data);
     if (result.status === "success") revalidateOwnerViews(school.slug);
     return result;
   });
 }
 
-export async function updateFaqAction(
-  _prev: SettingsFormState,
-  formData: FormData,
-): Promise<SettingsFormState> {
+export async function updateFaqAction(input: Record<string, string>): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const identity = updateFaqSchema.safeParse(formValues(formData, ["id", "updatedAt"]));
-    const parsed = faqSchema.safeParse(formValues(formData, FAQ_EDITOR_FIELDS));
+    const { school } = await requireSchool();
+    const identity = updateFaqSchema.safeParse(input);
+    const parsed = faqSchema.safeParse(input);
     if (!identity.success || !parsed.success) {
       return errorState("Check the highlighted fields and save again.", {
         ...(identity.success ? {} : fieldErrorsFrom(identity.error)),
@@ -527,10 +454,10 @@ export async function updateFaqAction(
       });
     }
     const result = await updateFaq(
-      getDb(),
+      await createClient(),
       school.id,
       identity.data.id,
-      new Date(identity.data.updatedAt),
+      identity.data.updatedAt,
       parsed.data,
     );
     if (result.status === "success") revalidateOwnerViews(school.slug);
@@ -538,17 +465,14 @@ export async function updateFaqAction(
   });
 }
 
-export async function deleteFaqAction(
-  _prev: SettingsFormState,
-  formData: FormData,
-): Promise<SettingsFormState> {
+export async function deleteFaqAction(input: Record<string, string>): Promise<SettingsFormState> {
   return run(async () => {
-    const { school } = await requireOwnedSchool();
-    const parsed = idSchema.safeParse(formValues(formData, ["id"]));
+    const { school } = await requireSchool();
+    const parsed = idSchema.safeParse(input);
     if (!parsed.success) {
       return errorState("That question no longer exists. Refresh the page.");
     }
-    const result = await deleteFaqRecord(getDb(), school.id, parsed.data.id);
+    const result = await deleteFaqRecord(await createClient(), school.id, parsed.data.id);
     if (result.status === "success") revalidateOwnerViews(school.slug);
     return result;
   });

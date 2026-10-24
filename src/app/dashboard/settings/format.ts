@@ -59,3 +59,10 @@ export function formatCount(count: number, singular: string): string {
 export function formatTimezone(timezone: string): string {
   return timezone.split("/").join(" / ").replace(/_/g, " ");
 }
+export function nullToEmpty(value: string | number | null | undefined): string {
+  return value == null ? "" : String(value);
+}
+
+export function serializeTimestamp(value: Date | string): string {
+  return typeof value === "string" ? value : value.toISOString();
+}

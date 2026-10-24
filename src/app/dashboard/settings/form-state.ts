@@ -12,8 +12,7 @@ export type SettingsFormState = {
   fieldErrors: Record<string, string>;
   /**
    * Normalized values that were saved. Forms use this to reset their
-   * "unsaved changes" baseline without losing anything the owner typed while
-   * the save was in flight.
+   * default values and clear the form's dirty state.
    */
   values: Record<string, string> | null;
 };
