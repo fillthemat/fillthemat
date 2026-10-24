@@ -72,6 +72,7 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
     TURNSTILE_SECRET_KEY: TURNSTILE_TEST_SECRET_KEY,
     ALLOW_SELF_APPROVAL: "true",
     NEXT_PUBLIC_DEV_AUTH: "true",
+    BOOKING_AGENT_MODEL: "google/gemini-2.5-flash-lite",
   };
   if (!process.env.NEXT_PUBLIC_SITE_URL) {
     const LOCAL_BASE_URL = "http://127.0.0.1";
@@ -93,8 +94,6 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
   for (const [sourceKey, targetKey] of SUPABASE_MAPPINGS) {
     const value = supabaseEnv[sourceKey];
     if (value === undefined) {
-      if (sourceKey === "SECRET_KEY")
-        throw new Error("Local Supabase did not return its server secret key");
       console.warn(`Key "${sourceKey}" not found in input, skipping`);
       continue;
     }
