@@ -6,7 +6,7 @@
 Put shared business code in `src/lib/<area>`, such as `schedule` or `conversations`. Keep dashboard-only queries, actions and forms beside their page in `src/app`.
 
 **Keep API routes focused**:
-Routes in `src/app/api` check requests, call library functions and return responses. They must not import database code; Oxlint checks this.
+Routes in `src/app/api` check requests, call library functions and return responses. They must not import database code; `bun lint` checks this.
 _Example_: `src/app/api/bookings/route.ts` → `src/lib/schedule/book-slot.ts`
 
 **Separate database setup from business work**:
@@ -31,16 +31,16 @@ Migration files are generated from the schema files in `supabase/schemas/`, usin
 Pages and layouts in `src/app` load data and arrange the screen; nearby components handle page-specific UI. Put shared components in `src/components` and basic controls in `src/components/ui`.
 
 **Change controls through variants**:
-Use a control's `variant` for appearance changes; add new variants inside the control instead of restyling each use. Oxlint checks shadcn styling and static classes; see `docs/decisions/lint-policy.md` for the few exceptions.
+Use a control's `variant` for appearance changes; add new variants inside the control instead of restyling each use. `bun lint` checks shadcn styling and static classes.
 _Example_: `src/components/ui/input.tsx`
 
-## Linting, formatting, and typechecks
+## Quality checks
 
-After making code changes, ensure it's up to standards by running:
+Before completing code changes, committing code, or opening a pull request, run:
 
 - bun typecheck
 - bun lint:fix
-- bun format
+- bun fmt
 
 ## Everyday style
 

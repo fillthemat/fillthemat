@@ -104,7 +104,7 @@ N. Update this repo's deploy docs so they name the new team
 
 1. Create org `fillthemat` (or similar). Org owner = `admin@fillthemat.com` (GitHub account that uses that email, verified).
 2. Transfer `jakegoodmandev/fillthemat` → `fillthemat/fillthemat` (Settings → Transfer). Public repo: Actions minutes stay free.
-3. Confirm Pages still publishes Playwright reports (`gh-pages`). After transfer the URL becomes `https://fillthemat.github.io/fillthemat/…` — update `docs/decisions/vercel-gh-pages-deployments.md` if you care about the old user Pages URL.
+3. Confirm Pages still publishes Playwright reports (`gh-pages`). After transfer the URL becomes `https://fillthemat.github.io/fillthemat/…`
 4. Reconnect the **new** Vercel project to the org repo (step H). The old Vercel git integration will go stale; that is expected.
 5. Optional: require 2FA, disable personal deploy keys, add a second org owner.
 
@@ -295,7 +295,6 @@ Update so the next operator is not pointed at the personal team:
 
 - `docs/v1-deploy-current.md` — team slug, `RESEND_FROM`, skip list (verified domain).
 - `docs/README.md` — this file stays in Living.
-- `docs/decisions/vercel-gh-pages-deployments.md` — Pages URL if the org changed it.
 - GitHub repo homepage / description if still `fillthemat.vercel.app`.
 
 Do **not** commit `.vercel/`, `.env.production.local`, or keys.

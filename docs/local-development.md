@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Bun 1.4.3 (matches `packageManager` in `package.json`).
+- mise (for the project’s Bun version).
 - A **Docker Engine** reachable via `docker info` — OrbStack, Docker Desktop, or Colima.
 
 ## Quickstart
@@ -35,7 +35,7 @@ Set `RESEND_API_KEY` (+ `RESEND_FROM=onboarding@resend.dev` for owner-only test 
 
 ## Checks
 
-See CODING_STANDARDS.md, "Linting, formatting, and typechecks".
+See [CODING_STANDARDS.md](/CODING_STANDARDS.md#quality-checks).
 
 For the opt-in native Supabase declarative schema trial (without changing the
 Drizzle runtime or resetting a local stack), see

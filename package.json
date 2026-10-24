@@ -20,10 +20,6 @@
     "dev:stop": "bun scripts/stop-dev-local.ts",
     "doctor": "bun scripts/doctor-local.ts",
     "eval:assistant": "bun scripts/assistant-eval.ts",
-    "format": "oxfmt",
-    "format:check": "oxfmt --check",
-    "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
     "logs:prod": "bun --no-env-file scripts/logs-prod.ts",
     "pr:queue": "bun --no-env-file scripts/pr-queue.ts",
     "setup": "bun scripts/setup-local.ts",
@@ -42,7 +38,7 @@
     "vercel:env:pull": "bunx vercel env pull",
     "vercel:ignore-build": "bun --no-env-file scripts/ignore-build.ts",
     "verify": "bun run verify:checks && bun run test",
-    "verify:checks": "bun typecheck && bun lint && bun format:check",
+    "verify:checks": "bun typecheck && bun lint && bun fmt --check",
     "whatsapp:worker": "bun scripts/whatsapp-worker.ts --once",
     "wt": "bun scripts/worktree.ts"
   },
@@ -90,8 +86,6 @@
     "@types/react-dom": "19.3.0",
     "@vercel/config": "^0.7.0",
     "drizzle-kit": "^0.31.10",
-    "oxfmt": "^0.73.0",
-    "oxlint": "^1.83.0",
     "skills": "^1.5.23",
     "supabase": "^2.121.0",
     "tailwindcss": "^4.3.3",
@@ -102,7 +96,6 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0"
   },
-  "packageManager": "bun@1.4.3",
   "ignoreScripts": [
     "sharp",
     "unrs-resolver"

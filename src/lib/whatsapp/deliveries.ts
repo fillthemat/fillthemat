@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import { getDb, type TransactionOptions } from "@/db";
-import { schools, type WhatsAppDelivery, whatsappDeliveries } from "@/db/schema";
+import { schools, whatsappDeliveries, type WhatsAppDelivery } from "@/db/schema";
 import {
   orderClaimedRows,
   ownedQueueClaim,

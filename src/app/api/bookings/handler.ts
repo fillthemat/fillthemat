@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { attemptPendingForBooking } from "@/lib/email/deliveries";
 import type {
-  BookSlotResult,
   bookSlot,
+  BookSlotResult,
   findBookingByIdempotencyKey,
 } from "@/lib/schedule/book-slot";
 import type { getPublicSchoolBySlug } from "@/lib/schools/public";

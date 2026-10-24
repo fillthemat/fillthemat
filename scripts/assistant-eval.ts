@@ -12,9 +12,9 @@ import { registerTracing } from "../src/lib/tracing/register";
 import { cases, DATASET_NAME, type EvalCase } from "./assistant-eval/cases";
 import {
   compareRuns,
-  type RunReport,
   reportSchema,
   requireCompleteBaseline,
+  type RunReport,
 } from "./assistant-eval/compare";
 import { judgeHash, judgeReply } from "./assistant-eval/judge";
 import { maskEvalFields } from "./assistant-eval/masking";

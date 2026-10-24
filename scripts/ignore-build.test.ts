@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { config } from "../vercel";
-import { isDocsPath, ignoredBuildExitCode as run } from "./ignore-build";
+import { ignoredBuildExitCode as run, isDocsPath } from "./ignore-build";
 
 const preview = {
   VERCEL_ENV: "preview",
