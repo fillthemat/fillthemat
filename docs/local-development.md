@@ -17,11 +17,6 @@ If something fails, run `bun run doctor` for a read-only probe of Bun, Docker, S
 
 Stop this checkout's frontend with `bun run dev:stop`.
 
-`bun run setup` also writes `SUPABASE_SECRET_KEY` for trusted server-side school
-and catalog reads. Set this server-only key in deployed environments too. Never
-prefix it with `NEXT_PUBLIC_`: public access and owner previews are checked by
-the server loader, while dashboard requests continue to use the user's RLS scope.
-
 ## Optional integrations
 
 All optional. The app degrades cleanly without them.

@@ -160,7 +160,6 @@ Create **new**, do not “transfer project” across orgs (painful and still tie
 4. Copy into the new Vercel env:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - Publishable key → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-   - Secret key → `SUPABASE_SECRET_KEY` (server-only school/catalog reads)
    - Transaction pooler (port **6543**) → `DATABASE_URL`
    - Direct (port **5432**) → `DIRECT_URL` (also `.env.production.local` on the laptop for `bun run db:migrate:prod`)
 5. Migrate schema:
@@ -199,7 +198,6 @@ The current team is Hobby, personal, `planIteration: legacy`. You want a **new t
    DIRECT_URL=
    NEXT_PUBLIC_SUPABASE_URL=
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
-   SUPABASE_SECRET_KEY=
    NEXT_PUBLIC_SITE_URL=https://www.fillthemat.com
    RESEND_API_KEY=
    RESEND_FROM=

@@ -86,7 +86,6 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
     ["DB_URL", "DIRECT_URL"],
     ["API_URL", "NEXT_PUBLIC_SUPABASE_URL"],
     ["PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"],
-    ["SECRET_KEY", "SUPABASE_SECRET_KEY"],
   ] as const;
   const supabaseEnv = await getSupabaseEnv();
 

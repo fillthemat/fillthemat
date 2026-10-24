@@ -1282,6 +1282,7 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      can_read_school_catalog: { Args: { p_school_id: string }; Returns: boolean };
       cancel_dashboard_booking: { Args: { p_booking_id: string }; Returns: string };
       create_settings_faq: {
         Args: { p_answer: string; p_question: string; p_school_id: string };
@@ -1302,6 +1303,29 @@ export type Database = {
         };
       };
       delete_settings_window: { Args: { p_window_id: string }; Returns: string };
+      get_landing_school: {
+        Args: { p_preview?: boolean; p_slug: string };
+        Returns: {
+          access_notes: string;
+          address: string;
+          approved_at: string;
+          city: string;
+          country: string;
+          id: string;
+          logo_url: string;
+          name: string;
+          parking_notes: string;
+          phone: string;
+          pricing: string;
+          primary_color: string;
+          published_at: string;
+          slug: string;
+          timezone: string;
+          trial_guidance: string;
+          website: string;
+          welcome_message: string;
+        }[];
+      };
       get_overview_metrics: {
         Args: { p_now?: string; p_school_id: string };
         Returns: {

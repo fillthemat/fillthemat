@@ -25,7 +25,19 @@ import { isAgeEligible, listOpenSlots } from "./occurrences";
 import { parseSlotId } from "./slot-id";
 
 export type BookSlotInput = {
-  school: School;
+  school: Pick<
+    School,
+    | "id"
+    | "approvedAt"
+    | "publishedAt"
+    | "timezone"
+    | "address"
+    | "city"
+    | "country"
+    | "accessNotes"
+    | "parkingNotes"
+    | "trialGuidance"
+  >;
   offeringId: string;
   slotId: string;
   idempotencyKey: string;
@@ -385,6 +397,11 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
       // Owner notification always goes by email. The prospect confirmation is
       // emailed only when there is an email; no-email WhatsApp bookings get a
       // WhatsApp template confirmation enqueued by the caller instead.
+      // A public school profile must never carry the owner's notification address.
+      const [settings] = await tx.execute<{ notification_email: string }>(sql`
+        select notification_email from public.school_settings where school_id = ${input.school.id}
+      `);
+      if (!settings) throw new Error("School settings are missing");
       const deliveryRows: Array<{
         schoolId: string;
         bookingId: string;
@@ -398,7 +415,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
           schoolId: input.school.id,
           bookingId: saved.id,
           kind: "owner_booking",
-          recipient: input.school.notificationEmail,
+          recipient: settings.notification_email,
           providerIdempotencyKey: `owner-booking/${saved.id}`,
           state: "pending",
           nextAttemptAt: now,

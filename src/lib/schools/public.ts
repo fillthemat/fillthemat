@@ -1,68 +1,69 @@
 import "server-only";
-import { getCurrentUser } from "@/lib/auth/current-user";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
-// Keep the existing domain shape for booking, chat and scheduling callers.
-// Database rows and queries use the generated Supabase types, not Drizzle.
-async function findSchool(slug: string, publishedOnly: boolean) {
-  const supabase = createAdminClient();
-  let query = supabase.from("schools").select("*, school_settings(*)").eq("slug", slug);
-  if (publishedOnly) {
-    query = query.not("approved_at", "is", null).not("published_at", "is", null);
-  }
-  const { data, error } = await query.maybeSingle();
+// RPC type generation cannot infer nullable RETURNS TABLE columns. Keep the
+// public domain contract explicit while queries still use generated DB types.
+export type LandingSchool = {
+  id: string;
+  slug: string;
+  timezone: string;
+  approvedAt: Date | null;
+  publishedAt: Date | null;
+  name: string;
+  phone: string | null;
+  website: string | null;
+  address: string | null;
+  country: string;
+  city: string | null;
+  parkingNotes: string | null;
+  accessNotes: string | null;
+  trialGuidance: string | null;
+  pricing: string | null;
+  welcomeMessage: string | null;
+  logoUrl: string | null;
+  primaryColor: string | null;
+};
+
+async function findSchool(slug: string, preview: boolean): Promise<LandingSchool | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .rpc("get_landing_school", { p_slug: slug, p_preview: preview })
+    .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const settings = data.school_settings;
-  if (!settings) throw new Error("School settings are missing");
 
   return {
     id: data.id,
-    ownerUserId: data.owner_user_id,
     slug: data.slug,
     timezone: data.timezone,
     approvedAt: data.approved_at ? new Date(data.approved_at) : null,
     publishedAt: data.published_at ? new Date(data.published_at) : null,
-    previewedAt: data.previewed_at ? new Date(data.previewed_at) : null,
-    createdAt: new Date(data.created_at),
-    updatedAt: new Date(data.updated_at),
-    whatsappPhoneNumberId: data.whatsapp_phone_number_id,
-    whatsappWabaId: data.whatsapp_waba_id,
-    name: settings.name,
-    notificationEmail: settings.notification_email,
-    phone: settings.phone,
-    website: settings.website,
-    address: settings.address,
-    country: settings.country,
-    city: settings.city,
-    parkingNotes: settings.parking_notes,
-    accessNotes: settings.access_notes,
-    trialGuidance: settings.trial_guidance,
-    pricing: settings.pricing,
-    welcomeMessage: settings.welcome_message,
-    agentInstructions: settings.agent_instructions,
-    logoUrl: settings.logo_url,
-    primaryColor: settings.primary_color,
+    name: data.name,
+    phone: data.phone,
+    website: data.website,
+    address: data.address,
+    country: data.country,
+    city: data.city,
+    parkingNotes: data.parking_notes,
+    accessNotes: data.access_notes,
+    trialGuidance: data.trial_guidance,
+    pricing: data.pricing,
+    welcomeMessage: data.welcome_message,
+    logoUrl: data.logo_url,
+    primaryColor: data.primary_color,
   };
 }
 
 export async function getSchoolBySlug(slug: string) {
-  return findSchool(slug, false);
+  return findSchool(slug, true);
 }
 
 export async function getSchoolForLandingAccess(slug: string, options?: { preview?: boolean }) {
-  const publicSchool = await getPublicSchoolBySlug(slug);
-  if (publicSchool) return publicSchool;
-  if (!options?.preview) return null;
-  const user = await getCurrentUser();
-  if (!user) return null;
-  const school = await getSchoolBySlug(slug);
-  if (!school || school.ownerUserId !== user.id) return null;
-  return school;
+  return findSchool(slug, options?.preview === true);
 }
 
 export async function getPublicSchoolBySlug(slug: string) {
-  return findSchool(slug, true);
+  return findSchool(slug, false);
 }
 
 // PostgREST caps each response; catalogs must not silently lose later rows.
@@ -80,8 +81,8 @@ async function readAll<Row>(query: {
   }
 }
 
-export async function loadSchoolCatalog(schoolId: string) {
-  const supabase = createAdminClient();
+export async function loadSchoolCatalog(schoolId: string, options?: { anonymous?: boolean }) {
+  const supabase = await createClient(options);
   const [offerings, windows, occurrences, faqs] = await Promise.all([
     readAll(supabase.from("trial_offerings").select("*").eq("school_id", schoolId).order("id")),
     readAll(supabase.from("trial_windows").select("*").eq("school_id", schoolId).order("id")),

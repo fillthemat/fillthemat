@@ -209,7 +209,7 @@ async function handleAssistantTurn(
     messages: [...history, inboundUIMessage],
   });
 
-  const catalog = await loadSchoolCatalog(ctx.schoolId);
+  const catalog = await loadSchoolCatalog(ctx.schoolId, { anonymous: true });
   const db = getDb();
   const [school] = await db.select().from(schools).where(eq(schools.id, ctx.schoolId)).limit(1);
   if (!school) throw new InternalFailure("school_missing");
