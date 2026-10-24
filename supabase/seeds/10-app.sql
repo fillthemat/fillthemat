@@ -88,3 +88,33 @@ SELECT c.booking_id, c.school_id, p.contact_id, p.id, c.offering_id, c.window_id
     c.offering_name, c.timezone, c.start_at, c.start_at + c.duration_minutes * interval '1 minute',
     'family@local.test', 'Alex Rivera', '555-0199', c.booking_id || '@fillthemat.com'
 FROM context c JOIN occurrence occ USING (school_id) CROSS JOIN participant p;
+
+-- A separate, unbooked lead for the dashboard. Preserve edits on subsequent runs.
+WITH context AS MATERIALIZED (
+    SELECT s.id AS school_id, o.id AS offering_id
+    FROM public.schools s JOIN auth.users u ON u.id = s.owner_user_id
+    CROSS JOIN LATERAL (
+        SELECT id FROM public.trial_offerings WHERE school_id = s.id ORDER BY created_at, id LIMIT 1
+    ) o
+    WHERE lower(u.email) = 'owner@local.test'
+), contact AS (
+    INSERT INTO public.contacts (school_id, email, name, phone)
+    SELECT school_id, 'lead@local.test', 'Jordan Morgan', '555-0188' FROM context
+    ON CONFLICT (school_id, email) DO UPDATE SET email = EXCLUDED.email
+    RETURNING id, school_id
+), landing_session AS (
+    INSERT INTO public.landing_sessions (school_id, session_key_hash, qualified_at)
+    SELECT school_id, 'seed:demo-lead', now() FROM context
+    ON CONFLICT (school_id, session_key_hash) DO UPDATE SET session_key_hash = EXCLUDED.session_key_hash
+    RETURNING id, school_id
+)
+INSERT INTO public.leads (
+    school_id, landing_session_id, contact_id, participant_name, participant_age,
+    trial_offering_id, stated_need, status
+)
+SELECT c.school_id, ls.id, ct.id, 'Taylor Morgan', 9, c.offering_id,
+    'Looking for a beginner class to build confidence. Please contact me about trial availability.', 'open'
+FROM context c JOIN contact ct USING (school_id) JOIN landing_session ls USING (school_id)
+WHERE NOT EXISTS (
+    SELECT FROM public.leads l WHERE l.school_id = c.school_id AND l.landing_session_id = ls.id
+);
