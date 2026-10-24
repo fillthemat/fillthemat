@@ -1,4 +1,4 @@
--- LOCAL DEVELOPMENT ONLY. Auth is available at native startup, before app migrations.
+-- LOCAL DEVELOPMENT ONLY. Create the local owner before seeding public tables.
 -- Existing local users keep their UUID/password; never delete accounts or sessions.
 INSERT INTO auth.users (
     instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,

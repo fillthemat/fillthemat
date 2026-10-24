@@ -1,6 +1,4 @@
--- LOCAL DEVELOPMENT ONLY. Applied by db:seed/setup AFTER Drizzle migrations.
--- Do not include this file in native startup sql_paths: app does not exist yet.
--- Public declarative copies intentionally receive no data.
+-- LOCAL DEVELOPMENT ONLY. Runs after public-schema migrations and 00-auth.sql.
 INSERT INTO public.users (id, email, name)
 SELECT id, 'owner@local.test', 'Local Owner'
 FROM auth.users WHERE lower(email) = 'owner@local.test'
@@ -9,18 +7,24 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- A slug owned by somebody else is an error, never a reason to seed their school.
 INSERT INTO public.schools (
-    owner_user_id, name, slug, timezone, city, address, phone, notification_email,
-    country, approved_at, whatsapp_phone_number_id, welcome_message
+    owner_user_id, slug, timezone, approved_at, whatsapp_phone_number_id
 )
-SELECT id, 'Demo Dojo', 'demo', 'America/New_York', 'Brooklyn', '123 Demo Street',
-    '555-0100', 'owner@local.test', 'US', now(), '106500000000000',
-    'Welcome to the local demo school.'
+SELECT id, 'demo', 'America/New_York', now(), '106500000000000'
 FROM auth.users WHERE lower(email) = 'owner@local.test'
 ON CONFLICT (owner_user_id) DO UPDATE SET
     approved_at = coalesce(public.schools.approved_at, now()),
-    city = coalesce(public.schools.city, 'Brooklyn'),
     -- Keep in sync with LOCAL_WHATSAPP_PHONE_NUMBER_ID (covered by seed tests).
     whatsapp_phone_number_id = EXCLUDED.whatsapp_phone_number_id, updated_at = now();
+
+INSERT INTO public.school_settings (
+    school_id, name, city, address, phone, notification_email, country, welcome_message
+)
+SELECT s.id, 'Demo Dojo', 'Brooklyn', '123 Demo Street', '555-0100',
+    'owner@local.test', 'US', 'Welcome to the local demo school.'
+FROM public.schools s JOIN auth.users u ON u.id = s.owner_user_id
+WHERE lower(u.email) = 'owner@local.test'
+ON CONFLICT (school_id) DO UPDATE SET
+    city = coalesce(public.school_settings.city, EXCLUDED.city);
 
 INSERT INTO public.trial_offerings (school_id, name, description, minimum_age, maximum_age, active)
 SELECT s.id, 'Kids beginner trial', 'A 45-minute intro class for new students.', 5, 12, true
