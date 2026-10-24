@@ -1,8 +1,8 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 
-// RPC type generation cannot infer nullable RETURNS TABLE columns. Keep the
-// public domain contract explicit while queries still use generated DB types.
+// Public domain shape for booking/chat callers; database queries remain typed
+// with generated Supabase rows and never load private school settings.
 export type LandingSchool = {
   id: string;
   slug: string;
@@ -26,11 +26,12 @@ export type LandingSchool = {
 
 async function findSchool(slug: string, preview: boolean): Promise<LandingSchool | null> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .rpc("get_landing_school", { p_slug: slug, p_preview: preview })
-    .maybeSingle();
+  let query = supabase.from("schools").select("*, school_profiles!inner(*)").eq("slug", slug);
+  if (!preview) query = query.not("approved_at", "is", null).not("published_at", "is", null);
+  const { data, error } = await query.maybeSingle();
   if (error) throw error;
   if (!data) return null;
+  const profile = data.school_profiles;
 
   return {
     id: data.id,
@@ -38,19 +39,19 @@ async function findSchool(slug: string, preview: boolean): Promise<LandingSchool
     timezone: data.timezone,
     approvedAt: data.approved_at ? new Date(data.approved_at) : null,
     publishedAt: data.published_at ? new Date(data.published_at) : null,
-    name: data.name,
-    phone: data.phone,
-    website: data.website,
-    address: data.address,
-    country: data.country,
-    city: data.city,
-    parkingNotes: data.parking_notes,
-    accessNotes: data.access_notes,
-    trialGuidance: data.trial_guidance,
-    pricing: data.pricing,
-    welcomeMessage: data.welcome_message,
-    logoUrl: data.logo_url,
-    primaryColor: data.primary_color,
+    name: profile.name,
+    phone: profile.phone,
+    website: profile.website,
+    address: profile.address,
+    country: profile.country,
+    city: profile.city,
+    parkingNotes: profile.parking_notes,
+    accessNotes: profile.access_notes,
+    trialGuidance: profile.trial_guidance,
+    pricing: profile.pricing,
+    welcomeMessage: profile.welcome_message,
+    logoUrl: profile.logo_url,
+    primaryColor: profile.primary_color,
   };
 }
 

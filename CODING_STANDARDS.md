@@ -20,10 +20,12 @@ _Example_: `src/lib/ai/tools/prepare-booking.ts`; `docs/adr/0003-school-facts-in
 
 Migration files are generated from the schema files in `supabase/schemas/`, using `pg-delta`. Follow this workflow when modifying the DB schema:
 
-1. Add/update schema file(s) in `supabase/schemas/`
+1. Add/update table, grant and policy files in `supabase/schemas/`; put invoker function bodies and execution grants in `supabase/schemas/functions/`, grouped by their primary table
 2. Generate a migration file with `bun db:migrate:gen`
 3. Apply migrations with `bun db:migrate:up`
 4. Keep `src/db/types.ts` up-to-date with `bun db:typegen`
+
+Review generated migrations for data moves: add transactional backfills before dropping moved columns. Application functions must use `SECURITY INVOKER`; enforce access with grants and RLS, and mutation invariants with constraints/triggers rather than privileged RPCs.
 
 ## Pages and UI
 

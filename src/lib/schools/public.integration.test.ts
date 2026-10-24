@@ -24,6 +24,7 @@ const owners: string[] = [];
 const schools = new Map<string, string>();
 let anon: SupabaseClient<Database>;
 let owner: SupabaseClient<Database>;
+let ownerId: string;
 const clients: SupabaseClient<Database>[] = [];
 
 function client() {
@@ -48,8 +49,8 @@ async function fixture(label: string, approved: boolean, published: boolean) {
   const row = requireRow(
     (
       await sql`
-    insert into public.schools (id, owner_user_id, slug, timezone, approved_at, published_at)
-    values (${schoolKey}, ${user}, ${schoolKey}, 'UTC', ${approved ? new Date() : null}, ${published ? new Date() : null}) returning id
+    insert into public.schools (id, slug, timezone, approved_at, published_at)
+    values (${schoolKey}, ${schoolKey}, 'UTC', ${approved ? new Date() : null}, ${published ? new Date() : null}) returning id
   `
     )[0],
     "school",
@@ -57,9 +58,10 @@ async function fixture(label: string, approved: boolean, published: boolean) {
   const schoolId = row.id as string;
   schools.set(label, schoolId);
   await sql`
-    insert into public.school_settings (school_id, name, notification_email, agent_instructions)
-    values (${schoolId}, ${label}, ${email}, 'Private owner instructions')
+    insert into public.school_settings (school_id, owner_user_id, notification_email, agent_instructions)
+    values (${schoolId}, ${user}, ${email}, 'Private owner instructions')
   `;
+  await sql`insert into public.school_profiles (school_id, name) values (${schoolId}, ${label})`;
   const offering = requireRow(
     (
       await sql`
@@ -108,6 +110,7 @@ beforeAll(async () => {
   anon = client();
   await fixture("published", true, true);
   const draft = await fixture("draft", false, false);
+  ownerId = draft.user;
   await fixture("unapproved", false, true);
   await fixture("foreign", true, false);
   owner = client();
@@ -124,16 +127,18 @@ afterAll(async () => {
   await sql.end({ timeout: 5 });
 });
 
-describe("landing RPC and catalog RLS", () => {
+describe("public school and catalog RLS", () => {
   it.each(["anon", "owner"])(
     "lets %s read published profiles without private settings",
     async (role) => {
       request.client = role === "anon" ? anon : owner;
       const profile = await getSchoolForLandingAccess(id("published"));
       expect(profile).toMatchObject({ id: id("published"), name: "published" });
-      const { data, error } = await request.client.rpc("get_landing_school", {
-        p_slug: id("published"),
-      });
+      const { data, error } = await request.client
+        .from("schools")
+        .select("*, school_profiles(*)")
+        .eq("id", id("published"))
+        .single();
       expect(error).toBeNull();
       for (const field of [
         "notification_email",
@@ -141,7 +146,8 @@ describe("landing RPC and catalog RLS", () => {
         "owner_user_id",
         "whatsapp_phone_number_id",
       ]) {
-        expect(data?.[0]).not.toHaveProperty(field);
+        expect(data).not.toHaveProperty(field);
+        expect(data?.school_profiles).not.toHaveProperty(field);
       }
     },
   );
@@ -183,6 +189,19 @@ describe("landing RPC and catalog RLS", () => {
     expect(catalog.faqs).toHaveLength(1);
   });
 
+  it("assembles the owner dashboard school through the private ownership row", async () => {
+    const { data, error } = await owner
+      .from("school_settings")
+      .select("*, schools!inner(*, school_profiles(*))")
+      .eq("owner_user_id", ownerId)
+      .single();
+    expect(error).toBeNull();
+    expect(data).toMatchObject({
+      owner_user_id: ownerId,
+      schools: { id: id("draft"), school_profiles: { name: "draft" } },
+    });
+  });
+
   it("reuses the server client for background public reads without request cookies", async () => {
     const { createClient: serverClient } =
       await vi.importActual<typeof import("@/lib/supabase/server")>("@/lib/supabase/server");
@@ -197,10 +216,8 @@ describe("landing RPC and catalog RLS", () => {
     expect((await supabase.auth.getSession()).data.session).toBeNull();
   });
 
-  it("does not grant anonymous access to base school/settings tables or catalog writes", async () => {
-    for (const table of ["schools", "school_settings"] as const) {
-      expect((await anon.from(table).select("*")).error?.code).toBe("42501");
-    }
+  it("keeps private settings and catalog writes unavailable to anonymous visitors", async () => {
+    expect((await anon.from("school_settings").select("*")).error?.code).toBe("42501");
     const { error } = await anon
       .from("trial_offerings")
       .insert({ school_id: id("published"), name: "Forbidden" });
@@ -211,5 +228,51 @@ describe("landing RPC and catalog RLS", () => {
       .eq("school_id", id("published"));
     expect(foreignSettings.error).toBeNull();
     expect(foreignSettings.data).toEqual([]);
+  });
+
+  it("has no SECURITY DEFINER routines in the application schema", async () => {
+    const functions = await sql`
+      SELECT p.proname FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.prosecdef
+    `;
+    expect(functions).toHaveLength(0);
+  });
+
+  it("does not let API roles install permanent trigger code", async () => {
+    const [privileges] = await sql`
+      SELECT has_schema_privilege('authenticated', 'public', 'CREATE') AS create_schema,
+             has_table_privilege('authenticated', 'public.bookings', 'TRIGGER') AS create_trigger,
+             has_database_privilege('authenticated', current_database(), 'CREATE') AS create_schema_in_database
+    `;
+    expect(privileges).toMatchObject({
+      create_schema: false,
+      create_trigger: false,
+      create_schema_in_database: false,
+    });
+  });
+
+  it("does not let temporary triggers forge internal write access", async () => {
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`SET LOCAL ROLE authenticated`;
+        await tx`SELECT set_config('request.jwt.claims', ${JSON.stringify({ sub: ownerId, role: "authenticated" })}, true)`;
+        await tx`CREATE TEMP TABLE forged_trigger (id integer)`;
+        await tx.unsafe(`CREATE FUNCTION pg_temp.forge_event() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER AS $$
+        BEGIN INSERT INTO public.funnel_events (school_id, event_type) VALUES ('${id("draft")}', 'forged'); RETURN NEW; END;
+      $$`);
+        await tx`CREATE TRIGGER forge_event AFTER INSERT ON forged_trigger FOR EACH ROW EXECUTE FUNCTION pg_temp.forge_event()`;
+        await tx`INSERT INTO forged_trigger VALUES (1)`;
+      }),
+    ).rejects.toMatchObject({ code: "42501" });
+  });
+
+  it("preserves account deletion cascades after moving ownership", async () => {
+    const account = await fixture("deleted", false, false);
+    await deleteAuthUser(sql, account.user);
+    expect(await sql`SELECT id FROM public.schools WHERE id = ${id("deleted")}`).toHaveLength(0);
+    expect(
+      await sql`SELECT school_id FROM public.school_profiles WHERE school_id = ${id("deleted")}`,
+    ).toHaveLength(0);
   });
 });

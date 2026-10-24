@@ -9,11 +9,11 @@ export async function markPreviewedAction() {
   const { school } = await requireSchool();
   const supabase = await createClient();
   const { error } = await supabase
-    .from("schools")
+    .from("school_settings")
     .update({
       previewed_at: school.previewed_at ?? new Date().toISOString(),
     })
-    .eq("id", school.id);
+    .eq("school_id", school.id);
 
   if (error) throw error;
   redirect(`${publicSchoolPath(school.slug)}?preview=1`);

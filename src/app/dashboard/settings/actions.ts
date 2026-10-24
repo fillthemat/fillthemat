@@ -169,12 +169,20 @@ function updateSchoolSettings<T extends Record<string, string | null>>(
       values[key] = nullToEmpty(parsed.data[key]);
     }
     const supabase = await createClient();
-    const { error } = await supabase
-      .from("school_settings")
-      .update(updates)
-      .eq("school_id", school.id)
-      .select("school_id")
-      .single();
+    const { agent_instructions, ...publicUpdates } = updates;
+    const { error } =
+      "agent_instructions" in updates
+        ? await supabase.rpc("update_school_agent", {
+            p_school_id: school.id,
+            p_welcome_message: updates.welcome_message ?? "",
+            p_agent_instructions: agent_instructions ?? "",
+          })
+        : await supabase
+            .from("school_profiles")
+            .update(publicUpdates)
+            .eq("school_id", school.id)
+            .select("school_id")
+            .single();
     if (error) throw error;
     revalidateOwnerViews(school.slug);
     return successState(successMessage, values);

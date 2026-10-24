@@ -48,9 +48,10 @@ async function ownerClient(owner: string) {
   await sql`update auth.users set encrypted_password = extensions.crypt(${password}, extensions.gen_salt('bf')) where id = ${owner}`;
   await sql`insert into public.users (id, email) values (${owner}, ${email})`;
   const [row] =
-    await sql`insert into public.schools (owner_user_id, slug, timezone) values (${owner}, ${owner}, 'UTC') returning id`;
+    await sql`insert into public.schools (slug, timezone) values (${owner}, 'UTC') returning id`;
   const id = requireRow(row, "school").id as string;
-  await sql`insert into public.school_settings (school_id, name, notification_email) values (${id}, 'Test school', ${email})`;
+  await sql`insert into public.school_settings (school_id, owner_user_id, notification_email) values (${id}, ${owner}, ${email})`;
+  await sql`insert into public.school_profiles (school_id, name) values (${id}, 'Test school')`;
   const supabase = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
@@ -147,10 +148,22 @@ it("uses the desired offering state and handles repeated submissions", async () 
 });
 
 it("enforces the FAQ limit while allowing edits without reordering", async () => {
-  for (let i = 0; i < 20; i++)
+  for (let i = 0; i < 19; i++)
     expect(
       (await insertFaq(client, school, { question: `Question ${i}?`, answer: "Answer" })).status,
     ).toBe("success");
+  const raced = await Promise.all([
+    insertFaq(client, school, { question: "Last A?", answer: "Answer" }),
+    insertFaq(client, school, { question: "Last B?", answer: "Answer" }),
+  ]);
+  expect(raced.filter((result) => result.status === "success")).toHaveLength(1);
+  expect(
+    (
+      await client
+        .from("faqs")
+        .insert({ school_id: school, question: "Direct bypass?", answer: "No" })
+    ).error?.code,
+  ).toBe("23514");
   expect((await insertFaq(client, school, { question: "Extra?", answer: "No" })).status).toBe(
     "error",
   );
@@ -183,14 +196,14 @@ it("does not report success for a missing FAQ", async () => {
 
 it("allows own settings changes but denies foreign settings and platform fields", async () => {
   const own = await client
-    .from("school_settings")
+    .from("school_profiles")
     .update({ pricing: "Trial is free" })
     .eq("school_id", school)
     .select();
   expect(own.error).toBeNull();
   expect(own.data).toHaveLength(1);
   const foreign = await client
-    .from("school_settings")
+    .from("school_profiles")
     .update({ pricing: "Hijack" })
     .eq("school_id", foreignSchool)
     .select();
@@ -205,7 +218,7 @@ it("allows own settings changes but denies foreign settings and platform fields"
     ).error?.code,
   ).toBe("42501");
   expect(
-    (await client.from("school_settings").insert({ school_id: foreignSchool, name: "Hijack" }))
+    (await client.from("school_profiles").insert({ school_id: foreignSchool, name: "Hijack" }))
       .error?.code,
   ).toBe("42501");
 });
@@ -228,7 +241,7 @@ it("updates profile and unpublished identity atomically, but locks published ide
   });
   expect(locked.error).not.toBeNull();
   expect(
-    (await client.from("school_settings").select("name").eq("school_id", school).single()).data
+    (await client.from("school_profiles").select("name").eq("school_id", school).single()).data
       ?.name,
   ).toBe("Renamed");
   expect(
@@ -280,5 +293,72 @@ it("updates capacity atomically and prevents deleting calendar-backed windows", 
   ).toBe("not_found");
   expect(
     (await client.from("trial_windows").update({ capacity: 1 }).eq("id", windowId)).error?.code,
-  ).toBe("42501");
+  ).toBe("23514");
+  const direct = await client.from("trial_windows").update({ capacity: 5 }).eq("id", windowId);
+  expect(direct.error).toBeNull();
+  expect(
+    (
+      await client
+        .from("trial_occurrences")
+        .select("capacity")
+        .eq("trial_window_id", windowId)
+        .single()
+    ).data?.capacity,
+  ).toBe(5);
+  expect((await client.from("trial_windows").delete().eq("id", windowId)).error?.code).toBe(
+    "23503",
+  );
+});
+
+it("saves public welcome text and private instructions atomically through an invoker RPC", async () => {
+  const saved = await client.rpc("update_school_agent", {
+    p_school_id: school,
+    p_welcome_message: "Welcome!",
+    p_agent_instructions: "Be concise",
+  });
+  expect(saved.error).toBeNull();
+  expect(
+    (
+      await client
+        .from("school_profiles")
+        .select("welcome_message")
+        .eq("school_id", school)
+        .single()
+    ).data?.welcome_message,
+  ).toBe("Welcome!");
+  expect(
+    (
+      await client
+        .from("school_settings")
+        .select("agent_instructions")
+        .eq("school_id", school)
+        .single()
+    ).data?.agent_instructions,
+  ).toBe("Be concise");
+  const blocked = await foreignClient.rpc("update_school_agent", {
+    p_school_id: school,
+    p_welcome_message: "Hijack",
+    p_agent_instructions: "Hijack",
+  });
+  expect(blocked.error?.code).toBe("42501");
+  const extraOwner = randomUUID();
+  owners.push(extraOwner);
+  const extra = await ownerClient(extraOwner);
+  await sql`DELETE FROM public.school_profiles WHERE school_id = ${extra.school}`;
+  const failed = await extra.client.rpc("update_school_agent", {
+    p_school_id: extra.school,
+    p_welcome_message: "Missing",
+    p_agent_instructions: "Must roll back",
+  });
+  expect(failed.error?.message).toBe("school_profile_missing");
+  expect(
+    (
+      await extra.client
+        .from("school_settings")
+        .select("agent_instructions")
+        .eq("school_id", extra.school)
+        .single()
+    ).data?.agent_instructions,
+  ).toBeNull();
+  extra.client.auth.stopAutoRefresh();
 });

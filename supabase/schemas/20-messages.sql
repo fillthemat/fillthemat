@@ -28,7 +28,7 @@ USING (
     EXISTS (
         SELECT 1
         FROM public.conversations c
-        JOIN public.schools s ON s.id = c.school_id
+        JOIN public.school_settings s ON s.school_id = c.school_id
         WHERE c.id = public.messages.conversation_id
           AND s.owner_user_id = auth.uid()
     )

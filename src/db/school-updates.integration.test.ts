@@ -21,10 +21,11 @@ beforeAll(async () => {
   await insertAuthUser(sql, owner, `${owner}@local.test`);
   await sql`insert into public.users (id, email) values (${owner}, ${`${owner}@local.test`})`;
   await sql`
-    insert into public.schools (id, owner_user_id, slug, timezone, updated_at)
-    values (${school}, ${owner}, ${school}, 'UTC', '2000-01-01')
+    insert into public.schools (id, slug, timezone, updated_at)
+    values (${school}, ${school}, 'UTC', '2000-01-01')
   `;
-  await sql`insert into public.school_settings (school_id) values (${school})`;
+  await sql`insert into public.school_settings (school_id, owner_user_id) values (${school}, ${owner})`;
+  await sql`insert into public.school_profiles (school_id) values (${school})`;
 });
 
 afterAll(async () => {
@@ -37,7 +38,7 @@ it("lets owners preview and publish, with database-managed updated_at", async ()
     await tx`set local role authenticated`;
     await tx`select set_config('request.jwt.claim.sub', ${owner}, true)`;
     const [preview] = await tx`
-      update public.schools set previewed_at = now() where id = ${school}
+      update public.school_settings set previewed_at = now() where school_id = ${school}
       returning previewed_at, updated_at, created_at
     `;
     const row = requireRow(preview, "previewed school");
@@ -49,13 +50,12 @@ it("lets owners preview and publish, with database-managed updated_at", async ()
     `;
     expect(requireRow(published, "published school")).toMatchObject({
       advanced: true,
-      created_at: row.created_at,
     });
     expect(published?.published_at).not.toBeNull();
   });
 });
 
-it.each(["approved_at", "owner_user_id", "slug", "timezone", "updated_at"])(
+it.each(["approved_at", "updated_at"])(
   "does not grant owners direct updates to %s",
   async (column) => {
     await expect(
@@ -73,16 +73,47 @@ it("does not let another owner update the school", async () => {
     await tx`set local role authenticated`;
     await tx`select set_config('request.jwt.claim.sub', ${stranger}, true)`;
     const rows =
-      await tx`update public.schools set previewed_at = now() where id = ${school} returning id`;
+      await tx`update public.school_settings set previewed_at = now() where school_id = ${school} returning school_id`;
     expect(rows).toHaveLength(0);
   });
+});
+
+it.each(["owner_user_id", "school_id", "whatsapp_phone_number_id"])(
+  "does not grant owners direct updates to private platform field %s",
+  async (column) => {
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`SET LOCAL ROLE authenticated`;
+        await tx`SELECT set_config('request.jwt.claim.sub', ${owner}, true)`;
+        await tx`UPDATE public.school_settings SET ${tx(column)} = ${tx(column)} WHERE school_id = ${school}`;
+      }),
+    ).rejects.toMatchObject({ code: "42501" });
+  },
+);
+
+it("cannot bypass published identity immutability through direct updates or unpublishing", async () => {
+  for (const update of [
+    "slug = 'changed-school'",
+    "timezone = 'Europe/London'",
+    "published_at = NULL",
+  ]) {
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`SET LOCAL ROLE authenticated`;
+        await tx`SELECT set_config('request.jwt.claim.sub', ${owner}, true)`;
+        await tx.unsafe(`UPDATE public.schools SET ${update} WHERE id = '${school}'`);
+      }),
+    ).rejects.toMatchObject({
+      message: "slug, timezone and publication timestamp are immutable after publish",
+    });
+  }
 });
 
 it("does not let anonymous callers update schools", async () => {
   await expect(
     sql.begin(async (tx) => {
       await tx`set local role anon`;
-      await tx`update public.schools set previewed_at = now() where id = ${school}`;
+      await tx`update public.school_settings set previewed_at = now() where school_id = ${school}`;
     }),
   ).rejects.toMatchObject({ code: "42501" });
 });
@@ -95,7 +126,7 @@ it("overrides caller-supplied timestamps without changing created_at", async () 
   `;
   expect(requireRow(row, "settings").current).toBe(true);
   const [next] = await sql`
-    update public.school_settings set name = 'Updated' where school_id = ${school}
+    update public.school_settings set agent_instructions = 'Updated' where school_id = ${school}
     returning updated_at > ${row?.created_at}::timestamptz as advanced, created_at
   `;
   expect(requireRow(next, "updated settings")).toMatchObject({

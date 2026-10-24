@@ -6,7 +6,7 @@ import {
   loadSchoolCatalog,
 } from "./public";
 
-const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn(), createClient: vi.fn() }));
+const mocks = vi.hoisted(() => ({ from: vi.fn(), createClient: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 
@@ -14,6 +14,7 @@ function query(data: unknown, error: unknown = null) {
   return {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({ data, error }),
     range: vi.fn().mockResolvedValue({ data, error }),
@@ -27,19 +28,21 @@ const school = {
   timezone: "UTC",
   approved_at: timestamp,
   published_at: timestamp,
-  name: "Demo",
-  welcome_message: "Welcome!",
-  logo_url: "https://example.com/logo.png",
+  school_profiles: {
+    name: "Demo",
+    welcome_message: "Welcome!",
+    logo_url: "https://example.com/logo.png",
+  },
 };
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.createClient.mockResolvedValue({ from: mocks.from, rpc: mocks.rpc });
-  mocks.rpc.mockReturnValue(query(school));
+  mocks.createClient.mockResolvedValue({ from: mocks.from });
+  mocks.from.mockReturnValue(query(school));
 });
 
 describe("school access", () => {
-  it("maps the safe RPC profile without carrying private school fields", async () => {
+  it("loads public profile tables without carrying private school fields", async () => {
     const result = await getSchoolBySlug("demo");
     expect(result).toMatchObject({
       id: school.id,
@@ -57,41 +60,36 @@ describe("school access", () => {
     ]) {
       expect(result).not.toHaveProperty(field);
     }
-    expect(mocks.from).not.toHaveBeenCalled();
-    expect(mocks.rpc).toHaveBeenCalledWith("get_landing_school", {
-      p_slug: "demo",
-      p_preview: true,
-    });
+    expect(mocks.from).toHaveBeenCalledWith("schools");
+    expect(mocks.from.mock.results[0]?.value.select).toHaveBeenCalledWith(
+      "*, school_profiles!inner(*)",
+    );
   });
 
-  it.each([false, true])("delegates preview=%s authorization to the database", async (preview) => {
+  it.each([false, true])("delegates preview=%s authorization to RLS", async (preview) => {
     await getSchoolForLandingAccess("demo", { preview });
-    expect(mocks.rpc).toHaveBeenCalledWith("get_landing_school", {
-      p_slug: "demo",
-      p_preview: preview,
-    });
+    const read = mocks.from.mock.results[0]?.value;
+    expect(read.eq).toHaveBeenCalledWith("slug", "demo");
+    expect(read.not).toHaveBeenCalledTimes(preview ? 0 : 2);
   });
 
   it("never requests previews through the public lookup", async () => {
     await getPublicSchoolBySlug("demo");
-    expect(mocks.rpc).toHaveBeenCalledWith("get_landing_school", {
-      p_slug: "demo",
-      p_preview: false,
-    });
+    expect(mocks.from.mock.results[0]?.value.not.mock.calls).toEqual([
+      ["approved_at", "is", null],
+      ["published_at", "is", null],
+    ]);
   });
 
   it("defaults to public-only access and returns null for denied or unknown schools", async () => {
-    mocks.rpc.mockReturnValue(query(null));
+    mocks.from.mockReturnValue(query(null));
     expect(await getSchoolForLandingAccess("missing")).toBeNull();
-    expect(mocks.rpc).toHaveBeenCalledWith("get_landing_school", {
-      p_slug: "missing",
-      p_preview: false,
-    });
+    expect(mocks.from.mock.results[0]?.value.not).toHaveBeenCalledTimes(2);
   });
 
-  it("propagates RPC failures", async () => {
+  it("propagates query failures", async () => {
     const error = new Error("Data API unavailable");
-    mocks.rpc.mockReturnValue(query(null, error));
+    mocks.from.mockReturnValue(query(null, error));
     await expect(getSchoolForLandingAccess("demo")).rejects.toBe(error);
   });
 });

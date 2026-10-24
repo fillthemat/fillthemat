@@ -41,8 +41,16 @@ FOR SELECT
 TO authenticated
 USING (
     school_id = (
-        SELECT s.id
-        FROM public.schools s
+        SELECT s.school_id
+        FROM public.school_settings s
         WHERE s.owner_user_id = auth.uid()
     )
 );
+
+GRANT INSERT (school_id, booking_id, kind, recipient, provider_idempotency_key)
+ON public.email_deliveries TO authenticated;
+CREATE POLICY email_deliveries_owner_trigger_insert ON public.email_deliveries
+FOR INSERT TO authenticated
+WITH CHECK (pg_catalog.pg_trigger_depth() > 0 AND pg_catalog.pg_my_temp_schema() = 0 AND school_id = (
+    SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())
+));

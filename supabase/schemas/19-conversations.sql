@@ -35,8 +35,8 @@ FOR SELECT
 TO authenticated
 USING (
     school_id = (
-        SELECT s.id
-        FROM public.schools s
+        SELECT s.school_id
+        FROM public.school_settings s
         WHERE s.owner_user_id = auth.uid()
     )
 );

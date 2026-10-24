@@ -5,30 +5,35 @@ FROM auth.users WHERE lower(email) = 'owner@local.test'
 ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email, name = EXCLUDED.name, updated_at = now();
 
--- A slug owned by somebody else is an error, never a reason to seed their school.
-INSERT INTO public.schools (
-    owner_user_id, slug, timezone, approved_at, whatsapp_phone_number_id
+-- Reuse only this owner's school. A slug collision belongs to somebody else
+-- and must fail instead of letting the seed claim their school.
+WITH seeded_school AS (
+    INSERT INTO public.schools (id, slug, timezone, approved_at)
+    SELECT coalesce((SELECT school_id FROM public.school_settings WHERE owner_user_id = u.id), gen_random_uuid()),
+        'demo', 'America/New_York', now()
+    FROM auth.users u WHERE lower(u.email) = 'owner@local.test'
+    ON CONFLICT (id) DO UPDATE SET approved_at = coalesce(public.schools.approved_at, now())
+    RETURNING id
 )
-SELECT id, 'demo', 'America/New_York', now(), '106500000000000'
-FROM auth.users WHERE lower(email) = 'owner@local.test'
-ON CONFLICT (owner_user_id) DO UPDATE SET
-    approved_at = coalesce(public.schools.approved_at, now()),
-    -- Keep in sync with LOCAL_WHATSAPP_PHONE_NUMBER_ID (covered by seed tests).
-    whatsapp_phone_number_id = EXCLUDED.whatsapp_phone_number_id, updated_at = now();
+INSERT INTO public.school_settings (school_id, owner_user_id, notification_email, whatsapp_phone_number_id)
+SELECT s.id, u.id, 'owner@local.test', '106500000000000'
+FROM seeded_school s CROSS JOIN auth.users u
+WHERE lower(u.email) = 'owner@local.test'
+ON CONFLICT (school_id) DO UPDATE SET whatsapp_phone_number_id = EXCLUDED.whatsapp_phone_number_id;
 
-INSERT INTO public.school_settings (
-    school_id, name, city, address, phone, notification_email, country, welcome_message
+INSERT INTO public.school_profiles (
+    school_id, name, city, address, phone, country, welcome_message
 )
 SELECT s.id, 'Demo Dojo', 'Brooklyn', '123 Demo Street', '555-0100',
-    'owner@local.test', 'US', 'Welcome to the local demo school.'
-FROM public.schools s JOIN auth.users u ON u.id = s.owner_user_id
+    'US', 'Welcome to the local demo school.'
+FROM public.schools s JOIN public.school_settings a ON a.school_id = s.id JOIN auth.users u ON u.id = a.owner_user_id
 WHERE lower(u.email) = 'owner@local.test'
 ON CONFLICT (school_id) DO UPDATE SET
-    city = coalesce(public.school_settings.city, EXCLUDED.city);
+    city = coalesce(public.school_profiles.city, EXCLUDED.city);
 
 INSERT INTO public.trial_offerings (school_id, name, description, minimum_age, maximum_age, active)
 SELECT s.id, 'Kids beginner trial', 'A 45-minute intro class for new students.', 5, 12, true
-FROM public.schools s JOIN auth.users u ON u.id = s.owner_user_id
+FROM public.schools s JOIN public.school_settings a ON a.school_id = s.id JOIN auth.users u ON u.id = a.owner_user_id
 WHERE lower(u.email) = 'owner@local.test'
     AND NOT EXISTS (SELECT FROM public.trial_offerings o WHERE o.school_id = s.id);
 
@@ -36,7 +41,7 @@ INSERT INTO public.trial_windows (
     school_id, trial_offering_id, day_of_week, start_minute, duration_minutes, capacity, label, active
 )
 SELECT s.id, o.id, 1, 1080, 60, 8, 'Monday 6pm', true
-FROM public.schools s JOIN auth.users u ON u.id = s.owner_user_id
+FROM public.schools s JOIN public.school_settings a ON a.school_id = s.id JOIN auth.users u ON u.id = a.owner_user_id
 CROSS JOIN LATERAL (
     SELECT id FROM public.trial_offerings WHERE school_id = s.id ORDER BY created_at, id LIMIT 1
 ) o
@@ -49,7 +54,7 @@ WITH context AS MATERIALIZED (
     SELECT s.id AS school_id, s.timezone, o.id AS offering_id, o.name AS offering_name,
         w.id AS window_id, w.capacity, w.duration_minutes, now() + interval '168 hours' AS start_at,
         gen_random_uuid() AS booking_id
-    FROM public.schools s JOIN auth.users u ON u.id = s.owner_user_id
+    FROM public.schools s JOIN public.school_settings a ON a.school_id = s.id JOIN auth.users u ON u.id = a.owner_user_id
     CROSS JOIN LATERAL (
         SELECT * FROM public.trial_offerings WHERE school_id = s.id ORDER BY created_at, id LIMIT 1
     ) o
@@ -96,7 +101,7 @@ FROM context c JOIN occurrence occ USING (school_id) CROSS JOIN participant p;
 -- A separate, unbooked lead for the dashboard. Preserve edits on subsequent runs.
 WITH context AS MATERIALIZED (
     SELECT s.id AS school_id, o.id AS offering_id
-    FROM public.schools s JOIN auth.users u ON u.id = s.owner_user_id
+    FROM public.schools s JOIN public.school_settings a ON a.school_id = s.id JOIN auth.users u ON u.id = a.owner_user_id
     CROSS JOIN LATERAL (
         SELECT id FROM public.trial_offerings WHERE school_id = s.id ORDER BY created_at, id LIMIT 1
     ) o

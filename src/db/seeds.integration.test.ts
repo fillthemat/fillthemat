@@ -20,6 +20,7 @@ it("seeds the current public schema and preserves settings on reruns", async () 
         source
           .replaceAll('"public"', `"${schema}"`)
           .replaceAll("public.", `${schema}.`)
+          .replaceAll("ON SCHEMA public ", `ON SCHEMA ${schema} `)
           .replaceAll(
             "CREATE SCHEMA IF NOT EXISTS public;",
             `CREATE SCHEMA IF NOT EXISTS ${schema};`,
@@ -34,21 +35,23 @@ it("seeds the current public schema and preserves settings on reruns", async () 
       const seed = fixtureSql(readFileSync("supabase/seeds/10-app.sql", "utf8"));
       await tx.unsafe(fixtureSql(readFileSync("supabase/seeds/00-auth.sql", "utf8")));
       await tx.unsafe(seed);
-      const [settings] = await tx.unsafe(`select * from ${schema}.school_settings`);
-      expect(settings).toMatchObject({
+      const [profile] = await tx.unsafe(`select * from ${schema}.school_profiles`);
+      expect(profile).toMatchObject({
         name: "Demo Dojo",
         city: "Brooklyn",
-        notification_email: email,
       });
+      const [settings] = await tx.unsafe(`select * from ${schema}.school_settings`);
+      expect(settings?.notification_email).toBe(email);
       await tx.unsafe(
-        `update ${schema}.school_settings set name = 'Edited name', city = 'Edited city'`,
+        `update ${schema}.school_profiles set name = 'Edited name', city = 'Edited city'`,
       );
       await tx.unsafe(seed);
-      const [edited] = await tx.unsafe(`select name, city from ${schema}.school_settings`);
+      const [edited] = await tx.unsafe(`select name, city from ${schema}.school_profiles`);
       expect(edited).toEqual({ name: "Edited name", city: "Edited city" });
       for (const table of [
         "schools",
         "school_settings",
+        "school_profiles",
         "trial_offerings",
         "trial_windows",
         "bookings",

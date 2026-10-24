@@ -26,7 +26,7 @@ FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 ALTER TABLE public.trial_occurrences ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.trial_occurrences FROM PUBLIC, anon, authenticated;
 
-GRANT SELECT ON TABLE public.trial_occurrences to authenticated;
+GRANT SELECT ON TABLE public.trial_occurrences TO anon, authenticated;
 
 CREATE POLICY trial_occurrences_select_own_school
 on public.trial_occurrences
@@ -34,8 +34,30 @@ FOR SELECT
 TO authenticated
 USING (
     school_id = (
-        SELECT s.id
-        FROM public.schools s
+        SELECT s.school_id
+        FROM public.school_settings s
         WHERE s.owner_user_id = auth.uid()
     )
+);
+
+-- Only application triggers can write counters. Excluding temp namespaces
+-- prevents a caller from fabricating trigger depth with their own temp table.
+GRANT UPDATE (capacity, booked_count) ON public.trial_occurrences TO authenticated;
+CREATE POLICY trial_occurrences_owner_trigger_update ON public.trial_occurrences
+FOR UPDATE TO authenticated
+USING (pg_catalog.pg_trigger_depth() > 0 AND pg_catalog.pg_my_temp_schema() = 0 AND school_id = (
+    SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())
+))
+WITH CHECK (pg_catalog.pg_trigger_depth() > 0 AND pg_catalog.pg_my_temp_schema() = 0 AND school_id = (
+    SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())
+));
+
+CREATE POLICY trial_occurrences_public_read ON public.trial_occurrences
+FOR SELECT TO anon, authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.schools s
+        WHERE s.id = school_id AND s.approved_at IS NOT NULL AND s.published_at IS NOT NULL
+    )
+    AND EXISTS (SELECT 1 FROM public.trial_windows w WHERE w.id = trial_window_id AND w.active)
 );

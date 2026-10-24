@@ -52,11 +52,11 @@ describe("dashboard actions", () => {
       const update = query({ error: null });
       mocks.from.mockReturnValue(update);
       await expect(markPreviewedAction()).rejects.toThrow("redirect:/s/demo?preview=1");
-      expect(mocks.from).toHaveBeenCalledWith("schools");
+      expect(mocks.from).toHaveBeenCalledWith("school_settings");
       expect(update.update).toHaveBeenCalledWith({
         previewed_at: previewed_at ?? expect.any(String),
       });
-      expect(update.eq).toHaveBeenCalledWith("id", school.id);
+      expect(update.eq).toHaveBeenCalledWith("school_id", school.id);
     },
   );
 

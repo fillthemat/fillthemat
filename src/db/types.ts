@@ -711,17 +711,15 @@ export type Database = {
           },
         ];
       };
-      school_settings: {
+      school_profiles: {
         Row: {
           access_notes: string | null;
           address: string | null;
-          agent_instructions: string | null;
           city: string | null;
           country: string;
           created_at: string;
           logo_url: string | null;
           name: string;
-          notification_email: string;
           parking_notes: string | null;
           phone: string | null;
           pricing: string | null;
@@ -736,13 +734,11 @@ export type Database = {
         Insert: {
           access_notes?: string | null;
           address?: string | null;
-          agent_instructions?: string | null;
           city?: string | null;
           country?: string;
           created_at?: string;
           logo_url?: string | null;
           name?: string;
-          notification_email?: string;
           parking_notes?: string | null;
           phone?: string | null;
           pricing?: string | null;
@@ -756,13 +752,11 @@ export type Database = {
         Update: {
           access_notes?: string | null;
           address?: string | null;
-          agent_instructions?: string | null;
           city?: string | null;
           country?: string;
           created_at?: string;
           logo_url?: string | null;
           name?: string;
-          notification_email?: string;
           parking_notes?: string | null;
           phone?: string | null;
           pricing?: string | null;
@@ -774,6 +768,58 @@ export type Database = {
           welcome_message?: string | null;
         };
         Relationships: [
+          {
+            foreignKeyName: "school_profiles_school_id_fkey";
+            columns: ["school_id"];
+            isOneToOne: true;
+            referencedRelation: "schools";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      school_settings: {
+        Row: {
+          agent_instructions: string | null;
+          created_at: string;
+          notification_email: string;
+          owner_user_id: string;
+          previewed_at: string | null;
+          school_id: string;
+          updated_at: string;
+          whatsapp_phone_number_id: string | null;
+          whatsapp_waba_id: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          agent_instructions?: string | null;
+          created_at?: string;
+          notification_email?: string;
+          owner_user_id: string;
+          previewed_at?: string | null;
+          school_id: string;
+          updated_at?: string;
+          whatsapp_phone_number_id?: string | null;
+          whatsapp_waba_id?: string | null;
+        };
+        Update: {
+          agent_instructions?: string | null;
+          created_at?: string;
+          notification_email?: string;
+          owner_user_id?: string;
+          previewed_at?: string | null;
+          school_id?: string;
+          updated_at?: string;
+          whatsapp_phone_number_id?: string | null;
+          whatsapp_waba_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "school_settings_owner_user_id_fkey";
+            columns: ["owner_user_id"];
+            isOneToOne: true;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "school_settings_school_id_fkey";
             columns: ["school_id"];
@@ -788,51 +834,31 @@ export type Database = {
           approved_at: string | null;
           created_at: string;
           id: string;
-          owner_user_id: string;
-          previewed_at: string | null;
           published_at: string | null;
           slug: string;
           timezone: string;
           updated_at: string;
-          whatsapp_phone_number_id: string | null;
-          whatsapp_waba_id: string | null;
         };
         ComputedFields: never;
         Insert: {
           approved_at?: string | null;
           created_at?: string;
           id?: string;
-          owner_user_id: string;
-          previewed_at?: string | null;
           published_at?: string | null;
           slug: string;
           timezone: string;
           updated_at?: string;
-          whatsapp_phone_number_id?: string | null;
-          whatsapp_waba_id?: string | null;
         };
         Update: {
           approved_at?: string | null;
           created_at?: string;
           id?: string;
-          owner_user_id?: string;
-          previewed_at?: string | null;
           published_at?: string | null;
           slug?: string;
           timezone?: string;
           updated_at?: string;
-          whatsapp_phone_number_id?: string | null;
-          whatsapp_waba_id?: string | null;
         };
-        Relationships: [
-          {
-            foreignKeyName: "schools_owner_user_id_users_id_fk";
-            columns: ["owner_user_id"];
-            isOneToOne: true;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: [];
       };
       trial_occurrences: {
         Row: {
@@ -1282,7 +1308,6 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      can_read_school_catalog: { Args: { p_school_id: string }; Returns: boolean };
       cancel_dashboard_booking: { Args: { p_booking_id: string }; Returns: string };
       create_settings_faq: {
         Args: { p_answer: string; p_question: string; p_school_id: string };
@@ -1303,29 +1328,6 @@ export type Database = {
         };
       };
       delete_settings_window: { Args: { p_window_id: string }; Returns: string };
-      get_landing_school: {
-        Args: { p_preview?: boolean; p_slug: string };
-        Returns: {
-          access_notes: string;
-          address: string;
-          approved_at: string;
-          city: string;
-          country: string;
-          id: string;
-          logo_url: string;
-          name: string;
-          parking_notes: string;
-          phone: string;
-          pricing: string;
-          primary_color: string;
-          published_at: string;
-          slug: string;
-          timezone: string;
-          trial_guidance: string;
-          website: string;
-          welcome_message: string;
-        }[];
-      };
       get_overview_metrics: {
         Args: { p_now?: string; p_school_id: string };
         Returns: {
@@ -1360,6 +1362,10 @@ export type Database = {
       update_booking_attendance: {
         Args: { p_booking_id: string; p_status: string };
         Returns: boolean;
+      };
+      update_school_agent: {
+        Args: { p_agent_instructions: string; p_school_id: string; p_welcome_message: string };
+        Returns: undefined;
       };
       update_school_profile: {
         Args: { p_profile: Json; p_school_id: string; p_slug: string; p_timezone: string };

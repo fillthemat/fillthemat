@@ -6,7 +6,8 @@ import { getCurrentUser, requireUser, type VerifiedUser } from "@/lib/auth/curre
 import { createClient } from "@/lib/supabase/server";
 
 export type CurrentSchool = Tables<"schools"> &
-  Omit<Tables<"school_settings">, "school_id" | "created_at" | "updated_at">;
+  Omit<Tables<"school_settings">, "school_id" | "created_at" | "updated_at"> &
+  Omit<Tables<"school_profiles">, "school_id" | "created_at" | "updated_at">;
 
 export const getCurrentSchool = cache(async (): Promise<CurrentSchool | null> => {
   const user = await getCurrentUser();
@@ -14,15 +15,16 @@ export const getCurrentSchool = cache(async (): Promise<CurrentSchool | null> =>
 
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("schools")
-    .select("*, school_settings(*)")
+    .from("school_settings")
+    .select("*, schools!inner(*, school_profiles(*))")
     .eq("owner_user_id", user.id)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  if (!data.school_settings) throw new Error("School settings are missing");
-  const { school_settings, ...school } = data;
-  return { ...school_settings, ...school };
+  const { schools, ...settings } = data;
+  const { school_profiles, ...school } = schools;
+  if (!school_profiles) throw new Error("School profile is missing");
+  return { ...school_profiles, ...settings, ...school };
 });
 
 export async function requireSchool(): Promise<{

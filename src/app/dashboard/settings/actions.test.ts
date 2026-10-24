@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     eq,
     update,
     from: vi.fn(() => ({ update })),
+    rpc: vi.fn(),
     requireSchool: vi.fn(),
     revalidatePath: vi.fn(),
     unstable_rethrow: vi.fn(),
@@ -19,20 +20,23 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/auth/current-school", () => ({ requireSchool: mocks.requireSchool }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from: mocks.from }) }));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({ from: mocks.from, rpc: mocks.rpc }),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ unstable_rethrow: mocks.unstable_rethrow }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.single.mockResolvedValue({ error: null });
+  mocks.rpc.mockResolvedValue({ error: null });
   mocks.requireSchool.mockResolvedValue({ school: { id: "school-id", slug: "demo" } });
 });
 
 describe("school settings actions", () => {
   it("parses raw strings on the server, scopes the update, and returns normalized values", async () => {
     const result = await updatePricingAction({ pricing: "  Free trial  ", logoUrl: "ignored" });
-    expect(mocks.from).toHaveBeenCalledWith("school_settings");
+    expect(mocks.from).toHaveBeenCalledWith("school_profiles");
     expect(mocks.update).toHaveBeenCalledWith({
       pricing: "Free trial",
       updated_at: expect.any(String),
@@ -52,11 +56,12 @@ describe("school settings actions", () => {
 
   it("keeps the agent field mapping and success copy", async () => {
     const result = await updateAgentAction({ welcomeMessage: "  Hello  ", agentInstructions: " " });
-    expect(mocks.update).toHaveBeenCalledWith({
-      welcome_message: "Hello",
-      agent_instructions: null,
-      updated_at: expect.any(String),
+    expect(mocks.rpc).toHaveBeenCalledWith("update_school_agent", {
+      p_school_id: "school-id",
+      p_welcome_message: "Hello",
+      p_agent_instructions: "",
     });
+    expect(mocks.update).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       message: "Agent settings saved and live on your page.",
       values: { welcomeMessage: "Hello", agentInstructions: "" },

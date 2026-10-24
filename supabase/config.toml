@@ -50,8 +50,7 @@ max_client_conn = 100
 [db.migrations]
 # If disabled, migrations will be skipped during a db push or reset.
 enabled = true
-# pg-delta discovers every per-table file in schemas/ and resolves dependencies;
-# do not set legacy schema_paths. Numeric prefixes also support sequential replay.
+# pg-delta discovers the complete declarative tree configured below.
 
 [db.seed]
 # If enabled, seeds the database after migrations during a db reset.
@@ -417,3 +416,4 @@ stack = true
 [experimental.pgdelta]
 enabled = true
 declarative_schema_path = "./schemas"
+# One recursive root: table/policy files above, grouped routines in ./schemas/functions/.

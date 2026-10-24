@@ -28,13 +28,13 @@ FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 ALTER TABLE public.trial_offerings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.trial_offerings FROM PUBLIC, anon, authenticated;
 
-GRANT SELECT ON TABLE public.trial_offerings to authenticated;
+GRANT SELECT ON TABLE public.trial_offerings TO anon, authenticated;
 GRANT INSERT, UPDATE ON TABLE public.trial_offerings TO authenticated;
 
 CREATE POLICY trial_offerings_owner_write ON public.trial_offerings
 FOR ALL TO authenticated
-USING (school_id = (SELECT id FROM public.schools WHERE owner_user_id = (SELECT auth.uid())))
-WITH CHECK (school_id = (SELECT id FROM public.schools WHERE owner_user_id = (SELECT auth.uid())));
+USING (school_id = (SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())))
+WITH CHECK (school_id = (SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())));
 
 CREATE POLICY trial_offerings_select_own_school
 on public.trial_offerings
@@ -42,8 +42,15 @@ FOR SELECT
 TO authenticated
 USING (
     school_id = (
-        SELECT s.id
-        FROM public.schools s
+        SELECT s.school_id
+        FROM public.school_settings s
         WHERE s.owner_user_id = auth.uid()
     )
 );
+
+CREATE POLICY trial_offerings_public_read ON public.trial_offerings
+FOR SELECT TO anon, authenticated
+USING (active AND EXISTS (
+    SELECT 1 FROM public.schools s
+    WHERE s.id = school_id AND s.approved_at IS NOT NULL AND s.published_at IS NOT NULL
+));

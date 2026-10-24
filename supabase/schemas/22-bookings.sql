@@ -56,8 +56,22 @@ FOR SELECT
 TO authenticated
 USING (
     school_id = (
-        SELECT s.id
-        FROM public.schools s
+        SELECT s.school_id
+        FROM public.school_settings s
         WHERE s.owner_user_id = auth.uid()
     )
 );
+
+GRANT UPDATE (status) ON public.bookings TO authenticated;
+CREATE POLICY bookings_update_own_school ON public.bookings
+FOR UPDATE TO authenticated
+USING (school_id = (SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())))
+WITH CHECK (school_id = (SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid())));
+
+CREATE TRIGGER bookings_owner_transition
+BEFORE UPDATE OF status ON public.bookings
+FOR EACH ROW EXECUTE FUNCTION public.validate_owner_booking_transition();
+
+CREATE TRIGGER bookings_owner_side_effects
+AFTER UPDATE OF status ON public.bookings
+FOR EACH ROW EXECUTE FUNCTION public.record_owner_booking_transition();

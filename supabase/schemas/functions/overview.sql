@@ -75,7 +75,7 @@ AS $$
         )
     FROM public.schools s
     WHERE s.id = p_school_id
-      AND s.owner_user_id = (SELECT auth.uid());
+      AND s.id = (SELECT school_id FROM public.school_settings WHERE owner_user_id = (SELECT auth.uid()));
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_overview_metrics(uuid, timestamptz)
