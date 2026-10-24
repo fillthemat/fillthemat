@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import { z } from "zod";
-import { MAX_USER_MESSAGE_CHARS } from "@/lib/security/limits";
+import { MAX_USER_MESSAGE_CHARS } from "@/lib/security/request-limits";
 import { textFromMessage } from "./messages";
 import { CHAT_ERRORS } from "./protocol";
 

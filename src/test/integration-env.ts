@@ -42,10 +42,12 @@ export async function whileSavingMessages(
     conversationId,
     role,
     statement,
+    schema = "app",
   }: {
     conversationId: string;
     role: "user" | "assistant";
     statement: string;
+    schema?: "app" | "public";
   },
   work: () => Promise<void>,
 ) {
@@ -54,12 +56,12 @@ export async function whileSavingMessages(
     `create function public.${name}() returns trigger language plpgsql as $$ begin ${statement}; return new; end $$`,
   );
   await sql.unsafe(
-    `create trigger ${name} before insert on app.messages for each row when (new.conversation_id = '${conversationId}' and new.role = '${role}') execute function public.${name}()`,
+    `create trigger ${name} before insert on ${schema}.messages for each row when (new.conversation_id = '${conversationId}' and new.role = '${role}') execute function public.${name}()`,
   );
   try {
     await work();
   } finally {
-    await sql.unsafe(`drop trigger ${name} on app.messages`);
+    await sql.unsafe(`drop trigger ${name} on ${schema}.messages`);
     await sql.unsafe(`drop function public.${name}()`);
   }
 }

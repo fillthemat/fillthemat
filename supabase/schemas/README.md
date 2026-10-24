@@ -40,6 +40,20 @@ The privileged platform booking/delivery workflows retain their existing databas
 boundary. Owner booking triggers apply to the authenticated Data API role, so
 platform workflows do not enqueue the same side effects twice.
 
+Web chat uses a server-only Supabase secret client (no browser cookies or session
+storage). Anonymous visitors call `/api/chat`, not database write endpoints. The
+application checks public/preview school access before using the secret client;
+conversation lookups also require the school and hashed resume token. Messages
+are saved only by server-controlled user acceptance and assistant completion.
+The secret bypasses RLS: do not use it for public catalog or dashboard queries.
+
+`functions/conversations.sql` contains service-role-only invoker RPCs for atomic
+conversation resolution, message append/deadline extension and message-limit
+termination. Browser roles cannot call them. Resolution serializes token identity
+across ended and active conversations; saved messages carry a generation fence so
+an abandoned worker cannot save into a successor's turn. Generation claim/release
+are conditional table updates, scoped to both school and conversation.
+
 ## Changes
 
 1. Edit the table files and/or grouped functions.

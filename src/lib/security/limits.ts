@@ -4,10 +4,13 @@ import { bookings, emailDeliveries, messages, whatsappDeliveries } from "@/db/sc
 
 export const MAX_BOOKINGS_PER_EMAIL_PER_DAY = 6;
 export const MAX_OUTBOUND_RECIPIENTS_PER_DAY = 12;
-export const MAX_CHAT_MESSAGES_PER_CONVERSATION = 30;
-export const MAX_USER_MESSAGE_CHARS = 2000;
-export const MAX_REQUEST_BYTES = 32_768;
-export const MAX_AGENT_STEPS = 8;
+export {
+  MAX_CHAT_MESSAGES_PER_CONVERSATION,
+  MAX_USER_MESSAGE_CHARS,
+  MAX_REQUEST_BYTES,
+  MAX_AGENT_STEPS,
+  requestBodyTooLarge,
+} from "./request-limits";
 
 // WhatsApp abuse controls (Phase 5). These mirror the email patterns above but
 // key on the Meta-verified `wa_id` and are intentionally DISTINCT budgets from
@@ -102,10 +105,4 @@ export async function whatsappOutboundQuotaExceeded(
       ),
     );
   return (row?.count ?? 0) >= MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY;
-}
-
-export function requestBodyTooLarge(contentLength: string | null): boolean {
-  if (!contentLength) return false;
-  const size = Number(contentLength);
-  return Number.isFinite(size) && size > MAX_REQUEST_BYTES;
 }

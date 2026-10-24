@@ -18,6 +18,8 @@ CREATE TABLE public.conversations (
 );
 
 CREATE UNIQUE INDEX conversations_resume_token_hash ON public.conversations USING btree (resume_token_hash) WHERE ended_at IS NULL;
+-- Ownership checks include ended conversations: tokens never transfer schools.
+CREATE INDEX conversations_resume_token_history ON public.conversations (resume_token_hash, school_id);
 CREATE UNIQUE INDEX conversations_school_wa_id_hash ON public.conversations USING btree (school_id, wa_id_hash) WHERE wa_id_hash IS NOT NULL AND ended_at IS NULL;
 
 CREATE TRIGGER conversations_set_updated_at

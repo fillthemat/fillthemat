@@ -1308,6 +1308,20 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      append_web_message: {
+        Args: {
+          p_completion: Database["public"]["Enums"]["message_completion"];
+          p_conversation_id: string;
+          p_generation: string;
+          p_id: string;
+          p_message_id: string;
+          p_now: string;
+          p_parts: Json;
+          p_role: string;
+          p_school_id: string;
+        };
+        Returns: string;
+      };
       cancel_dashboard_booking: { Args: { p_booking_id: string }; Returns: string };
       create_settings_faq: {
         Args: { p_answer: string; p_question: string; p_school_id: string };
@@ -1328,6 +1342,15 @@ export type Database = {
         };
       };
       delete_settings_window: { Args: { p_window_id: string }; Returns: string };
+      end_web_conversation_at_limit: {
+        Args: {
+          p_conversation_id: string;
+          p_generation: string;
+          p_now: string;
+          p_school_id: string;
+        };
+        Returns: boolean;
+      };
       get_overview_metrics: {
         Args: { p_now?: string; p_school_id: string };
         Returns: {
@@ -1358,6 +1381,29 @@ export type Database = {
           start_minute: number;
           trial_offering_id: string;
         }[];
+      };
+      resolve_web_conversation: {
+        Args: { p_now: string; p_school_id: string; p_token_hash: string };
+        Returns: {
+          contact_id: string | null;
+          created_at: string;
+          end_reason: Database["public"]["Enums"]["conversation_end_reason"] | null;
+          ended_at: string | null;
+          expires_at: string;
+          generating_at: string | null;
+          id: string;
+          landing_session_id: string | null;
+          resume_token_hash: string;
+          school_id: string;
+          updated_at: string;
+          wa_id_hash: string | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "conversations";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
       };
       update_booking_attendance: {
         Args: { p_booking_id: string; p_status: string };

@@ -1,6 +1,6 @@
 import { CHAT_ERRORS, type ChatError } from "@/lib/chat/protocol";
 import { chatRequestSchema, chatTranscriptRequestSchema } from "@/lib/chat/requests";
-import { requestBodyTooLarge } from "@/lib/security/limits";
+import { requestBodyTooLarge } from "@/lib/security/request-limits";
 import { loadWebTranscript, startWebTurn, type WebTurnResult } from "@/lib/web-chat/web-chat";
 
 // Five minutes, safely below the ten-minute abandoned-generation threshold.

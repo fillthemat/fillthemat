@@ -11,6 +11,8 @@ CREATE TABLE public.messages (
     CONSTRAINT messages_conversation_message_id UNIQUE (conversation_id, message_id)
 );
 
+CREATE INDEX messages_transcript_order ON public.messages (conversation_id, created_at, id);
+
 CREATE TRIGGER messages_set_updated_at
 BEFORE UPDATE ON public.messages
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();

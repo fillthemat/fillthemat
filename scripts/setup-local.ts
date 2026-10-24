@@ -86,12 +86,15 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
     ["DB_URL", "DIRECT_URL"],
     ["API_URL", "NEXT_PUBLIC_SUPABASE_URL"],
     ["PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"],
+    ["SECRET_KEY", "SUPABASE_SECRET_KEY"],
   ] as const;
   const supabaseEnv = await getSupabaseEnv();
 
   for (const [sourceKey, targetKey] of SUPABASE_MAPPINGS) {
     const value = supabaseEnv[sourceKey];
     if (value === undefined) {
+      if (sourceKey === "SECRET_KEY")
+        throw new Error("Local Supabase did not return its server secret key");
       console.warn(`Key "${sourceKey}" not found in input, skipping`);
       continue;
     }

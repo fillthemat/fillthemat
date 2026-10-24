@@ -17,15 +17,23 @@ If something fails, run `bun run doctor` for a read-only probe of Bun, Docker, S
 
 Stop this checkout's frontend with `bun run dev:stop`.
 
+## Server database access
+
+Chat persistence uses `SUPABASE_SECRET_KEY`, a **server-only** Supabase secret
+key. `bun run setup` writes the local stack's `SECRET_KEY` to `.env.local`.
+For deployed Next.js environments, set `SUPABASE_SECRET_KEY` to that Supabase
+project's secret key (Dashboard → Settings → API Keys). Never prefix it with
+`NEXT_PUBLIC_`, log it, or commit it. It bypasses RLS; only trusted server code
+may use this client. The publishable-key client remains subject to RLS.
+Keep `DATABASE_URL` and `DIRECT_URL` while unmigrated workflows/tooling use them.
+
 ## Optional integrations
 
 All optional. The app degrades cleanly without them.
 
 | Capability | How | Without it |
 | ---------- | --- | ---------- |
-| Real email |
-
-Set `RESEND_API_KEY` (+ `RESEND_FROM=onboarding@resend.dev` for owner-only test mail) in `.env.local` | Deliveries are recorded and logged instead of sent |
+| Real email | Set `RESEND_API_KEY` (+ `RESEND_FROM=onboarding@resend.dev` for owner-only test mail) in `.env.local` | Deliveries are recorded and logged instead of sent |
 | Real assistant model | `bunx vercel env pull` (provides `VERCEL_OIDC_TOKEN`) or `AI_GATEWAY_API_KEY`, and a free-tier-allowed `BOOKING_AGENT_MODEL` | Web chat and WhatsApp run the assistant with a scripted local model: it calls the "list trial offerings" tool, then replies naming the active trial offerings. It never proposes a booking, so book with Book Trial |
 | Continue with Google | Replace the placeholders in `supabase/.env` with a real Web client (callback `http://127.0.0.1:54321/auth/v1/callback`), then re-run `bun run setup` | Email sign-in still works; Google is disabled |
 | Real WhatsApp sends | Set `WHATSAPP_SYSTEM_USER_TOKEN` (and optionally `WHATSAPP_APP_SECRET` / `WHATSAPP_VERIFY_TOKEN`) | Webhook + worker use dev-stub values; outbound send is a no-op log |
