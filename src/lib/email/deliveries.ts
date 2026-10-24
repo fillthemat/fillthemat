@@ -5,8 +5,8 @@ import {
   type Booking,
   bookings,
   contacts,
-  type EmailDelivery,
   emailDeliveries,
+  type EmailDelivery,
   leads,
   type School,
   schools,
@@ -19,11 +19,11 @@ import {
 } from "@/lib/queue-claims";
 import { deadEventFrom, logDeadTransition } from "@/lib/retry-log";
 import {
+  emailRetryDecision as retryDecision,
   InternalFailure,
   internalFailureReasonFrom,
   MAX_EXECUTIONS,
   type RetryFailure,
-  emailRetryDecision as retryDecision,
 } from "@/lib/retry-policy";
 import { type EmailSendDependencies, emailSendDependencies } from "./dependencies";
 import { buildTrialIcs } from "./ics";

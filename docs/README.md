@@ -22,7 +22,7 @@ Short guide to what is current versus historical. Treat only the files below as 
 - `decisions/whatsapp-retry-limits-research.md` — implemented (#79, tickets #80–#89): five-execution cap,
   fresh/retry lanes, bounded in-run WhatsApp retries and failure notifications. Historical spike findings
   are labelled; current behavior is in `whatsapp-plan.md` §1.6. #78 remains a pre-pilot gate.
-- `decisions/lint-policy.md` — accepted: `@shadcn/lint` policy on the Oxlint host — six rules, `no-restyle` error + layout/TableCell contract, `page-*` tokenization; promote the warn rules to `error` when adoption settles.
+- `decisions/lint-policy.md` — accepted: `@shadcn/lint` policy on Bun's native lint host — six rules, `no-restyle` error + layout/TableCell contract, `page-*` tokenization; promote the warn rules to `error` when adoption settles.
 
 ## Archive
 

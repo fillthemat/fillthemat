@@ -3,12 +3,25 @@
   "files.associations": {
     "*.css": "tailwindcss"
   },
-  "[javascript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
-  "[javascriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
-  "[typescript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
-  "[typescriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
-  "[json]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
-  "[jsonc]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
-  "[tailwindcss]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
-  "[html]": { "editor.defaultFormatter": "oxc.oxc-vscode" }
+  "customLocalFormatters.formatters": [
+    {
+      "command": "mise exec -- bun fmt --stdin-filepath \"${file}\"",
+      "languages": [
+        "javascript",
+        "javascriptreact",
+        "typescript",
+        "typescriptreact",
+        "json",
+        "jsonc",
+        "css",
+        "tailwindcss",
+        "html"
+      ]
+    }
+  ],
+  "[javascript][javascriptreact][typescript][typescriptreact][json][jsonc][css][tailwindcss][html]": {
+    "editor.defaultFormatter": "jkillian.custom-local-formatters"
+  },
+  "js/ts.experimental.useTsgo": true,
+  "js/ts.tsdk.path": "./node_modules/typescript"
 }

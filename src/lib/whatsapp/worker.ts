@@ -6,8 +6,8 @@ import { getDb, type TransactionOptions } from "@/db";
 import {
   schools,
   type WhatsAppBookingIntent,
-  type WhatsAppJob,
   whatsappDeliveries,
+  type WhatsAppJob,
 } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
 import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";

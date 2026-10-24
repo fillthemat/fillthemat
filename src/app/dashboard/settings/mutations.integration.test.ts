@@ -15,8 +15,8 @@ import {
   insertOffering,
   MISSING_FAQ,
   MISSING_OFFERING,
-  STALE_EDIT,
   setOfferingActive,
+  STALE_EDIT,
   updateFaq,
   updateOffering,
 } from "./mutations";

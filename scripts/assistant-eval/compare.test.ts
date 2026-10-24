@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { compareRuns, type RunReport, requireCompleteBaseline } from "./compare";
+import { compareRuns, requireCompleteBaseline, type RunReport } from "./compare";
 
 const baseline: RunReport = {
   model: "same-model",
