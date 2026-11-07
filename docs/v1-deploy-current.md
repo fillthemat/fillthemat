@@ -27,18 +27,7 @@ Do **not** point production at `127.0.0.1` database URLs.
    - Publishable/anon key → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - Transaction pooler URI (port **6543**, `?pgbouncer=true` or Supavisor transaction mode) → `DATABASE_URL`
    - Direct or session-pooler URI (port **5432**) → `DIRECT_URL`
-4. Set `DIRECT_URL` in Vercel's **Production** environment. Production builds apply pending migrations automatically, never at app startup. `DIRECT_URL` and runtime `DATABASE_URL` must point to the same hosted project. Use the session pooler if the build cannot reach the direct IPv6 address.
-
-For operator recovery only, put the hosted `DIRECT_URL` in gitignored `.env.production.local`, then:
-
-```bash
-bun run db:migrate:prod
-bun run db:check:prod
-```
-
-Confirm `app.schools` exists. Revokes and `auth.users` FK are in `drizzle/0000_*.sql` and require the hosted `auth` schema (they do).
-
-The manual check accepts `DIRECT_URL` when `DATABASE_URL` is absent. If both are set, it checks `DATABASE_URL`; both must point to the same hosted project.
+4. Configure the GitHub migration workflow using the human checklist in §5 before merging to `main`. Vercel builds and app startup never apply migrations. `DIRECT_URL` is no longer a deploy credential; retain database URLs only while legacy runtime/tooling still needs them.
 
 5. Turn on Google in that project:
    - New (or additional) Google Web OAuth client **or** extra redirect URIs on the existing client.
@@ -81,7 +70,7 @@ Notes:
 
 - `CRON_SECRET` must be a long random string. Cron calls `GET /api/cron/maintenance` with `Authorization: Bearer <CRON_SECRET>`. Empty secret must never authenticate (code already rejects that).
 - `BOOKING_AGENT_MODEL` is required unless the team has paid Gateway access to `anthropic/claude-sonnet-4.6`. Locally a free-tier-allowed model was needed. Set the same model in Vercel.
-- `DIRECT_URL` is required for the Production build's migrations, not the serverless runtime. Preview does not need migration credentials; keep this credential scoped to Production.
+- Migration credentials belong in GitHub repository secrets, not Vercel. Preview must never receive production migration credentials.
 - Generate `RESEND_WEBHOOK_SECRET` from the Resend dashboard when you create the webhook, then paste it into Vercel.
 - WhatsApp env vars are **optional until WhatsApp rolls out in production**. Leave them unset: the webhook/worker use dev-stub values only when `NODE_ENV !== "production"`; production fails closed when they are missing once the feature ships. `WHATSAPP_API_VERSION` defaults to `v23.0` and `WHATSAPP_GRAPH_BASE` to `https://graph.facebook.com`; set them only to override. Meta app/use-case setup belongs to the Phase 6 human rollout, not this deploy doc.
 
@@ -122,35 +111,28 @@ First production deploy will use `vercel.ts` (`bunVersion: 1.4.x`, `framework: n
 
 `bun run vercel:ignore-build` skips docs/agent-only Preview builds against `VERCEL_GIT_PREVIOUS_SHA`; Production, missing shallow-clone history, and errors build (ignored builds still count toward Vercel's daily deployment quota).
 
-**Production build order**:
-Vercel runs `bun run build:vercel`: migration → read-only check → build, only for Production; other builds skip migration. Both `bun run db:migrate:deploy` (Vercel env, no env file) and `bun run db:migrate:prod` (manual, `.env.production.local`) use `scripts/migrate-prod.ts`; it refuses loopback targets and non-Production Vercel runs.
-Set Production `DIRECT_URL` **before merging**: a DDL-capable direct or session-pooler URI (5432), never the transaction pooler (6543), targeting the same database as `DATABASE_URL`. Both migration paths hold one session-level advisory lock, so concurrent runs serialise and pending migrations run once.
-Promoting Preview to Production or redeploying Production re-runs the build; this is harmless when no migrations are pending.
+### Production migrations (human setup before merge)
 
-**Failure and retry**:
-A migration failure stops the check and build. A check failure stops the build. The previous deployment keeps serving. Fix the connection or migration problem and retry; already-applied migrations are not reapplied. The read-only check remains a backstop for missing migrations and changed hashes. A changed hash or missing migration older than the latest applied timestamp needs manual repair, not a retry. The check reads the journal, not live columns; connections time out after 10 seconds and journal statements after 5 seconds. Migration SQL may take longer.
-Migrations give up after five seconds waiting on a live-table lock (SQLSTATE `55P03`); retry the deploy if it fails on lock timeout.
+The **Production migrations** GitHub Action runs on every push to `main`, or manually via Actions → Production migrations → Run workflow → `main`. It never runs on PRs; dispatches from other branches are skipped. It reads the exact Supabase CLI version from `package.json` (currently `3.0.0`), links the project, then runs `supabase db push --remote --yes --skip-vault`. CLI v3 requires explicit remote targeting and hosted-change consent. No seed, custom roles, Vault configuration or project config is pushed.
 
-**Backward compatibility**:
-Every migration must remain backward-compatible with the currently live code. A build that fails after migrating leaves the schema ahead of the live app. We accept this for additive changes, such as new tables or optional columns. Do not drop or rename columns, remove values, or add constraints that break live reads or writes in the same release. Roll out those changes in separate compatible steps.
+- [ ] In Supabase Dashboard, confirm the production project ref. The repo's read-only MCP currently targets `aopcockhbfvonhvxufob`; confirm this is still the intended project and matches Vercel's Supabase URL. Do not use the old personal project.
+- [ ] In GitHub Settings → Secrets and variables → Actions → Repository secrets, add `SUPABASE_PROJECT_REF` (confirmed ref), `SUPABASE_DB_PASSWORD` (that project's database password), and `SUPABASE_ACCESS_TOKEN` (a scoped personal access token limited to this production project). Follow the [token permissions guide](https://supabase.com/docs/guides/platform/personal-access-tokens) and CLI help for link/push permissions; database-password access itself is not limited by token scope.
+- [ ] Ensure GitHub Actions is enabled and any database network restrictions permit the runner's connection. Subscribe to failed workflow notifications. No GitHub environment is required.
+- [ ] Review every pending SQL migration and take an appropriate backup before the first run. After this workflow reaches `main`, inspect its first run and confirm all versions using the [read-only MCP guide](agents/supabase-mcp.md).
 
-**Operator checks and rollback**:
-`bun run db:check` uses the supplied environment and checks runtime `DATABASE_URL` first, falling back to `DIRECT_URL`. `bun run db:check:prod` loads `.env.production.local`, like the recovery command `bun run db:migrate:prod`. Prebuilt deployments and deployment rollbacks skip automatic migration and checking; an operator must run `bun run db:check:prod` before using them.
+**First run and source of truth:** [Supabase documents](https://supabase.com/docs/reference/cli/supabase-db-push) that the first push creates `supabase_migrations.schema_migrations`, executes local migrations and records each successful timestamp; later pushes skip applied versions. With production's empty Supabase history, **all files in `supabase/migrations/` are pending**, even though `drizzle.__drizzle_migrations` has rows. Do not mark these as applied without executing them. This is SQL replay, not a schema diff or reset: the migrations target `public` and do not depend on, migrate data from, drop or alter legacy `app`/`drizzle`. Those schemas remain until a separate production cutover. If `public` already contains conflicting objects from manual work, stop and reconcile with an operator rather than blindly repairing the ledger.
 
-**Safe rehearsal**:
-`bun run test:integration scripts/migrate-prod.integration.test.ts` rehearses the shared migrator in a temporary local database: pending → applied, retry no-op, SQL failure rejected. The CLI's loopback guard stays intact; no hosted data is touched.
+**Ordering decision:** GitHub migrations and Vercel's production deployment both start independently on a push to `main`; neither gates the other. Vercel's `build:vercel` only builds. The constant concurrency group serializes migration runs and never cancels a running job (GitHub may replace an older pending run; the next push still includes its migrations). It does not serialize Vercel deployments.
+
+Use **expand → migrate → activate → contract across separate releases**. Migrations must work with the currently deployed app; new code must also tolerate the pre-migration schema until the migration succeeds. Do not activate a new schema-dependent path in the same push: merge the additive migration first, confirm the Action succeeded, then ship/enable dependent code in a later release. Drops, renames and stricter constraints require a separate compatibility rollout. For the initial `public` schema rollout, keep the existing production app serving the legacy schema until the migration run is green; production app/data cutover is separate work under #241.
+
+**Failure, retry and rollback:** A failed link/push fails the Action visibly, but **does not stop Vercel**. Do not activate dependent code on a failed run. Inspect the error, fix credentials/network or add a corrective migration, then rerun the workflow on `main`. Successfully recorded migrations are skipped; never edit an applied migration or automatically repair history. A timeout/interruption requires checking history and schema before retrying. Roll back application code only to a schema-compatible deployment; schema changes are forward-only. Redeploying/promoting Vercel does not run migrations. Use the Action for recovery, not the removed Drizzle commands or laptop production pushes.
 
 ### Booking incident: 2026-10-11
 
 At 18:00:29 UTC, `POST /api/bookings` returned 500 after Siteverify passed. The booking transaction failed while inserting its email outbox rows: Postgres `42703`, `column "failure_reason" of relation "email_deliveries" does not exist`. The hosted journal ended at `0009`; the deployed code required `0010`–`0013`, including `0011_youthful_grey_gargoyle`, which adds that column. The transaction rolled back, so no booking was saved. Redacted recipient: `<REDACTED>`.
 
-Operator repair: run `bun run db:migrate:prod` with the hosted session-pooler `DIRECT_URL`, then `bun run db:check:prod`. These commands must use the same hosted project as the runtime `DATABASE_URL`. Do not bypass the outbox transaction or add a duplicate migration: the required migrations already exist. The deployment gate prevents a repeat; it cannot repair an already-serving deployment. Diagnosis made no production writes or deploys.
-
-Local regression/replay (isolated database on the running local stack, no changes to the shared application schema):
-
-```bash
-bun run test:integration src/app/api/bookings/schema.integration.test.ts
-```
+Historical repair used the now-removed Drizzle production migrator/check. That ledger is no longer authoritative for new deployments. Follow the Supabase workflow above for current releases; do not replay legacy Drizzle migrations. Diagnosis made no production writes or deploys.
 
 Preview deploy (`bun run vercel:deploy`) needs its own Supabase or you accept that preview shares production data. The plan says never share production data with preview; if you only have one hosted project, **only use `bun run vercel:deploy:prod`** until a second Supabase exists.
 
