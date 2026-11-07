@@ -38,7 +38,7 @@
     "vercel:env:pull": "bunx vercel env pull",
     "vercel:ignore-build": "bun --no-env-file scripts/ignore-build.ts",
     "verify": "bun run verify:checks && bun run test",
-    "verify:checks": "bun run db:check:migrations && bun lint && bun fmt --check && bun typecheck",
+    "verify:checks": "bun run db:check:migrations && bun typecheck && bun lint && bun fmt --check",
     "whatsapp:worker": "bun scripts/whatsapp-worker.ts --once",
     "wt": "bun scripts/worktree.ts"
   },
