@@ -3,12 +3,7 @@ import { addHours } from "date-fns";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { getDb, type TransactionOptions } from "@/db";
-import {
-  schools,
-  type WhatsAppBookingIntent,
-  whatsappDeliveries,
-  type WhatsAppJob,
-} from "@/db/schema";
+import { schools, whatsappDeliveries } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
 import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
 import {
@@ -47,6 +42,7 @@ import {
   getPendingBookingIntent,
   getPendingBookingIntentById,
   upsertPendingBookingIntent,
+  type WhatsAppBookingIntent,
 } from "./intents";
 import {
   claimDueWhatsAppJobs,
@@ -57,6 +53,7 @@ import {
   releaseWhatsAppJobClaim,
   rescheduleJob,
   startJobExecution,
+  type WhatsAppJob,
 } from "./jobs";
 import { splitWhatsAppText } from "./text";
 

@@ -1,4 +1,5 @@
 import "server-only";
+import type { SchoolCatalog } from "@/lib/ai/context";
 import { createClient } from "@/lib/supabase/server";
 
 // Public domain shape for booking/chat callers; database queries remain typed
@@ -82,7 +83,10 @@ async function readAll<Row>(query: {
   }
 }
 
-export async function loadSchoolCatalog(schoolId: string, options?: { anonymous?: boolean }) {
+export async function loadSchoolCatalog(
+  schoolId: string,
+  options?: { anonymous?: boolean },
+): Promise<SchoolCatalog> {
   const supabase = await createClient(options);
   const [offerings, windows, occurrences, faqs] = await Promise.all([
     readAll(supabase.from("trial_offerings").select("*").eq("school_id", schoolId).order("id")),
@@ -96,21 +100,16 @@ export async function loadSchoolCatalog(schoolId: string, options?: { anonymous?
   return {
     offerings: offerings.map((row) => ({
       id: row.id,
-      schoolId: row.school_id,
       name: row.name,
       description: row.description,
       minimumAge: row.minimum_age,
       maximumAge: row.maximum_age,
       expectations: row.expectations,
       attire: row.attire,
-      waiverNotes: row.waiver_notes,
       active: row.active,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
     })),
     windows: windows.map((row) => ({
       id: row.id,
-      schoolId: row.school_id,
       trialOfferingId: row.trial_offering_id,
       dayOfWeek: row.day_of_week,
       startMinute: row.start_minute,
@@ -118,29 +117,16 @@ export async function loadSchoolCatalog(schoolId: string, options?: { anonymous?
       capacity: row.capacity,
       label: row.label,
       active: row.active,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
     })),
     occurrences: occurrences.map((row) => ({
-      id: row.id,
-      schoolId: row.school_id,
       trialWindowId: row.trial_window_id,
-      trialOfferingId: row.trial_offering_id,
       startAt: new Date(row.start_at),
-      endAt: new Date(row.end_at),
       capacity: row.capacity,
       bookedCount: row.booked_count,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
     })),
     faqs: faqs.map((row) => ({
-      id: row.id,
-      schoolId: row.school_id,
       question: row.question,
       answer: row.answer,
-      sortOrder: row.sort_order,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
     })),
   };
 }

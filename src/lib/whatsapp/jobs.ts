@@ -1,6 +1,7 @@
 import { and, asc, eq, gt, inArray, lt, lte, notInArray, sql } from "drizzle-orm";
+import type { Enums } from "@/db/types";
 import { getDb } from "@/db";
-import { type WhatsAppJob, whatsappJobs } from "@/db/schema";
+import { whatsappJobs } from "@/db/schema";
 import {
   orderClaimedRows,
   ownedQueueClaim,
@@ -12,10 +13,27 @@ import {
   internalFailureReasonFrom,
   MAX_EXECUTIONS,
   type RetryFailure,
+  type TerminalCause,
   whatsappRetryDecision as retryDecision,
 } from "@/lib/retry-policy";
 import type { InboundWhatsAppMessage } from "./parse";
 import { enqueueJobFallback } from "./job-fallback";
+
+/** Work and fencing facts needed to execute a claimed inbound job. */
+export type WhatsAppJob = {
+  id: string;
+  schoolId: string | null;
+  phoneNumberId: string;
+  kind: string;
+  payload: unknown;
+  state: Enums<"whatsapp_job_state">;
+  attempts: number;
+  claimedAt: Date | null;
+  claimedBy: string | null;
+  lastError: string | null;
+  failureReason: string | null;
+  terminalCause: TerminalCause | null;
+};
 
 /** A claim is fenced by owner, timestamp and execution count, not just row ID. */
 function ownedClaim(job: WhatsAppJob) {
@@ -56,7 +74,7 @@ export async function claimDueWhatsAppJobs(
     retryOnly?: boolean;
     phoneNumberIds?: string[];
   },
-) {
+): Promise<WhatsAppJob[]> {
   const db = getDb();
   const now = opts?.now ?? new Date();
   const limit = opts?.limit ?? 10;

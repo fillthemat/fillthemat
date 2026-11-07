@@ -14,9 +14,9 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { TerminalCause } from "@/lib/retry-policy";
 
 export const appSchema = pgSchema("app");
-export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 
 export const bookingStatusEnum = appSchema.enum("booking_status", [
   "booked",
@@ -754,8 +754,5 @@ export type Message = typeof messages.$inferSelect;
 export type Lead = typeof leads.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
 export type EmailDelivery = typeof emailDeliveries.$inferSelect;
-export type WhatsAppDelivery = typeof whatsappDeliveries.$inferSelect;
-export type WhatsAppJob = typeof whatsappJobs.$inferSelect;
-export type WhatsAppBookingIntent = typeof whatsappBookingIntents.$inferSelect;
 export type FunnelEvent = typeof funnelEvents.$inferSelect;
 export type CronRun = typeof cronRuns.$inferSelect;

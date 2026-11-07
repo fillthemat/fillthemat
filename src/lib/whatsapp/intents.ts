@@ -1,6 +1,20 @@
 import { and, eq } from "drizzle-orm";
+import type { Enums } from "@/db/types";
 import { getDb, type Transaction, type TransactionOptions, withTransaction } from "@/db";
-import { type WhatsAppBookingIntent, whatsappBookingIntents } from "@/db/schema";
+import { whatsappBookingIntents } from "@/db/schema";
+
+/** A prepared choice that the platform can confirm, not a database row. */
+export type WhatsAppBookingIntent = {
+  id: string;
+  schoolId: string;
+  conversationId: string;
+  offeringId: string;
+  slotId: string;
+  participantName: string | null;
+  participantAge: number | null;
+  state: Enums<"whatsapp_booking_intent_state">;
+  expiresAt: Date;
+};
 
 /** How long a prepared booking stays confirmable before it needs re-picking. */
 export const WHATSAPP_BOOKING_INTENT_TTL_MS = 30 * 60 * 1000;

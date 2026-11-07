@@ -1,0 +1,213 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`booking email templates > omits a missing contact email from WhatsApp failure notifications 1`] = `
+{
+  "subject": "Please contact Alex about their trial booking",
+  "text": "We couldn't confirm this booking with Alex on WhatsApp. Please contact them to let them know they're booked at River Dojo.
+
+Contact: Sam +1 555 987 6543
+Offering: Kids karate
+Participant: Alex
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > omits optional details 1`] = `
+{
+  "subject": "Trial class confirmed at River Dojo",
+  "text": "You're booked for a trial class at River Dojo.
+
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+
+To cancel or reschedule, contact the school directly using the phone or email above. Do not reply to this message if it is unattended.
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > ownerBookingEmail preserves the complete subject and body 1`] = `
+{
+  "subject": "New trial booking: Alex",
+  "text": "A trial class was booked at River Dojo.
+
+Contact: Sam <sam@example.com> +1 555 987 6543
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > ownerBookingEmail preserves the current missing contact email output 1`] = `
+{
+  "subject": "New trial booking: Alex",
+  "text": "A trial class was booked at River Dojo.
+
+Contact: Sam <null> +1 555 987 6543
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > ownerCancellationEmail preserves the complete subject and body 1`] = `
+{
+  "subject": "Trial cancelled: Alex",
+  "text": "A trial class was cancelled at River Dojo.
+
+Contact: Sam <sam@example.com>
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > ownerCancellationEmail preserves the current missing contact email output 1`] = `
+{
+  "subject": "Trial cancelled: Alex",
+  "text": "A trial class was cancelled at River Dojo.
+
+Contact: Sam <null>
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > ownerWhatsAppConfirmationFailedEmail preserves the complete subject and body 1`] = `
+{
+  "subject": "Please contact Alex about their trial booking",
+  "text": "We couldn't confirm this booking with Alex on WhatsApp. Please contact them to let them know they're booked at River Dojo.
+
+Contact: Sam +1 555 987 6543 <sam@example.com>
+Offering: Kids karate
+Participant: Alex
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > prospectCancellationEmail preserves the complete subject and body 1`] = `
+{
+  "subject": "Trial class cancelled at River Dojo",
+  "text": "Your trial class at River Dojo has been cancelled.
+
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+If this is a surprise, contact the school.
+School phone: +1 555 123 4567
+School email: owner@example.com
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > prospectConfirmationEmail preserves the complete subject and body 1`] = `
+{
+  "subject": "Trial class confirmed at River Dojo",
+  "text": "You're booked for a trial class at River Dojo.
+
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+School phone: +1 555 123 4567
+School email: owner@example.com
+
+To cancel or reschedule, contact the school directly using the phone or email above. Do not reply to this message if it is unattended.
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > prospectReminderEmail preserves the complete subject and body 1`] = `
+{
+  "subject": "Trial class reminder for Monday, November 9",
+  "text": "Reminder: Alex's trial class at River Dojo is on Monday, November 9.
+
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+School phone: +1 555 123 4567
+School email: owner@example.com
+
+Fillthemat",
+}
+`;
+
+exports[`lead email template > renders participant and requested help 1`] = `
+{
+  "subject": "New trial lead at River Dojo",
+  "text": "A prospect asked to be contacted because they could not book a trial at River Dojo.
+
+Contact: Sam <sam@example.com> +1 555 987 6543
+Participant: Alex (age 8)
+Need: A weekend class
+
+Fillthemat",
+}
+`;
+
+exports[`lead email template > retains missing-detail fallbacks and includes age zero 1`] = `
+{
+  "subject": "New trial lead at River Dojo",
+  "text": "A prospect asked to be contacted because they could not book a trial at River Dojo.
+
+Contact: Sam <sam@example.com> +1 555 987 6543
+Participant: n/a
+Need: n/a
+
+Fillthemat",
+}
+`;

@@ -1,4 +1,4 @@
-import type { TerminalCause } from "@/db/schema";
+import type { TerminalCause } from "./retry-policy";
 
 export function deadEventFrom(
   row: {
