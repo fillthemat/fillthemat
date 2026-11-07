@@ -203,3 +203,22 @@ it("counts queued owner emails against the unchanged 12-per-day recipient limit"
   for (let count = row!.count; count < 12; count++) await createLead(input);
   expect(await ownerLeadQuotaExceeded(schoolId)).toBe(true);
 });
+
+it.each(["", "   "])(
+  "keeps the lead and funnel event but skips owner email for a blank address (%j)",
+  async (email) => {
+    await sql`UPDATE public.school_settings SET notification_email = ${email} WHERE school_id = ${schoolId}`;
+    try {
+      const lead = await createLead(input);
+      expect(await sql`SELECT id FROM public.leads WHERE id = ${lead.id}`).toHaveLength(1);
+      expect(
+        await sql`SELECT id FROM public.funnel_events WHERE lead_id = ${lead.id}`,
+      ).toHaveLength(1);
+      expect(
+        await sql`SELECT id FROM public.email_deliveries WHERE lead_id = ${lead.id}`,
+      ).toHaveLength(0);
+    } finally {
+      await sql`UPDATE public.school_settings SET notification_email = ${`lead-${ownerId}@local.test`} WHERE school_id = ${schoolId}`;
+    }
+  },
+);

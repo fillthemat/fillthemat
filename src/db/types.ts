@@ -1322,6 +1322,55 @@ export type Database = {
         };
         Returns: string;
       };
+      apply_whatsapp_status: {
+        Args: {
+          p_callback_attempt?: number;
+          p_callback_id?: string;
+          p_code?: number;
+          p_error?: string;
+          p_now?: string;
+          p_permanent?: boolean;
+          p_phone_number_id?: string;
+          p_status: string;
+          p_status_at?: string;
+          p_wamid: string;
+        };
+        Returns: {
+          attempts: number;
+          body: string | null;
+          booking_id: string | null;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          failure_code: number | null;
+          failure_reason: string | null;
+          id: string;
+          interactive_buttons: Json | null;
+          last_error: string | null;
+          lead_id: string | null;
+          next_attempt_at: string;
+          phone_number_id: string;
+          provider_id: string | null;
+          provider_idempotency_key: string;
+          recipient_wa_id: string;
+          school_id: string;
+          send_outcome: Database["public"]["Enums"]["whatsapp_send_outcome"] | null;
+          sent_at: string | null;
+          state: Database["public"]["Enums"]["whatsapp_delivery_state"];
+          status_at: string | null;
+          template_name: string | null;
+          template_params: Json | null;
+          terminal_cause: string | null;
+          updated_at: string;
+          window_expires_at: string | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "whatsapp_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       book_trial: {
         Args: {
           p_contact_name: string;
@@ -1371,6 +1420,84 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "email_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      claim_whatsapp_deliveries: {
+        Args: {
+          p_ids?: string[];
+          p_limit?: number;
+          p_now?: string;
+          p_phone_number_ids?: string[];
+          p_retry_only?: boolean;
+          p_run_id: string;
+        };
+        Returns: {
+          attempts: number;
+          body: string | null;
+          booking_id: string | null;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          failure_code: number | null;
+          failure_reason: string | null;
+          id: string;
+          interactive_buttons: Json | null;
+          last_error: string | null;
+          lead_id: string | null;
+          next_attempt_at: string;
+          phone_number_id: string;
+          provider_id: string | null;
+          provider_idempotency_key: string;
+          recipient_wa_id: string;
+          school_id: string;
+          send_outcome: Database["public"]["Enums"]["whatsapp_send_outcome"] | null;
+          sent_at: string | null;
+          state: Database["public"]["Enums"]["whatsapp_delivery_state"];
+          status_at: string | null;
+          template_name: string | null;
+          template_params: Json | null;
+          terminal_cause: string | null;
+          updated_at: string;
+          window_expires_at: string | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "whatsapp_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      claim_whatsapp_jobs: {
+        Args: {
+          p_limit?: number;
+          p_now?: string;
+          p_phone_number_ids?: string[];
+          p_retry_only?: boolean;
+          p_run_id: string;
+        };
+        Returns: {
+          attempts: number;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          dedupe_key: string;
+          failure_reason: string | null;
+          id: string;
+          kind: string;
+          last_error: string | null;
+          next_attempt_at: string;
+          payload: NonNullable<Json>;
+          phone_number_id: string;
+          school_id: string | null;
+          state: Database["public"]["Enums"]["whatsapp_job_state"];
+          terminal_cause: string | null;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "whatsapp_jobs";
           isOneToOne: false;
           isSetofReturn: true;
         };
@@ -1462,6 +1589,23 @@ export type Database = {
         Returns: string;
       };
       enqueue_email_reminders: { Args: { p_now?: string }; Returns: number };
+      enqueue_whatsapp_delivery: {
+        Args: {
+          p_body?: string;
+          p_booking_id?: string;
+          p_buttons?: Json;
+          p_key: string;
+          p_lead_id?: string;
+          p_now?: string;
+          p_phone_number_id: string;
+          p_recipient: string;
+          p_school_id: string;
+          p_template_name?: string;
+          p_template_params?: Json;
+          p_window_expires_at?: string;
+        };
+        Returns: string;
+      };
       get_overview_metrics: {
         Args: { p_now?: string; p_school_id: string };
         Returns: {
@@ -1533,6 +1677,71 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      recover_whatsapp_deliveries: {
+        Args: { p_now?: string; p_phone_number_ids?: string[]; p_stale_before: string };
+        Returns: {
+          attempts: number;
+          body: string | null;
+          booking_id: string | null;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          failure_code: number | null;
+          failure_reason: string | null;
+          id: string;
+          interactive_buttons: Json | null;
+          last_error: string | null;
+          lead_id: string | null;
+          next_attempt_at: string;
+          phone_number_id: string;
+          provider_id: string | null;
+          provider_idempotency_key: string;
+          recipient_wa_id: string;
+          school_id: string;
+          send_outcome: Database["public"]["Enums"]["whatsapp_send_outcome"] | null;
+          sent_at: string | null;
+          state: Database["public"]["Enums"]["whatsapp_delivery_state"];
+          status_at: string | null;
+          template_name: string | null;
+          template_params: Json | null;
+          terminal_cause: string | null;
+          updated_at: string;
+          window_expires_at: string | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "whatsapp_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      recover_whatsapp_jobs: {
+        Args: { p_phone_number_ids?: string[]; p_stale_before: string };
+        Returns: {
+          attempts: number;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          dedupe_key: string;
+          failure_reason: string | null;
+          id: string;
+          kind: string;
+          last_error: string | null;
+          next_attempt_at: string;
+          payload: NonNullable<Json>;
+          phone_number_id: string;
+          school_id: string | null;
+          state: Database["public"]["Enums"]["whatsapp_job_state"];
+          terminal_cause: string | null;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "whatsapp_jobs";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       resolve_web_conversation: {
         Args: { p_now: string; p_school_id: string; p_token_hash: string };
         Returns: string;
@@ -1563,6 +1772,77 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "email_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      start_whatsapp_delivery: {
+        Args: { p_attempts: number; p_claimed_at: string; p_claimed_by: string; p_id: string };
+        Returns: {
+          attempts: number;
+          body: string | null;
+          booking_id: string | null;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          failure_code: number | null;
+          failure_reason: string | null;
+          id: string;
+          interactive_buttons: Json | null;
+          last_error: string | null;
+          lead_id: string | null;
+          next_attempt_at: string;
+          phone_number_id: string;
+          provider_id: string | null;
+          provider_idempotency_key: string;
+          recipient_wa_id: string;
+          school_id: string;
+          send_outcome: Database["public"]["Enums"]["whatsapp_send_outcome"] | null;
+          sent_at: string | null;
+          state: Database["public"]["Enums"]["whatsapp_delivery_state"];
+          status_at: string | null;
+          template_name: string | null;
+          template_params: Json | null;
+          terminal_cause: string | null;
+          updated_at: string;
+          window_expires_at: string | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "whatsapp_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      start_whatsapp_job: {
+        Args: {
+          p_attempts: number;
+          p_claimed_at: string;
+          p_claimed_by: string;
+          p_id: string;
+          p_school_id?: string;
+        };
+        Returns: {
+          attempts: number;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          dedupe_key: string;
+          failure_reason: string | null;
+          id: string;
+          kind: string;
+          last_error: string | null;
+          next_attempt_at: string;
+          payload: NonNullable<Json>;
+          phone_number_id: string;
+          school_id: string | null;
+          state: Database["public"]["Enums"]["whatsapp_job_state"];
+          terminal_cause: string | null;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "whatsapp_jobs";
           isOneToOne: false;
           isSetofReturn: true;
         };

@@ -61,10 +61,12 @@ BEGIN
     VALUES (p_school_id, v_landing_id, v_contact_id, p_participant_name,
         p_participant_age, p_offering_id, p_stated_need)
     RETURNING * INTO v_lead;
-    SELECT notification_email INTO STRICT v_notification_email
+    SELECT nullif(btrim(notification_email), '') INTO STRICT v_notification_email
     FROM public.school_settings WHERE school_id = p_school_id;
-    PERFORM public.enqueue_email_delivery(p_school_id, 'owner_lead', v_notification_email,
-        'owner-lead/' || v_lead.id, NULL, v_lead.id);
+    IF v_notification_email IS NOT NULL THEN
+        PERFORM public.enqueue_email_delivery(p_school_id, 'owner_lead', v_notification_email,
+            'owner-lead/' || v_lead.id, NULL, v_lead.id);
+    END IF;
     INSERT INTO public.funnel_events (school_id, landing_session_id, lead_id, event_type, metadata)
     VALUES (p_school_id, v_landing_id, v_lead.id, 'lead_captured',
         jsonb_build_object('hasOffering', p_offering_id IS NOT NULL) ||
