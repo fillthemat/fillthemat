@@ -221,6 +221,7 @@ function LeadForm({
       body: JSON.stringify({
         schoolSlug: slug,
         contact: { name, email, phone },
+        participantName: "",
         statedNeed: need,
         offeringId,
         turnstileToken: token,

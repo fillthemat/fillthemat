@@ -16,7 +16,6 @@ import {
   loadTranscript,
 } from "@/lib/conversations/conversation-store";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
-import { createLead } from "@/lib/leads/create-lead";
 import { InternalFailure, internalFailureReasonFrom, MAX_EXECUTIONS } from "@/lib/retry-policy";
 import { loadSchoolCatalog } from "@/lib/schools/public";
 import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
@@ -55,6 +54,7 @@ import {
   startJobExecution,
   type WhatsAppJob,
 } from "./jobs";
+import { createLegacyLead as createLead } from "./legacy-create-lead";
 import { splitWhatsAppText } from "./text";
 
 export const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;

@@ -115,8 +115,24 @@ uses this SQL function as the only definition of the reminder rule (no TS copy),
 records its run in public.cron_runs; ending inactive conversations deliberately
 still calls the legacy conversation store until #253.
 
-During the integration-branch migration, legacy Lead callers
-still enqueue into app.email_deliveries. Book Trial (including the current WhatsApp
+Lead Request uses the service-only `create_lead` invoker function for contact
+upsert, school-scoped landing-session attachment, lead, owner email and funnel event.
+It requires a published, approved school. Web submissions reuse a token-hashed
+session; WhatsApp supplies the stable wa-hashed pseudo-session key. Every submission
+creates a new lead, preserving the existing no-replay-key semantics; each lead gets
+one owner email with a unique provider key. SQL callers can compose it in an outer
+transaction. Application access, CAPTCHA and recipient limits stay before the RPC;
+the route attempts delivery only after the RPC commits.
+
+Until #253, WhatsApp still resolves legacy school/offering/conversation IDs, not
+public IDs. Its Turn therefore retains the existing transaction-bound lead write
+in `src/lib/whatsapp/legacy-create-lead.ts`; no public/legacy ID bridge or dual-write
+is added. That path still writes `app.leads` and `app.email_deliveries`, which the
+public dashboard/dispatcher do not read. #253 must delete the legacy adapter and
+call `create_lead` inside its public SQL Turn transaction. The public RPC already
+supports the no-email contact and WhatsApp pseudo-session semantics it needs.
+
+During the integration-branch migration, Book Trial (including the current WhatsApp
 booking caller) uses the service-only `book_trial` function and public outbox.
 It locks the occurrence and owns counters, emails and events: booking triggers
 only handle owner status updates, never INSERT. The dispatcher and reminder scheduler
