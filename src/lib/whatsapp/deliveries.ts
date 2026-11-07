@@ -528,7 +528,7 @@ export async function applyWhatsAppStatuses(
             eq(whatsappDeliveries.providerId, status.wamid),
             callback && Number(callback[2]) <= MAX_EXECUTIONS && status.phoneNumberId
               ? and(
-                  eq(whatsappDeliveries.id, callback[1]),
+                  eq(whatsappDeliveries.id, callback[1]!),
                   eq(whatsappDeliveries.attempts, Number(callback[2])),
                   eq(whatsappDeliveries.phoneNumberId, status.phoneNumberId),
                   eq(whatsappDeliveries.sendOutcome, "unknown"),

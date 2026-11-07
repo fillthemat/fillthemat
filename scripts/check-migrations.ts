@@ -32,7 +32,7 @@ async function main() {
       // Drizzle migrate only applies timestamps newer than this watermark.
       const newestApplied = Math.max(0, ...applied.map((row) => Number(row.created_at)));
       for (const [index, migration] of required.entries()) {
-        const tag = journal.entries[index].tag;
+        const tag = journal.entries[index]!.tag;
         const rows = applied.filter((row) => Number(row.created_at) === migration.folderMillis);
         if (rows.some((row) => row.hash !== migration.hash)) {
           throw new MigrationCheckError(

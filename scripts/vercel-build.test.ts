@@ -38,7 +38,7 @@ it("documents only Bun script entries for deployment and recovery", () => {
   const doc = readFileSync("docs/v1-deploy-current.md", "utf8");
   expect(doc).not.toMatch(/\bbunx\b|\bbun (?!run )/);
   for (const match of doc.matchAll(/\bbun run ([\w:-]+)/g)) {
-    expect(Object.hasOwn(scripts, match[1]), match[0]).toBe(true);
+    expect(Object.hasOwn(scripts, match[1]!), match[0]).toBe(true);
   }
 });
 

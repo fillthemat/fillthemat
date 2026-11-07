@@ -193,7 +193,7 @@ export async function failJob(
   });
   if (rows.length === 0) return "deferred";
   if (decision.action === "stop") {
-    logDeadTransition(deadEventFrom(rows[0], "whatsapp_job", job.claimedBy ?? "unknown"));
+    logDeadTransition(deadEventFrom(rows[0]!, "whatsapp_job", job.claimedBy ?? "unknown"));
   }
   return decision.action === "stop" ? "dead" : "retrying";
 }

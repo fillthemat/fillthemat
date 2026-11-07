@@ -32,7 +32,7 @@ async function errorMessage(response: Response): Promise<string> {
 function messageFromBody(body: unknown): string {
   if (typeof body !== "object" || body === null) return fallback;
   const code = "error" in body && typeof body.error === "string" ? body.error : "";
-  const message = Object.hasOwn(messages, code) ? messages[code] : fallback;
+  const message = Object.hasOwn(messages, code) ? (messages[code] ?? fallback) : fallback;
   // Only display the server-owned UUID contract, not arbitrary response prose.
   const reference =
     "requestId" in body && typeof body.requestId === "string" && uuid.test(body.requestId)

@@ -42,12 +42,12 @@ export async function whileSavingMessages(
     conversationId,
     role,
     statement,
-    schema = "app",
+    schema = "public",
   }: {
     conversationId: string;
     role: "user" | "assistant";
     statement: string;
-    schema?: "app" | "public";
+    schema?: "public";
   },
   work: () => Promise<void>,
 ) {
