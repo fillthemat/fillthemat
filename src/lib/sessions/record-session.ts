@@ -29,7 +29,10 @@ export async function recordLandingSession(
     p_is_preview: Boolean(input.preview),
     p_bot_exclusion_reason: isKnownBot(input.userAgent) ?? undefined,
     p_utm: Object.fromEntries(
-      Object.entries(input.utm ?? {}).map(([key, value]) => [key, value?.slice(0, 200) ?? null]),
+      ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"].map((key) => [
+        key,
+        input.utm?.[key]?.slice(0, 200) ?? null,
+      ]),
     ),
   });
   if (error) throw error;

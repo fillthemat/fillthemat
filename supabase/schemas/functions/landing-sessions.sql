@@ -30,8 +30,8 @@ BEGIN
             VALUES (p_school_id, v_session.id, 'session_qualified', '{"source":"landing"}');
         END IF;
     ELSE
-        -- A concurrent insert has committed before ON CONFLICT returns. Only
-        -- touch last_seen_at: previews/bots are never requalified on a retry.
+        -- Repeat visits (including concurrent first visits) reuse the stored
+        -- session. Only touch last_seen_at; previews/bots are never requalified.
         UPDATE public.landing_sessions SET last_seen_at = now()
         WHERE school_id = p_school_id AND session_key_hash = p_session_key_hash
         RETURNING * INTO v_session;

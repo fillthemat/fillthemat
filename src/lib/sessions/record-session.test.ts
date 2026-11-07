@@ -23,7 +23,20 @@ it("checks school access before creating the privileged client, including previe
 });
 
 it("sends only a token hash and bounded attribution to the atomic write", async () => {
-  expect(await recordLandingSession({ ...input, utm: { utm_source: "x".repeat(250) } })).toEqual({
+  expect(
+    await recordLandingSession({
+      ...input,
+      utm: {
+        utm_source: "x".repeat(250),
+        utm_medium: "referral",
+        utm_campaign: "summer",
+        utm_content: "banner",
+        utm_term: "trial",
+        unexpected: "must not reach the RPC",
+        ...Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`extra_${i}`, "ignored"])),
+      },
+    }),
+  ).toEqual({
     status: "recorded",
     qualified: true,
   });
@@ -32,7 +45,13 @@ it("sends only a token hash and bounded attribution to the atomic write", async 
     p_session_key_hash: hashToken(input.token),
     p_is_preview: false,
     p_bot_exclusion_reason: undefined,
-    p_utm: { utm_source: "x".repeat(200) },
+    p_utm: {
+      utm_source: "x".repeat(200),
+      utm_medium: "referral",
+      utm_campaign: "summer",
+      utm_content: "banner",
+      utm_term: "trial",
+    },
   });
 });
 
