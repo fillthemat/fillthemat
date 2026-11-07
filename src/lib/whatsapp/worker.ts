@@ -3,7 +3,7 @@ import { addHours } from "date-fns";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { getDb, type TransactionOptions } from "@/db";
-import { schools, whatsappDeliveries } from "@/db/schema";
+import { schools } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
 import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
 import {
@@ -20,6 +20,7 @@ import { createLead } from "@/lib/leads/create-lead";
 import { InternalFailure, internalFailureReasonFrom, MAX_EXECUTIONS } from "@/lib/retry-policy";
 import { loadSchoolCatalog } from "@/lib/schools/public";
 import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { exportEndedTurns, startTurnTrace, type TurnReply } from "@/lib/tracing/turn-trace";
 import type { InboundWhatsAppMessage } from "./parse";
 import { confirmWhatsAppBooking } from "./booking";
@@ -97,7 +98,6 @@ async function saveInboundMessage(
 async function enqueueNotice(
   ctx: Pick<InboundContext, "schoolId" | "message" | "dependencies">,
   text: string,
-  options: TransactionOptions = {},
 ): Promise<string | null> {
   return enqueueWhatsAppDelivery(
     {
@@ -108,7 +108,7 @@ async function enqueueNotice(
       body: text,
       windowExpiresAt: addHours(ctx.dependencies.now(), 24),
     },
-    { ...options, now: ctx.dependencies.now() },
+    { now: ctx.dependencies.now() },
   );
 }
 
@@ -135,10 +135,8 @@ async function handleConfirmation(
   if (!intent) {
     const text =
       "That booking option has expired or was replaced. Please ask for available times again.";
-    const deliveryId = await getDb().transaction(async (tx) => {
-      await saveInboundMessage(ctx, { transaction: tx });
-      return enqueueNotice(ctx, text, { transaction: tx });
-    });
+    await saveInboundMessage(ctx);
+    const deliveryId = await enqueueNotice(ctx, text);
     if (deliveryId) await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId, ctx.dependencies);
     return { text };
   }
@@ -165,7 +163,6 @@ async function enqueueTextReplies(
   ctx: InboundContext,
   text: string,
   idempotencyPrefix: string,
-  options: TransactionOptions = {},
 ): Promise<string[]> {
   const chunks = splitWhatsAppText(text);
   const windowExpiresAt = addHours(ctx.dependencies.now(), 24);
@@ -180,7 +177,7 @@ async function enqueueTextReplies(
         body: chunks[index],
         windowExpiresAt,
       },
-      { ...options, now: ctx.dependencies.now() },
+      { now: ctx.dependencies.now() },
     );
     if (deliveryId) deliveryIds.push(deliveryId);
   }
@@ -188,9 +185,8 @@ async function enqueueTextReplies(
 }
 
 /**
- * Generate the completed reply, then atomically commit the Turn's messages,
- * platform writes, and delivery outboxes. A Booking Intent wins over a Lead
- * Request when both are captured. Network sends happen only after commit.
+ * Until #253, commit the legacy Turn before enqueueing the public outbox.
+ * This temporary non-atomic seam can lose the reply on a crash after commit.
  */
 async function handleAssistantTurn(
   ctx: InboundContext,
@@ -234,13 +230,11 @@ async function handleAssistantTurn(
       : { kind: "plain_reply" as const, fallback: "" };
   const replyText = reply.text || turn.fallback;
 
-  // The inbound duplicate marker is committed only with the whole Turn and its
-  // outboxes. Model work and network sends never hold this transaction open.
-  const { replyMessageId, deliveryIds, leadId } = await db.transaction(async (tx) => {
+  const { replyMessageId, enqueueReplies, leadId } = await db.transaction(async (tx) => {
     const options = { transaction: tx };
     await saveInboundMessage(ctx, options);
     let leadId: string | undefined;
-    let deliveryIds: string[] | undefined;
+    let enqueueReplies: (() => Promise<string[]>) | undefined;
     switch (turn.kind) {
       case "booking_intent": {
         const intent = await upsertPendingBookingIntent(
@@ -255,28 +249,30 @@ async function handleAssistantTurn(
           },
           options,
         );
-        const deliveryId = await enqueueWhatsAppDelivery(
-          {
-            schoolId: ctx.schoolId,
-            recipientWaId: ctx.message.waId,
-            phoneNumberId: ctx.message.phoneNumberId,
-            providerIdempotencyKey: `wa-confirm/${ctx.message.wamid}`,
-            body: replyText,
-            interactiveButtons: [
-              {
-                id: confirmBookingButtonId(intent.id),
-                title: "Confirm booking",
-              },
-              {
-                id: CHOOSE_ANOTHER_TIME_BUTTON_ID,
-                title: "Choose another time",
-              },
-            ],
-            windowExpiresAt: addHours(ctx.dependencies.now(), 24),
-          },
-          { ...options, now: ctx.dependencies.now() },
-        );
-        deliveryIds = deliveryId ? [deliveryId] : [];
+        enqueueReplies = async () => {
+          const deliveryId = await enqueueWhatsAppDelivery(
+            {
+              schoolId: ctx.schoolId,
+              recipientWaId: ctx.message.waId,
+              phoneNumberId: ctx.message.phoneNumberId,
+              providerIdempotencyKey: `wa-confirm/${ctx.message.wamid}`,
+              body: replyText,
+              interactiveButtons: [
+                {
+                  id: confirmBookingButtonId(intent.id),
+                  title: "Confirm booking",
+                },
+                {
+                  id: CHOOSE_ANOTHER_TIME_BUTTON_ID,
+                  title: "Choose another time",
+                },
+              ],
+              windowExpiresAt: addHours(ctx.dependencies.now(), 24),
+            },
+            { now: ctx.dependencies.now() },
+          );
+          return deliveryId ? [deliveryId] : [];
+        };
         break;
       }
       case "lead_request": {
@@ -312,14 +308,10 @@ async function handleAssistantTurn(
       options,
     );
 
-    deliveryIds ??= await enqueueTextReplies(
-      ctx,
-      replyText,
-      `wa-reply/${ctx.message.wamid}`,
-      options,
-    );
-    return { replyMessageId, deliveryIds, leadId };
+    enqueueReplies ??= () => enqueueTextReplies(ctx, replyText, `wa-reply/${ctx.message.wamid}`);
+    return { replyMessageId, enqueueReplies, leadId };
   });
+  const deliveryIds = await enqueueReplies();
   if (leadId) {
     try {
       await attemptPendingForLead(leadId);
@@ -572,12 +564,12 @@ export async function drainWhatsAppJobs(
     ) {
       // Exhaustion can enqueue an apology after the initial fresh sweep. Send
       // only this job's side effect inline, never reopen the global fresh lane.
-      const fallback = await getDb()
-        .select({ id: whatsappDeliveries.id })
-        .from(whatsappDeliveries)
-        .where(eq(whatsappDeliveries.providerIdempotencyKey, `job-fallback/${job.id}`))
-        .limit(1);
-      if (fallback.length && (!opts.deadline || dependencies.now() < opts.deadline)) {
+      const { data: fallback } = await createAdminClient()
+        .from("whatsapp_deliveries")
+        .select("id")
+        .eq("provider_idempotency_key", `job-fallback/${job.id}`)
+        .throwOnError();
+      if (fallback?.length && (!opts.deadline || dependencies.now() < opts.deadline)) {
         await attemptWhatsAppDeliveriesNow(
           fallback.map((row) => row.id),
           runId,

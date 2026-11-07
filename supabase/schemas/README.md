@@ -106,8 +106,8 @@ Locks are never held during provider I/O. Recovery cannot unsend accepted mail;
 Resend's stable idempotency key protects retries within its 24-hour window. Use
 unique run IDs in production. Do not replace the full fence with an ID/run-ID-only
 filter. WhatsApp should reuse this protocol with queue-specific functions and
-death hooks, not a dynamic-SQL generic queue RPC. Its legacy queue-claims.ts stays
-unchanged until that migration.
+death hooks, not a dynamic-SQL generic queue RPC. WhatsApp now follows that
+protocol below; the unused legacy queue helper has been removed.
 
 `enqueue_email_reminders` atomically inserts reminders using the same unique key
 per booking, 36-hour minimum booking lead and 24-hour reminder window. Maintenance
@@ -115,10 +115,74 @@ uses this SQL function as the only definition of the reminder rule (no TS copy),
 records its run in public.cron_runs; ending inactive conversations deliberately
 still calls the legacy conversation store until #253.
 
-During the integration-branch migration, legacy Book Trial/Lead/WhatsApp callers
+During the integration-branch migration, legacy Book Trial/Lead callers
 still enqueue into app.email_deliveries. The dispatcher and reminder scheduler
 read **public only**; those emails and reminders for legacy app bookings are
-intentionally not sent until #250–#252 migrate those workflows.
+intentionally not sent until #250–#251 migrate those workflows. WhatsApp delivery
+death notices now enqueue public email directly through SQL.
+
+## WhatsApp queues
+
+`functions/whatsapp-jobs.sql` and `functions/whatsapp-deliveries.sql` reuse the
+email claim protocol: four SKIP LOCKED lanes (80% fresh / 20% retry, with refill),
+durable execution start, five-execution budget, and full
+`(id, claimed, claimed_by, claimed_at, attempts)` fence. Claim timestamps remain
+unmodified strings in TypeScript; deadlines alone become Dates. Retry-only and
+school-number-scoped sweeps retain the existing worker budget behavior.
+`enqueue_whatsapp_delivery` is composable from SQL, ready for the #253 Turn.
+All functions, including trigger helpers, are empty-search-path invokers with
+service-role-only execution. Finalizers use one fenced table update; provider
+I/O never holds a lock. Dead transitions use the shared `queue.dead` logger.
+
+Unlike email, Meta has no send idempotency key. Start durably sets `unknown`,
+clears the previous provider ID/status, and increments attempts before I/O.
+The callback token `delivery-id:attempt` plus school phone-number ID can reconcile
+an unknown send without a provider ID. A successor start invalidates the previous
+token. Recovery preserves unknown outcomes even at budget exhaustion; positive
+proof for that exact attempt can rescue an unknown/dead row. Retrying without a
+receipt still carries the existing duplicate-send risk.
+
+### Status transitions
+
+The verified webhook calls `apply_whatsapp_status`; a plain row lock serializes
+receipts against start, recovery and other callbacks. Explicit timestamps must
+strictly advance; timestamp-less replays are constrained by the same state rules.
+
+| Current state/outcome                                | Accepted receipt        | Result                                                    |
+| ---------------------------------------------------- | ----------------------- | --------------------------------------------------------- |
+| sent                                                 | sent / delivered / read | same / delivered / read                                   |
+| sent                                                 | failed                  | failed with backoff, or dead if permanent/exhausted/stale |
+| delivered                                            | read                    | read                                                      |
+| read                                                 | any                     | ignored                                                   |
+| failed, known rejected/accepted failure              | any                     | ignored (retry is worker-only)                            |
+| pending/claimed/failed/dead, unknown current attempt | sent / delivered / read | receipt state; retry/claim cleared                        |
+| pending/claimed/failed, unknown current attempt      | failed                  | failed/dead; outcome becomes accepted                     |
+| dead, known outcome                                  | any                     | ignored                                                   |
+
+All other regressions/replays are ignored. In particular, delivered/read cannot
+be failed, and a known failed attempt cannot be revived by a delayed receipt.
+This intentionally tightens the legacy positive-receipt-after-known-failure rule
+to the forward-only protocol. Only **unknown** outcomes retain reconciliation.
+
+AFTER UPDATE invoker hooks attach cross-outbox effects to the transition itself:
+job exhaustion atomically queues a deduplicated apology within the latest inbound
+receipt's 24-hour service window, resolving the school via private
+`school_settings.whatsapp_phone_number_id`; confirmation death atomically calls
+`enqueue_email_delivery` with the private notification address. Stale confirmations
+do not notify. Delivered/read removes only pending/failed, zero-execution owner
+notices; started/sent email cannot safely be recalled. Recovery uses the same hooks.
+
+### Temporary Turn seam (#253)
+
+The Turn, inbound school resolution, conversation store and booking intents still
+use legacy Drizzle. The worker now commits that Turn first and then enqueues its
+public delivery intents. A crash/enqueue failure between these commits can lose
+the reply after its inbound duplicate marker commits. This is the explicitly
+accepted integration-branch non-atomic seam, not an atomic outbox guarantee.
+There is no dual-read/write queue. Legacy `app` seeds are empty locally: full
+assistant/confirmation Turns cannot run end-to-end until #253 (and public booking
+effects require #250). Public queue mechanics and signed webhooks are verified
+directly in `queues.integration.test.ts` in the meantime.
 
 ## Changes
 

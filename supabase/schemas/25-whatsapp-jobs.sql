@@ -20,6 +20,9 @@ CREATE TABLE public.whatsapp_jobs (
 );
 
 CREATE INDEX whatsapp_jobs_due_idx ON public.whatsapp_jobs USING btree (state, next_attempt_at);
+CREATE INDEX whatsapp_jobs_recipient_idx ON public.whatsapp_jobs (phone_number_id, (payload->>'waId'), created_at);
+CREATE TRIGGER whatsapp_job_death AFTER UPDATE ON public.whatsapp_jobs
+FOR EACH ROW EXECUTE FUNCTION public.whatsapp_job_death_hook();
 
 CREATE TRIGGER whatsapp_jobs_set_updated_at
 BEFORE UPDATE ON public.whatsapp_jobs
