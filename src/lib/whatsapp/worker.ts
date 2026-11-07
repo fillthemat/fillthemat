@@ -16,7 +16,6 @@ import {
   loadTranscript,
 } from "@/lib/conversations/conversation-store";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
-import { createLead } from "@/lib/leads/create-lead";
 import { InternalFailure, internalFailureReasonFrom, MAX_EXECUTIONS } from "@/lib/retry-policy";
 import { loadSchoolCatalog } from "@/lib/schools/public";
 import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
@@ -56,6 +55,7 @@ import {
   startJobExecution,
   type WhatsAppJob,
 } from "./jobs";
+import { createLegacyLead as createLead } from "./legacy-create-lead";
 import { publicSchoolIdForPhone } from "./queue-store";
 import { splitWhatsAppText } from "./text";
 

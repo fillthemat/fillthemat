@@ -1502,6 +1502,39 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      create_lead: {
+        Args: {
+          p_channel: string;
+          p_contact_name: string;
+          p_email?: string;
+          p_landing_token_hash: string;
+          p_offering_id?: string;
+          p_participant_age?: number;
+          p_participant_name?: string;
+          p_phone: string;
+          p_school_id: string;
+          p_stated_need?: string;
+        };
+        Returns: {
+          contact_id: string;
+          created_at: string;
+          id: string;
+          landing_session_id: string;
+          participant_age: number | null;
+          participant_name: string | null;
+          school_id: string;
+          stated_need: string | null;
+          status: string;
+          trial_offering_id: string | null;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "leads";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       create_onboarding_school: {
         Args: {
           p_city: string;

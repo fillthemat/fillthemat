@@ -1,17 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
 import type { Channel } from "@/lib/channel";
-import { getDb, type Transaction, type TransactionOptions, withTransaction } from "@/db";
-import {
-  contacts,
-  emailDeliveries,
-  funnelEvents,
-  landingSessions,
-  leads,
-  type School,
-} from "@/db/schema";
-import { hashToken, hashWaId, normalizeEmail } from "@/lib/crypto";
-import { FUNNEL_EVENTS } from "@/lib/funnel";
+import { hashToken, hashWaId } from "@/lib/crypto";
 import { recipientQuotaExceeded } from "@/lib/security/limits";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export type CreateLeadContact = {
   name: string;
@@ -24,13 +14,12 @@ type LeadSourceDetails = {
   whatsapp: { waId: string };
 };
 
-/** Where a lead came from: its channel, and that channel's details. */
 export type CreateLeadSource = {
   [C in Channel]: { channel: C } & LeadSourceDetails[C];
 }[Channel];
 
 export type CreateLeadInput = {
-  school: Pick<School, "id">;
+  school: { id: string };
   contact: CreateLeadContact;
   source: CreateLeadSource;
   participantName?: string | null;
@@ -39,167 +28,42 @@ export type CreateLeadInput = {
   statedNeed?: string | null;
 };
 
-/** Keep notification addresses inside the existing privileged lead boundary. */
-async function notificationEmail(schoolId: string, db: Pick<Transaction, "execute"> = getDb()) {
-  const [settings] = await db.execute<{ notification_email: string }>(sql`
-    select notification_email from public.school_settings where school_id = ${schoolId}
-  `);
-  if (!settings) throw new Error("School settings are missing");
-  return settings.notification_email;
-}
-
 export async function ownerLeadQuotaExceeded(schoolId: string) {
-  return recipientQuotaExceeded(schoolId, await notificationEmail(schoolId));
+  const { data, error } = await createAdminClient()
+    .from("school_settings")
+    .select("notification_email")
+    .eq("school_id", schoolId)
+    .single();
+  if (error) throw error;
+  return recipientQuotaExceeded(schoolId, data.notification_email);
 }
 
-/**
- * Shared lead write path (decision J / Phase 5). Web (`POST /api/leads`) and the
- * WhatsApp worker both call this so the transaction/email/funnel semantics stay
- * in one place.
- * A caller's transaction can include the lead and its outboxes in a Turn commit.
- *
- * - Contacts are upserted keyed `(school_id, email)` when an email is present
- *   (web semantics unchanged) and `(school_id, phone)` when there is none
- *   (WhatsApp no-email contacts, decision B).
- * - Web resolves the landing session from the client token; WhatsApp synthesizes
- *   a stable pseudo-session keyed by wa id with `utm_source='whatsapp'` so the
- *   `leads.landingSessionId NOT NULL` + funnel analytics intact.
- * - Owner-lead delivery always stays email (`recipient` = school notification
- *   email); the funnel event records `{ channel: 'whatsapp' }` for WhatsApp.
- */
-export async function createLead(input: CreateLeadInput, options: TransactionOptions = {}) {
-  const email = input.contact.email ? normalizeEmail(input.contact.email) : null;
-
-  const write = async (tx: Transaction) => {
-    const contactValues = {
-      schoolId: input.school.id,
-      email,
-      name: input.contact.name.trim(),
-      phone: input.contact.phone.trim(),
-    };
-    const contactUpdates = {
-      name: input.contact.name.trim(),
-      phone: input.contact.phone.trim(),
-      updatedAt: new Date(),
-    };
-    const [contact] = email
-      ? await tx
-          .insert(contacts)
-          .values(contactValues)
-          .onConflictDoUpdate({
-            target: [contacts.schoolId, contacts.email],
-            set: contactUpdates,
-          })
-          .returning()
-      : await tx
-          .insert(contacts)
-          .values(contactValues)
-          .onConflictDoUpdate({
-            target: [contacts.schoolId, contacts.phone],
-            set: contactUpdates,
-          })
-          .returning();
-    if (!contact) throw new Error("contact_failed");
-
-    let landingSessionId: string;
-    if (input.source.channel === "web") {
-      if (!input.source.landingSessionToken) {
-        throw Object.assign(new Error("session_required"), {
-          code: "session_required",
-        });
-      }
-      const [session] = await tx
-        .select()
-        .from(landingSessions)
-        .where(
-          and(
-            eq(landingSessions.schoolId, input.school.id),
-            eq(landingSessions.sessionKeyHash, hashToken(input.source.landingSessionToken)),
-          ),
-        )
-        .limit(1);
-      if (!session) {
-        throw Object.assign(new Error("session_required"), {
-          code: "session_required",
-        });
-      }
-      landingSessionId = session.id;
-    } else {
-      // Synthesize a stable pseudo session keyed by wa id (decision J).
-      const sessionKeyHash = hashWaId(`whatsapp-landing:${input.source.waId}`);
-      const now = new Date();
-      const [existing] = await tx
-        .select()
-        .from(landingSessions)
-        .where(
-          and(
-            eq(landingSessions.schoolId, input.school.id),
-            eq(landingSessions.sessionKeyHash, sessionKeyHash),
-          ),
-        )
-        .limit(1);
-      if (existing) {
-        await tx
-          .update(landingSessions)
-          .set({
-            lastSeenAt: now,
-            utmSource: "whatsapp",
-            updatedAt: now,
-          })
-          .where(eq(landingSessions.id, existing.id));
-        landingSessionId = existing.id;
-      } else {
-        const [created] = await tx
-          .insert(landingSessions)
-          .values({
-            schoolId: input.school.id,
-            sessionKeyHash,
-            utmSource: "whatsapp",
-            firstSeenAt: now,
-            lastSeenAt: now,
-            isPreview: false,
-          })
-          .returning();
-        if (!created) throw new Error("landing_session_failed");
-        landingSessionId = created.id;
-      }
+/** Atomic public-stack write; SQL callers compose create_lead in their own transaction. */
+export async function createLead(input: CreateLeadInput) {
+  const landingHash =
+    input.source.channel === "whatsapp"
+      ? hashWaId(`whatsapp-landing:${input.source.waId}`)
+      : input.source.landingSessionToken
+        ? hashToken(input.source.landingSessionToken)
+        : "";
+  const { data, error } = await createAdminClient().rpc("create_lead", {
+    p_school_id: input.school.id,
+    p_contact_name: input.contact.name,
+    p_phone: input.contact.phone,
+    p_email: input.contact.email ?? undefined,
+    p_channel: input.source.channel,
+    p_landing_token_hash: landingHash,
+    p_participant_name: input.participantName ?? undefined,
+    p_participant_age: input.participantAge ?? undefined,
+    p_offering_id: input.offeringId ?? undefined,
+    p_stated_need: input.statedNeed ?? undefined,
+  });
+  if (error) {
+    if (error.code === "P0001" && error.message === "session_required") {
+      throw Object.assign(new Error("session_required"), { code: "session_required" });
     }
-
-    const [row] = await tx
-      .insert(leads)
-      .values({
-        schoolId: input.school.id,
-        landingSessionId,
-        contactId: contact.id,
-        participantName: input.participantName ?? null,
-        participantAge: input.participantAge ?? null,
-        trialOfferingId: input.offeringId ?? null,
-        statedNeed: input.statedNeed ?? null,
-        status: "open",
-      })
-      .returning();
-    if (!row) throw new Error("lead_failed");
-
-    await tx.insert(emailDeliveries).values({
-      schoolId: input.school.id,
-      leadId: row.id,
-      kind: "owner_lead",
-      recipient: await notificationEmail(input.school.id, tx),
-      providerIdempotencyKey: `owner-lead/${row.id}`,
-      nextAttemptAt: new Date(),
-      state: "pending",
-    });
-    await tx.insert(funnelEvents).values({
-      schoolId: input.school.id,
-      landingSessionId,
-      leadId: row.id,
-      eventType: FUNNEL_EVENTS.leadCaptured,
-      metadata:
-        input.source.channel === "whatsapp"
-          ? { channel: "whatsapp", hasOffering: Boolean(input.offeringId) }
-          : { hasOffering: Boolean(input.offeringId) },
-    });
-    return row;
-  };
-  return withTransaction(write, options);
+    throw error;
+  }
+  if (!data) throw new Error("lead_failed");
+  return data;
 }
