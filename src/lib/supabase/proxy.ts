@@ -32,11 +32,20 @@ export async function updateSession(request: NextRequest) {
   const user = data?.claims;
 
   const pathname = request.nextUrl.pathname;
-  const publicLandingPath = pathname.startsWith("/s/") || pathname === "/api/sessions";
-  if (!user && !pathname.startsWith("/sign-in") && !publicLandingPath) {
+  // Only owner areas need an optimistic redirect. Pages/actions still enforce auth.
+  const ownerPath = ["/dashboard", "/onboarding"].some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
+  if (!user && ownerPath) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
-    return NextResponse.redirect(url);
+    const response = NextResponse.redirect(url);
+    supabaseResponse.cookies.getAll().forEach((cookie) => response.cookies.set(cookie));
+    for (const header of ["cache-control", "expires", "pragma"]) {
+      const value = supabaseResponse.headers.get(header);
+      if (value) response.headers.set(header, value);
+    }
+    return response;
   }
 
   return supabaseResponse;
