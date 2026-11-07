@@ -48,6 +48,8 @@ RETURNS SETOF public.whatsapp_jobs LANGUAGE sql SECURITY INVOKER SET search_path
 $$;
 
 -- The terminal transition and apology commit together, including recovery.
+-- Use transaction now() for the receipt window on all paths, including fenced
+-- table finalizers that have no p_now. RPC clocks only select/schedule work.
 CREATE FUNCTION public.whatsapp_job_death_hook() RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE v_school uuid; v_window timestamptz; v_recipient text;

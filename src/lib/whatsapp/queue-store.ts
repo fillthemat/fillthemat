@@ -5,6 +5,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 type JobRow = Database["public"]["Tables"]["whatsapp_jobs"]["Row"];
 type DeliveryRow = Database["public"]["Tables"]["whatsapp_deliveries"]["Row"];
+
+/** Queue identity is public even while the Turn still resolves legacy schools. */
+export async function publicSchoolIdForPhone(phoneNumberId: string) {
+  const { data } = await createAdminClient()
+    .from("school_settings")
+    .select("school_id")
+    .eq("whatsapp_phone_number_id", phoneNumberId)
+    .maybeSingle()
+    .throwOnError();
+  return data?.school_id ?? null;
+}
 const terminalCause = z.enum(["permanent", "attempts_exhausted", "stale"]).nullable();
 const buttons = z.array(z.object({ id: z.string(), title: z.string() })).nullable();
 

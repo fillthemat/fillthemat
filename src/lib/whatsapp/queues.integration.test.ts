@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import type { Database } from "@/db/types";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
+import * as conversationStore from "@/lib/conversations/conversation-store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
@@ -15,6 +16,8 @@ import {
   recoverStuckWhatsAppDeliveries,
   sendWhatsAppDelivery,
 } from "./deliveries";
+import * as inboundSchool from "./inbound";
+import * as jobs from "./jobs";
 import {
   claimDueWhatsAppJobs,
   enqueueInboundJobs,
@@ -24,6 +27,7 @@ import {
   startJobExecution,
 } from "./jobs";
 import { deliveryFromRow, updateDeliveryClaim } from "./queue-store";
+import { drainWhatsAppJobs } from "./worker";
 
 vi.mock("server-only", () => ({}));
 // Queue protocol tests deliberately do not run the legacy Turn (#253).
@@ -328,7 +332,7 @@ it("a new execution invalidates old unknown callbacks, and receipts win over in-
   ).toBeNull();
 });
 
-it("status webhook is forward-only: delivered/read and known failures never regress on replays", async () => {
+it("status webhook ignores regressions but same-attempt delivered/read cancels a known failure retry", async () => {
   const id = await enqueue();
   const send = vi.fn(async () => ({
     ok: true as const,
@@ -371,13 +375,100 @@ it("status webhook is forward-only: delivered/read and known failures never regr
   await applyWhatsAppStatuses([status(rejected, "failed", { errorCode: "131000" })]);
   const before = await state(rejected);
   expect(before.state).toBe("failed");
-  await applyWhatsAppStatuses([
-    status(rejected, "failed"),
-    status(rejected, "sent"),
-    status(rejected, "delivered"),
-    status(rejected, "read"),
-  ]);
+  await applyWhatsAppStatuses([status(rejected, "failed"), status(rejected, "sent")]);
   expect(await state(rejected)).toEqual(before);
+  await applyWhatsAppStatuses([status(rejected, "delivered")]);
+  expect((await state(rejected)).state).toBe("delivered");
+  expect(
+    await claimDueWhatsAppDeliveries("no-second-send", {
+      ids: [rejected],
+      now: new Date(Date.now() + 60_000),
+    }),
+  ).toEqual([]);
+  await applyWhatsAppStatuses([
+    status(rejected, "read"),
+    status(rejected, "sent"),
+    status(rejected, "failed"),
+  ]);
+  expect((await state(rejected)).state).toBe("read");
+});
+
+it("legacy Turn IDs never enter public queue FKs and processing errors consume an execution", async () => {
+  const legacyId = randomUUID();
+  const resolve = vi
+    .spyOn(inboundSchool, "resolveInboundSchool")
+    .mockResolvedValue({ resolved: true, schoolId: legacyId });
+  const answered = vi
+    .spyOn(conversationStore, "hasWhatsAppMessage")
+    .mockRejectedValue(new Error("legacy Turn failed"));
+  try {
+    const inbound = message();
+    await enqueueInboundJobs([inbound]);
+    const counts = await drainWhatsAppJobs("legacy-failure", 10, { phoneNumberIds: [phone] });
+    expect(counts).toMatchObject({ claimed: 1, retrying: 1 });
+    const { data } = await client()
+      .from("whatsapp_jobs")
+      .select()
+      .eq("dedupe_key", inbound.wamid)
+      .single()
+      .throwOnError();
+    expect(data).toMatchObject({ school_id: schoolId, attempts: 1, state: "failed" });
+    // An answered legacy marker also completes using public identity, not the
+    // unrelated app school ID. Reply enqueues share the authoritative mapping.
+    answered.mockResolvedValue(true);
+    await client()
+      .from("whatsapp_jobs")
+      .update({ next_attempt_at: new Date().toISOString() })
+      .eq("dedupe_key", inbound.wamid)
+      .throwOnError();
+    expect(await drainWhatsAppJobs("legacy-done", 10, { phoneNumberIds: [phone] })).toMatchObject({
+      done: 1,
+    });
+    const { data: done } = await client()
+      .from("whatsapp_jobs")
+      .select()
+      .eq("dedupe_key", inbound.wamid)
+      .single()
+      .throwOnError();
+    expect(done).toMatchObject({ school_id: schoolId, state: "done" });
+    const id = await enqueueWhatsAppDelivery({
+      schoolId: legacyId,
+      phoneNumberId: phone,
+      recipientWaId: "1555",
+      providerIdempotencyKey: randomUUID(),
+    });
+    expect((await state(requireRow(id, "reply"))).school_id).toBe(schoolId);
+  } finally {
+    resolve.mockRestore();
+    answered.mockRestore();
+  }
+});
+
+it("one job persistence failure does not abort the next job in the batch", async () => {
+  const resolve = vi
+    .spyOn(inboundSchool, "resolveInboundSchool")
+    .mockResolvedValue({ resolved: false, reason: "empty_text" });
+  const start = vi
+    .spyOn(jobs, "startJobExecution")
+    .mockRejectedValueOnce(new Error("start write failed"))
+    .mockRejectedValueOnce(new Error("start retry failed"));
+  try {
+    await enqueueInboundJobs([message(), message()]);
+    expect(await drainWhatsAppJobs("isolation", 10, { phoneNumberIds: [phone] })).toMatchObject({
+      claimed: 2,
+      done: 1,
+      deferred: 1,
+    });
+  } finally {
+    resolve.mockRestore();
+    start.mockRestore();
+  }
+  await client()
+    .from("whatsapp_jobs")
+    .update({ state: "done", claimed_at: null, claimed_by: null })
+    .eq("phone_number_id", phone)
+    .eq("state", "claimed")
+    .throwOnError();
 });
 
 it("dead unknown confirmation queues owner email atomically; confirmed cancels only unstarted email", async () => {
@@ -425,6 +516,27 @@ it("dead unknown confirmation queues owner email atomically; confirmed cancels o
     status("confirmed-again", "delivered", { callbackData: `${second}:1`, phoneNumberId: phone }),
   ]);
   expect((await email()).data?.state).toBe("claimed");
+});
+
+it("blank private notification addresses do not enqueue owner email", async () => {
+  await client().from("email_deliveries").delete().eq("booking_id", bookingId).throwOnError();
+  await sql`UPDATE public.school_settings SET notification_email = '   ' WHERE school_id = ${schoolId}`;
+  try {
+    const id = await enqueue(true);
+    await client()
+      .from("whatsapp_deliveries")
+      .update({ state: "dead", terminal_cause: "permanent" })
+      .eq("id", id)
+      .throwOnError();
+    const { data } = await client()
+      .from("email_deliveries")
+      .select("id")
+      .eq("booking_id", bookingId)
+      .throwOnError();
+    expect(data).toEqual([]);
+  } finally {
+    await sql`UPDATE public.school_settings SET notification_email = ${`${ownerId}@local.test`} WHERE school_id = ${schoolId}`;
+  }
 });
 
 it("five started sends share the retry budget and a normal retry can succeed", async () => {

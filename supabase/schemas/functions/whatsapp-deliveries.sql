@@ -66,6 +66,9 @@ RETURNS SETOF public.whatsapp_deliveries LANGUAGE sql SECURITY INVOKER SET searc
 $$;
 
 -- Cross-outbox hooks commit with every transition, not just the worker path.
+-- Hooks deliberately use transaction now(): fenced table finalizers have no
+-- p_now, so expiry/notification eligibility uses one DB clock on every path.
+-- RPC p_now controls scheduling/recovery cutoffs, not the hook's wall clock.
 CREATE FUNCTION public.whatsapp_confirmation_hook() RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE v_email text;
@@ -74,6 +77,7 @@ BEGIN
     IF NEW.state = 'dead' AND OLD.state <> 'dead' AND NEW.terminal_cause <> 'stale'
         AND EXISTS (SELECT 1 FROM public.bookings WHERE id = NEW.booking_id AND school_id = NEW.school_id AND start_at > now()) THEN
         SELECT notification_email INTO v_email FROM public.school_settings WHERE school_id = NEW.school_id;
+        v_email := nullif(btrim(v_email), '');
         IF v_email IS NOT NULL THEN
             PERFORM public.enqueue_email_delivery(NEW.school_id, 'owner_whatsapp_confirmation_failed', v_email,
                 'owner-whatsapp-confirmation-failed/' || NEW.booking_id, NEW.booking_id);
@@ -122,9 +126,10 @@ BEGIN
             terminal_cause = v_cause, claimed_at = NULL, claimed_by = NULL WHERE id = d.id RETURNING *;
         RETURN;
     END IF;
-    -- Known failed attempts are terminal for receipts; unknown attempts can be
-    -- rescued by positive evidence, even after budget exhaustion.
-    IF d.state IN ('pending', 'claimed', 'failed') AND d.send_outcome IS DISTINCT FROM 'unknown' THEN RETURN; END IF;
+    -- Only delivered/read may cancel the retry of a known failed attempt.
+    -- A successor start clears provider_id, invalidating the old receipt.
+    IF d.state IN ('pending', 'claimed', 'failed') AND d.send_outcome IS DISTINCT FROM 'unknown'
+        AND p_status = 'sent' THEN RETURN; END IF;
     RETURN QUERY UPDATE public.whatsapp_deliveries SET state = p_status::public.whatsapp_delivery_state,
         send_outcome = 'accepted', provider_id = p_wamid, status_at = v_at, sent_at = coalesce(sent_at, v_at),
         last_error = NULL, failure_code = NULL, failure_reason = NULL, terminal_cause = NULL,

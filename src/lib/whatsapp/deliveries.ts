@@ -11,7 +11,12 @@ import type { WhatsAppSendOutcome } from "./client";
 import type { InboundWhatsAppStatus } from "./status";
 import { bookingConfirmationIsStale } from "./confirmation-delivery";
 import { type WhatsAppWorkerDependencies, whatsappWorkerDependencies } from "./dependencies";
-import { deliveryFromRow, updateDeliveryClaim, type WhatsAppDelivery } from "./queue-store";
+import {
+  deliveryFromRow,
+  publicSchoolIdForPhone,
+  updateDeliveryClaim,
+  type WhatsAppDelivery,
+} from "./queue-store";
 import { WHATSAPP_TEMPLATE_LANGUAGE } from "./templates";
 export type { WhatsAppDelivery } from "./queue-store";
 
@@ -126,9 +131,13 @@ export async function enqueueWhatsAppDelivery(
   input: EnqueueWhatsAppDelivery,
   { now = new Date() }: { now?: Date } = {},
 ): Promise<string | null> {
+  // Legacy Turn/booking callers carry app.schools IDs until #253. Resolve every
+  // enqueue through private public settings rather than crossing that FK boundary.
+  const schoolId = await publicSchoolIdForPhone(input.phoneNumberId);
+  if (!schoolId) throw new Error("unknown_phone_number");
   const { data } = await createAdminClient()
     .rpc("enqueue_whatsapp_delivery", {
-      p_school_id: input.schoolId,
+      p_school_id: schoolId,
       p_recipient: input.recipientWaId,
       p_phone_number_id: input.phoneNumberId,
       p_key: input.providerIdempotencyKey,

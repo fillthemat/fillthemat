@@ -56,6 +56,7 @@ import {
   startJobExecution,
   type WhatsAppJob,
 } from "./jobs";
+import { publicSchoolIdForPhone } from "./queue-store";
 import { splitWhatsAppText } from "./text";
 
 export const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -380,7 +381,8 @@ export async function processWhatsAppJob(
   const message = job.payload as InboundWhatsAppMessage;
   if (job.state !== "claimed" || job.claimedBy !== runId) return "deferred";
   let started = false;
-  let schoolId = job.schoolId;
+  // Exclusively the PUBLIC queue identity, never resolved.schoolId below.
+  let schoolId: string | null = null;
   const start = async () => {
     const execution = await startJobExecution(job, schoolId, dependencies.now());
     if (!execution) return false;
@@ -393,6 +395,7 @@ export async function processWhatsAppJob(
       ? ("done" as const)
       : ("deferred" as const);
   try {
+    schoolId = await publicSchoolIdForPhone(job.phoneNumberId);
     if (job.attempts >= MAX_EXECUTIONS) {
       return await failJob(
         job,
@@ -419,11 +422,11 @@ export async function processWhatsAppJob(
       if (!(await start())) return "deferred";
       return await done();
     }
-    schoolId = resolved.schoolId;
     const now = dependencies.now();
 
-    // Assistant/notice saves commit with their reply outbox; confirmations book
-    // before saving. An inbound marker therefore means no Turn needs replaying.
+    // The legacy inbound marker commits before public reply enqueue. Until
+    // #253, an answered marker can therefore exist without a queued reply.
+    // The no-intent confirmation notice also saves and enqueues separately.
     const alreadyAnswered = () =>
       hasWhatsAppMessage({
         schoolId: resolved.schoolId,
@@ -443,7 +446,8 @@ export async function processWhatsAppJob(
         identity,
         now,
       })) &&
-      (await whatsappOutboundQuotaExceeded(resolved.schoolId, message.waId, now))
+      schoolId &&
+      (await whatsappOutboundQuotaExceeded(schoolId, message.waId, now))
     ) {
       if (!(await start())) return "deferred";
       await sendNotice(
@@ -550,32 +554,47 @@ export async function drainWhatsAppJobs(
     deferred: 0,
   };
   for (const job of claimed) {
-    if (opts.deadline && dependencies.now() >= opts.deadline) {
-      await releaseWhatsAppJobClaim(job, dependencies.now());
-      counts.deferred += 1;
-      continue;
-    }
-    const result = await processWhatsAppJob(job, runId, dependencies);
-    counts[result] += 1;
-    if (
-      opts.retryOnly &&
-      result === "dead" &&
-      (!opts.deadline || dependencies.now() < opts.deadline)
-    ) {
-      // Exhaustion can enqueue an apology after the initial fresh sweep. Send
-      // only this job's side effect inline, never reopen the global fresh lane.
-      const { data: fallback } = await createAdminClient()
-        .from("whatsapp_deliveries")
-        .select("id")
-        .eq("provider_idempotency_key", `job-fallback/${job.id}`)
-        .throwOnError();
-      if (fallback?.length && (!opts.deadline || dependencies.now() < opts.deadline)) {
-        await attemptWhatsAppDeliveriesNow(
-          fallback.map((row) => row.id),
-          runId,
-          dependencies,
-        );
+    let counted = false;
+    try {
+      if (opts.deadline && dependencies.now() >= opts.deadline) {
+        await releaseWhatsAppJobClaim(job, dependencies.now());
+        counts.deferred += 1;
+        continue;
       }
+      const result = await processWhatsAppJob(job, runId, dependencies);
+      counts[result] += 1;
+      counted = true;
+      if (
+        opts.retryOnly &&
+        result === "dead" &&
+        (!opts.deadline || dependencies.now() < opts.deadline)
+      ) {
+        // Exhaustion can enqueue an apology after the initial fresh sweep. Send
+        // only this job's side effect inline, never reopen the global fresh lane.
+        const { data: fallback } = await createAdminClient()
+          .from("whatsapp_deliveries")
+          .select("id")
+          .eq("provider_idempotency_key", `job-fallback/${job.id}`)
+          .throwOnError();
+        if (fallback?.length && (!opts.deadline || dependencies.now() < opts.deadline)) {
+          await attemptWhatsAppDeliveriesNow(
+            fallback.map((row) => row.id),
+            runId,
+            dependencies,
+          );
+        }
+      }
+    } catch (error) {
+      // Leave a failed persistence claim recoverable without aborting the batch.
+      if (!counted) counts.deferred += 1;
+      console.error(
+        JSON.stringify({
+          event: "whatsapp_job_processing_failed",
+          id: job.id,
+          runId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   }
   return counts;

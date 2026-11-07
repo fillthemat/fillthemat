@@ -154,15 +154,17 @@ strictly advance; timestamp-less replays are constrained by the same state rules
 | sent                                                 | failed                  | failed with backoff, or dead if permanent/exhausted/stale |
 | delivered                                            | read                    | read                                                      |
 | read                                                 | any                     | ignored                                                   |
-| failed, known rejected/accepted failure              | any                     | ignored (retry is worker-only)                            |
+| failed/pending/claimed, same known failed attempt    | delivered / read        | confirmed; cancel scheduled retry/claim                   |
+| failed, known rejected/accepted failure              | sent / failed           | ignored                                                   |
 | pending/claimed/failed/dead, unknown current attempt | sent / delivered / read | receipt state; retry/claim cleared                        |
 | pending/claimed/failed, unknown current attempt      | failed                  | failed/dead; outcome becomes accepted                     |
 | dead, known outcome                                  | any                     | ignored                                                   |
 
 All other regressions/replays are ignored. In particular, delivered/read cannot
-be failed, and a known failed attempt cannot be revived by a delayed receipt.
-This intentionally tightens the legacy positive-receipt-after-known-failure rule
-to the forward-only protocol. Only **unknown** outcomes retain reconciliation.
+be failed. For the same attempt, delivered/read evidence can cancel a known
+failure's retry; sent cannot. A new execution clears the old provider ID and
+invalidates those receipts. Known dead rows remain terminal; only unknown dead
+outcomes can be rescued.
 
 AFTER UPDATE invoker hooks attach cross-outbox effects to the transition itself:
 job exhaustion atomically queues a deduplicated apology within the latest inbound
@@ -175,11 +177,21 @@ notices; started/sent email cannot safely be recalled. Recovery uses the same ho
 ### Temporary Turn seam (#253)
 
 The Turn, inbound school resolution, conversation store and booking intents still
-use legacy Drizzle. The worker now commits that Turn first and then enqueues its
+use legacy Drizzle. **WhatsApp replies do not work end to end until #253 because
+the Turn still resolves legacy schools.** Queue school identity is independently
+resolved from private public school settings by the job/delivery phone-number ID,
+never from the legacy Turn's school ID. Failed Turn processing consumes an execution;
+per-job persistence failures are logged/deferred without aborting the batch.
+The worker commits that Turn first and then enqueues its
 public delivery intents. A crash/enqueue failure between these commits can lose
 the reply after its inbound duplicate marker commits. This is the explicitly
 accepted integration-branch non-atomic seam, not an atomic outbox guarantee.
-There is no dual-read/write queue. Legacy `app` seeds are empty locally: full
+The no-intent `handleConfirmation` path also saves the inbound message and queues
+the notice separately, with the same gap. There is no dual-read/write queue.
+Hooks intentionally use transaction `now()` for receipt-window/notification
+eligibility on every path, including fenced table finalizers without `p_now`;
+RPC `p_now` controls claim/recovery cutoffs and retry scheduling only.
+Legacy `app` seeds are empty locally: full
 assistant/confirmation Turns cannot run end-to-end until #253 (and public booking
 effects require #250). Public queue mechanics and signed webhooks are verified
 directly in `queues.integration.test.ts` in the meantime.
