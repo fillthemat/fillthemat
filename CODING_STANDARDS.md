@@ -53,8 +53,8 @@ Before completing code changes, committing code, or opening a pull request, run:
 **Keep changes proportionate**:
 Prefer the smallest change that solves the issue. State a reason in the PR body for each new dependency, new file over approximately 150 lines, or large lockfile change. These triggers need an explanation; they are not bans or reasons to split an implementation artificially.
 
-**Run everything through `bun run`**:
-Every command an agent or human runs has a `package.json` script; docs never show raw `bun scripts/...` or `bunx` commands.
+**Use project commands**:
+Use `bun run` scripts for project commands and Bun's native `bun lint` / `bun fmt` for linting and formatting; docs never show raw `bun scripts/...` or `bunx` commands.
 
 **Follow the existing names**:
 Use lowercase, hyphenated file and folder names, such as `book-slot.ts`; keep Next.js names such as `page.tsx` and `route.ts`. Use PascalCase for components and types, and camelCase for functions and variables.
