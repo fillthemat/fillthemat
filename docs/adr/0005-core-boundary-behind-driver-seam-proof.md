@@ -4,6 +4,8 @@ status: accepted
 
 # An in-repo core boundary, only after the driver-seam proof
 
+Amended by [ADR 0006](0006-supabase-table-writes-and-postgres-functions.md): the atomic commit moves from a Drizzle transaction with an app-effect callback to one Postgres function.
+
 The [core map (#204)](https://github.com/fillthemat/fillthemat/issues/204) resolved to [rung 1, conditional (#212)](https://github.com/fillthemat/fillthemat/issues/212): an incremental `src/core/` boundary with a lint rule forbidding core → Fill the Mat and core → Next.js imports. Core may depend on Vercel's AI SDK, Chat SDK, Workflow and AI Gateway. The aim is to make Fill the Mat simpler to change by owning a thin reliability layer, not to create another product.
 
 Core owns canonical Conversation/Turn records, per-Conversation serialisation, outbound intent/retry/receipt mechanics and the Handoff fence; Fill the Mat keeps lifecycle policy and every domain effect. As [#213](https://github.com/fillthemat/fillthemat/issues/213) and [#211](https://github.com/fillthemat/fillthemat/issues/211) resolve, drivers return a reply plus typed prepared results that the app interprets. Core opens one transaction, validates Operator/Conversation scope and control, then calls a bounded, database-only app-effect callback: the Turn, domain effects and outbound intents commit or roll back together. In-repo Drizzle coupling is accepted; the callback's database-only bound is enforced by review and tests, not a sandbox.

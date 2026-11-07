@@ -27,6 +27,10 @@ Migration files are generated from the schema files in `supabase/schemas/`, usin
 
 Review generated migrations for data moves: add transactional backfills before dropping moved columns. Application functions must use `SECURITY INVOKER`; enforce access with grants and RLS, and mutation invariants with constraints/triggers rather than privileged RPCs.
 
+**Choose the smallest safe write path**:
+Use supabase-js table writes when one table's rules are fully enforced by grants, RLS, constraints or triggers; optimistic-concurrency filters such as `updated_at` are fine. Use a Postgres function via `.rpc()` for statements that must commit together, row/advisory locks or `SKIP LOCKED` claims, race-prone read-then-write decisions, or domain failure codes. Owner actions use the cookie client and RLS; platform workflows use the server-only secret client after app-level access checks, with functions executable by `service_role` only. Compose atomic work through SQL function calls, never transactions passed between TypeScript modules. See [ADR 0006](docs/adr/0006-supabase-table-writes-and-postgres-functions.md).
+_Examples_: offering edits and FAQ updates/deletes in `src/app/dashboard/settings/mutations.ts` (table writes); `src/app/dashboard/bookings/actions.ts` → `cancel_dashboard_booking` in `supabase/schemas/functions/bookings.sql` (RPC).
+
 ## Pages and UI
 
 **Let pages assemble the screen**:
