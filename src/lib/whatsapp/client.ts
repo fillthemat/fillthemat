@@ -31,8 +31,7 @@ export type WhatsAppSendOutcome =
   | WhatsAppSendFailure;
 
 export type WhatsAppReceiptOutcome =
-  | { ok: true; kind: "receipt_accepted" | "local_noop"; providerId: null }
-  | WhatsAppSendFailure;
+  { ok: true; kind: "receipt_accepted" | "local_noop"; providerId: null } | WhatsAppSendFailure;
 
 export type WhatsAppGraphDependencies = {
   fetch?: Fetcher;

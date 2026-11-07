@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { SECTIONS, type SectionId, sectionHref } from "./sections";
+import { sectionHref, type SectionId, SECTIONS } from "./sections";
 import { DirtyProvider, useDirtyState } from "./ui/dirty-context";
 
 export function SettingsShell({

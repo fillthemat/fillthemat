@@ -1,17 +1,17 @@
 # @shadcn/lint policy — decision doc
 
-**Status:** accepted and implemented (PR #39 — `@shadcn/lint` hosted on Oxlint,
+**Status:** accepted and implemented (PR #39 — `@shadcn/lint`, now hosted on Bun's native linter,
 all six `shadcn/*` rules, `no-restyle` at `error`, and the whole-repo compliance
-fit so `bun run lint` reports zero findings). Do not reopen unless the team
+fit so `bun lint` reports zero findings). Do not reopen unless the team
 promotes the four `warn` rules to `error`, the component set grows past the
 current ui primitives and genuinely needs a new `no-restyle` contract (e.g.
 Card/Dialog), or `@shadcn/lint` stabilizes past its current alpha and the
 recommended policy changes.
 **Date:** 2026-09-15
-**Scope:** the final `@shadcn/lint` rule configuration in `.oxlintrc.json` plus
-the compliance migration of `src/` to zero findings. `.oxlintrc.json` is the
+**Scope:** the final `@shadcn/lint` rule configuration in `bunfig.toml` plus
+the compliance migration of `src/` to zero findings. `bunfig.toml` is the
 single source of truth for exact values — this record explains why the config is
-shaped the way it is, not the JSON itself.
+shaped the way it is, not the TOML itself.
 
 ---
 

@@ -514,7 +514,7 @@ Concrete changes (**Phase 4 scope**; relocate D4's "inline send" inside the work
 - `vercel.ts` — WhatsApp daily sweeper **`0 5 * * *`**, separate from maintenance; no minute cron on Hobby.
 - `src/lib/whatsapp/worker.ts` — claim + process: resolve school via `phone_number_id` → find/create
   conversation keyed `(school_id, wa_id_hash)` → persist inbound as UIMessage parts with `messageId =
-  wamid` (also gives retry idempotency via the existing `messages` unique) → claim `generatingAt`
+wamid` (also gives retry idempotency via the existing `messages` unique) → claim `generatingAt`
   single-flight (mirror `chat/route.ts`; if already generating, reschedule the job shortly instead of
   failing) → `validateUIMessages([...history, inbound])` → the assistant's `completedReply(...)`, run to
   completion (D3) → persist assistant message → enqueue `whatsapp_deliveries` + attempt send (stub or Graph) →

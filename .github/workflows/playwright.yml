@@ -28,6 +28,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: canary
 
       - run: bun install
       - run: bun run setup

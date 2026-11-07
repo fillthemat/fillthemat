@@ -6,7 +6,7 @@
 Put shared business code in `src/lib/<area>`, such as `schedule` or `conversations`. Keep dashboard-only queries, actions and forms beside their page in `src/app`.
 
 **Keep API routes focused**:
-Routes in `src/app/api` check requests, call library functions and return responses. They must not import database code; Oxlint checks this.
+Routes in `src/app/api` check requests, call library functions and return responses. They must not import database code; `bun lint` checks this.
 _Example_: `src/app/api/bookings/route.ts` → `src/lib/schedule/book-slot.ts`
 
 **Separate database setup from business work**:
@@ -30,24 +30,24 @@ After rebasing, delete only your branch's unmerged, unapplied migration and rege
 Pages and layouts in `src/app` load data and arrange the screen; nearby components handle page-specific UI. Put shared components in `src/components` and basic controls in `src/components/ui`.
 
 **Change controls through variants**:
-Use a control's `variant` for appearance changes; add new variants inside the control instead of restyling each use. Oxlint checks shadcn styling and static classes; see `docs/decisions/lint-policy.md` for the few exceptions.
+Use a control's `variant` for appearance changes; add new variants inside the control instead of restyling each use. `bun lint` checks shadcn styling and static classes.
 _Example_: `src/components/ui/input.tsx`
 
-## Linting, formatting, and typechecks
+## Quality checks
 
-After making code changes, ensure it's up to standards by running:
+Before completing code changes, committing code, or opening a pull request, run:
 
 - bun typecheck
-- bun lint:fix
-- bun format
+- bun lint --fix
+- bun fmt
 
 ## Everyday style
 
 **Keep changes proportionate**:
 Prefer the smallest change that solves the issue. State a reason in the PR body for each new dependency, new file over approximately 150 lines, or large lockfile change. These triggers need an explanation; they are not bans or reasons to split an implementation artificially.
 
-**Run everything through `bun run`**:
-Every command an agent or human runs has a `package.json` script; docs never show raw `bun scripts/...` or `bunx` commands.
+**Use project commands**:
+Use `bun run` scripts for project commands and Bun's native `bun lint` / `bun fmt` for linting and formatting; docs never show raw `bun scripts/...` or `bunx` commands.
 
 **Follow the existing names**:
 Use lowercase, hyphenated file and folder names, such as `book-slot.ts`; keep Next.js names such as `page.tsx` and `route.ts`. Use PascalCase for components and types, and camelCase for functions and variables.
