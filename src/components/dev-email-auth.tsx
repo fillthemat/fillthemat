@@ -40,8 +40,8 @@ export function DevEmailAuth() {
   return (
     <form className="flex flex-col gap-3 rounded-xl border border-dashed border-page-700 p-4">
       <p className="text-xs tracking-wide text-page-500 uppercase">Local email auth</p>
-      <FieldGroup className="gap-3">
-        <Field className="gap-1">
+      <FieldGroup>
+        <Field>
           <FieldLabel htmlFor={`${id}-email`}>Email</FieldLabel>
           <Input
             id={`${id}-email`}
@@ -51,7 +51,7 @@ export function DevEmailAuth() {
             autoComplete="username"
           />
         </Field>
-        <Field className="gap-1">
+        <Field>
           <FieldLabel htmlFor={`${id}-password`}>Password</FieldLabel>
           <Input
             id={`${id}-password`}

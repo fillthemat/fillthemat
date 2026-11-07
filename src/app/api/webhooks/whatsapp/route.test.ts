@@ -133,7 +133,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
   it("enqueues mixed-payload messages even when their status callback fails", async () => {
     vi.mocked(applyWhatsAppStatuses).mockRejectedValueOnce(new Error("DB unavailable"));
     const payload = inboundPayload();
-    Object.assign(payload.entry[0].changes[0].value, { statuses });
+    Object.assign(payload.entry[0]!.changes[0]!.value, { statuses });
 
     const response = await POST(post(payload));
 
@@ -146,7 +146,7 @@ describe("POST /api/webhooks/whatsapp acknowledgement", () => {
   it("returns 500 for mixed payloads when enqueue fails after status success", async () => {
     vi.mocked(enqueueInboundJobs).mockRejectedValueOnce(new Error("DB unavailable"));
     const payload = inboundPayload();
-    Object.assign(payload.entry[0].changes[0].value, { statuses });
+    Object.assign(payload.entry[0]!.changes[0]!.value, { statuses });
 
     const response = await POST(post(payload));
 

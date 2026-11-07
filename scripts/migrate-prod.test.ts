@@ -47,7 +47,7 @@ it("shares the production script, refuses unsafe targets and redacts failures", 
       expect(
         JSON.parse(result.stderr.split("\n").find((line) => line.startsWith("{")) ?? "{}").code,
       ).toBeTypeOf("string");
-    if (host.endsWith(":6543")) {
+    if (host!.endsWith(":6543")) {
       expect(result.stderr).toContain('"code":"TRANSACTION_POOLER"');
       expect(result.stderr).toContain("Use a direct or session-pooler URL, not port 6543");
     }

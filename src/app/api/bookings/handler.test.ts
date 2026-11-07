@@ -84,7 +84,7 @@ describe("booking HTTP failures", () => {
       resetVerification: vi.fn(),
       onBooked,
     });
-    const record = dependencies.logFailure.mock.calls[0][0];
+    const record = dependencies.logFailure.mock.calls[0]![0];
     expect(record.databaseCode).toBe("42703");
     expect(setError).toHaveBeenLastCalledWith(
       expect.stringContaining(`Support reference: ${record.requestId}.`),
@@ -123,8 +123,8 @@ describe("booking HTTP failures", () => {
     error.cause = error;
     dependencies.bookSlot.mockRejectedValue(error);
     expect((await handler(request())).status).toBe(500);
-    expect(dependencies.logFailure.mock.calls[0][0]).not.toHaveProperty("databaseCode");
-    expect(dependencies.logFailure.mock.calls[0][0].diagnostic).toBe("unknown");
+    expect(dependencies.logFailure.mock.calls[0]![0]).not.toHaveProperty("databaseCode");
+    expect(dependencies.logFailure.mock.calls[0]![0].diagnostic).toBe("unknown");
     expect(JSON.stringify(dependencies.logFailure.mock.calls)).not.toContain("SENTINEL");
   });
   it("omits unavailable deployment fields and maps code-shaped non-allowlisted codes to unknown", async () => {
@@ -133,7 +133,7 @@ describe("booking HTTP failures", () => {
     const { dependencies, handler } = setup();
     dependencies.bookSlot.mockRejectedValue({ code: "ABCDE" });
     expect((await handler(request())).status).toBe(500);
-    const record = dependencies.logFailure.mock.calls[0][0];
+    const record = dependencies.logFailure.mock.calls[0]![0];
     expect(record.diagnostic).toBe("unknown");
     expect(record).not.toHaveProperty("databaseCode");
     expect(record).not.toHaveProperty("deploymentEnvironment");
@@ -311,7 +311,7 @@ describe("booking HTTP failures", () => {
       expect((await response.json()).bookingId).toBe("booking-id");
       expect(dependencies.logFailure).toHaveBeenCalledTimes(1);
       expect(fallbackLog).toHaveBeenCalledExactlyOnceWith(expect.any(String));
-      expect(JSON.parse(fallbackLog.mock.calls[0][0])).toMatchObject({
+      expect(JSON.parse(fallbackLog.mock.calls[0]![0])).toMatchObject({
         event: "delivery.degraded",
         error: "delivery_retry_pending",
         diagnostic: "unknown",

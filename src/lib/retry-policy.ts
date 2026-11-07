@@ -109,8 +109,7 @@ export class InternalFailure extends Error {
   }
 }
 export type RetryDecision =
-  | { action: "stop"; cause: TerminalCause }
-  | { action: "retry"; at: Date };
+  { action: "stop"; cause: TerminalCause } | { action: "retry"; at: Date };
 
 function retryDecision(
   failure: RetryFailure,

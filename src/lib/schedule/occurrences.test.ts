@@ -31,7 +31,7 @@ describe("listOpenSlots", () => {
     });
 
     expect(slots.length).toBeGreaterThan(0);
-    const first = slots[0];
+    const first = slots[0]!;
     expect(first.startAt.toISOString()).toBe("2026-03-09T22:00:00.000Z");
     expect(first.endAt.toISOString()).toBe("2026-03-09T23:00:00.000Z");
     expect(first.localTimeLabel).toMatch(/6:00 PM/i);

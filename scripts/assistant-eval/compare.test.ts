@@ -46,8 +46,8 @@ it("does not allow duplicated candidate cases to hide a failing result", () => {
     compareRuns(baseline, {
       ...baseline,
       cases: [
-        baseline.cases[0],
-        { ...baseline.cases[0], scores: [{ name: "reply-rules", value: 0 }] },
+        baseline.cases[0]!,
+        { ...baseline.cases[0]!, scores: [{ name: "reply-rules", value: 0 }] },
       ],
     }),
   ).toThrow("Duplicate");
@@ -59,7 +59,7 @@ it("cannot use a baseline with missing metrics, wrong or repeated case IDs as a 
   ];
   expect(() => requireCompleteBaseline(baseline, required)).toThrow("faq");
   expect(() =>
-    requireCompleteBaseline({ ...baseline, cases: [baseline.cases[0], baseline.cases[0]] }, [
+    requireCompleteBaseline({ ...baseline, cases: [baseline.cases[0]!, baseline.cases[0]!] }, [
       { caseId: "faq", scores: ["reply-rules"] },
     ]),
   ).toThrow();

@@ -141,11 +141,7 @@ export async function updateProfileAction(
 }
 
 type SettingsColumn =
-  | "pricing"
-  | "welcome_message"
-  | "agent_instructions"
-  | "logo_url"
-  | "primary_color";
+  "pricing" | "welcome_message" | "agent_instructions" | "logo_url" | "primary_color";
 
 function updateSchoolSettings<T extends Record<string, string | null>>(
   input: Record<string, string>,
