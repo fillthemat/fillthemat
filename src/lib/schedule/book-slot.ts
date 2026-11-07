@@ -1,23 +1,11 @@
 import type { Tables } from "@/db/types";
-import type { LandingSchool } from "@/lib/schools/public";
 import { hashToken } from "@/lib/crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseSlotId } from "./slot-id";
 
 export type BookSlotInput = {
-  school: Pick<
-    LandingSchool,
-    | "id"
-    | "approvedAt"
-    | "publishedAt"
-    | "timezone"
-    | "address"
-    | "city"
-    | "country"
-    | "accessNotes"
-    | "parkingNotes"
-    | "trialGuidance"
-  >;
+  /** The database decides publication and snapshot facts. */
+  school: { id: string };
   offeringId: string;
   slotId: string;
   idempotencyKey: string;
@@ -100,7 +88,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
     p_start_at: parsed.startAt.toISOString(),
     p_idempotency_key: input.idempotencyKey,
     p_contact_name: input.contact.name,
-    p_email: input.contact.email ?? "",
+    p_email: input.contact.email ?? undefined,
     p_phone: input.contact.phone,
     p_participant_name: input.participant.name,
     p_participant_age: input.participant.age,

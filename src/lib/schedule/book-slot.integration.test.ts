@@ -6,15 +6,20 @@ import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
 import { bookSlot, type BookSlotInput, findBookingByIdempotencyKey } from "./book-slot";
 import { listOpenSlots } from "./occurrences";
+import { encodeSlotId, parseSlotId } from "./slot-id";
 
 vi.mock("server-only", () => ({}));
 loadLocalEnv();
 const sql = authSql();
 const ownerId = randomUUID();
+const otherOwnerId = randomUUID();
 const now = new Date();
 let schoolId = "";
 let offeringId = "";
 let slotId = "";
+let otherSchoolId = "";
+let otherOfferingId = "";
+let otherWindowId = "";
 let input: BookSlotInput;
 
 beforeAll(async () => {
@@ -27,6 +32,22 @@ beforeAll(async () => {
   });
   schoolId = school.schoolId;
   offeringId = school.offeringIds[0]!;
+  const otherSchool = await seedPublicSchool(sql, {
+    ownerId: otherOwnerId,
+    slug: `other-${otherOwnerId}`,
+    name: "Other school",
+    offerings: [{ name: "Other trial" }],
+  });
+  otherSchoolId = otherSchool.schoolId;
+  otherOfferingId = otherSchool.offeringIds[0]!;
+  otherWindowId = requireRow(
+    (
+      await sql`INSERT INTO public.trial_windows
+    (school_id, trial_offering_id, day_of_week, start_minute, duration_minutes, capacity)
+    VALUES (${otherSchoolId}, ${otherOfferingId}, 2, 960, 60, 2) RETURNING id`
+    )[0],
+    "other window",
+  ).id;
   const window = requireRow(
     (
       await sql`INSERT INTO public.trial_windows
@@ -57,18 +78,7 @@ beforeAll(async () => {
     "slot",
   ).slotId;
   input = {
-    school: {
-      id: schoolId,
-      approvedAt: now,
-      publishedAt: now,
-      timezone: "America/New_York",
-      address: null,
-      city: null,
-      country: "US",
-      accessNotes: null,
-      parkingNotes: null,
-      trialGuidance: null,
-    },
+    school: { id: schoolId },
     offeringId,
     slotId,
     idempotencyKey: randomUUID(),
@@ -79,6 +89,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await deletePublicSchoolOwner(sql, ownerId);
+  await deletePublicSchoolOwner(sql, otherOwnerId);
   await sql.end();
 });
 
@@ -141,7 +152,7 @@ it("links web chat, serializes concurrent replays, and rolls back duplicate part
   await sql`UPDATE public.trial_windows SET capacity = 2 WHERE id = ${window.id}`;
   const slots = listOpenSlots({
     offeringId,
-    timezone: input.school.timezone,
+    timezone: "America/New_York",
     now,
     occurrences: [],
     windows: [
@@ -200,6 +211,19 @@ it("links web chat, serializes concurrent replays, and rolls back duplicate part
   const [occurrence] =
     await sql`SELECT booked_count FROM public.trial_occurrences WHERE id = ${result.booking.trialOccurrenceId}`;
   expect(occurrence?.booked_count).toBe(1);
+  // A later booking can link this same conversation without replacing its
+  // original contact (e.g. a family booking for another adult).
+  const later = await bookSlot({
+    ...chatInput,
+    idempotencyKey: randomUUID(),
+    contact: { name: "Another adult", email: null, phone: "555-another" },
+  });
+  if (!later.ok) throw new Error(later.code);
+  expect(later.booking.conversationId).toBe(conversation.id);
+  expect(later.booking.contactId).not.toBe(result.booking.contactId);
+  const [preserved] =
+    await sql`SELECT contact_id FROM public.conversations WHERE id = ${conversation.id}`;
+  expect(preserved?.contact_id).toBe(result.booking.contactId);
 });
 
 it("preserves expected validation failure codes without side effects", async () => {
@@ -218,6 +242,33 @@ it("preserves expected validation failure codes without side effects", async () 
     ok: false,
     code: "school_not_public",
   });
+  expect(
+    await bookSlot({ ...input, school: { id: otherSchoolId }, idempotencyKey: randomUUID() }),
+  ).toEqual({ ok: false, code: "school_not_public" });
+  expect(
+    await bookSlot({ ...input, offeringId: otherOfferingId, idempotencyKey: randomUUID() }),
+  ).toEqual({ ok: false, code: "ineligible" });
+  const parsed = requireRow(parseSlotId(slotId), "parsed slot");
+  expect(
+    await bookSlot({
+      ...input,
+      slotId: encodeSlotId(otherWindowId, parsed.startAt),
+      idempotencyKey: randomUUID(),
+    }),
+  ).toEqual({ ok: false, code: "invalid_slot" });
+  for (const days of [1, 21]) {
+    const start = new Date(parsed.startAt.getTime() + days * 86400000);
+    expect(
+      await bookSlot({
+        ...input,
+        slotId: encodeSlotId(parsed.windowId, start),
+        idempotencyKey: randomUUID(),
+      }),
+    ).toEqual({ ok: false, code: "slot_unavailable" });
+  }
+  expect(
+    (await sql`SELECT id FROM public.bookings WHERE school_id = ${otherSchoolId}`).length,
+  ).toBe(0);
 });
 
 it("is invoker, empty-search-path, and executable only by the service role", async () => {
@@ -238,7 +289,6 @@ it("is invoker, empty-search-path, and executable only by the service role", asy
     p_start_at: now.toISOString(),
     p_idempotency_key: randomUUID(),
     p_contact_name: "Test",
-    p_email: "",
     p_phone: "555",
     p_participant_name: "Test",
     p_participant_age: 10,

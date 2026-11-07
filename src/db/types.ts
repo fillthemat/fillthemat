@@ -1326,7 +1326,7 @@ export type Database = {
         Args: {
           p_contact_name: string;
           p_conversation_id?: string;
-          p_email: string;
+          p_email?: string;
           p_idempotency_key: string;
           p_landing_token_hash?: string;
           p_now?: string;

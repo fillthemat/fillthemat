@@ -2,8 +2,8 @@
 -- No INSERT booking triggers exist: this function owns all booking side effects.
 CREATE FUNCTION public.book_trial(
     p_school_id uuid, p_offering_id uuid, p_window_id uuid, p_start_at timestamptz,
-    p_idempotency_key text, p_contact_name text, p_email text, p_phone text,
-    p_participant_name text, p_participant_age integer,
+    p_idempotency_key text, p_contact_name text, p_phone text,
+    p_participant_name text, p_participant_age integer, p_email text DEFAULT NULL,
     p_landing_token_hash text DEFAULT NULL, p_resume_token_hash text DEFAULT NULL,
     p_conversation_id uuid DEFAULT NULL, p_now timestamptz DEFAULT now()
 )
@@ -49,6 +49,11 @@ BEGIN
     FOR SHARE;
     IF NOT FOUND THEN RAISE EXCEPTION 'invalid_slot'; END IF;
     v_local := p_start_at AT TIME ZONE v_school.timezone;
+    -- Change these lead/horizon limits together with MIN_LEAD_MINUTES and
+    -- SLOT_HORIZON_DAYS in src/lib/schedule/constants.ts.
+    -- At DST fall-back both UTC instants of a repeated wall-clock hour pass
+    -- this check; listOpenSlots offers only date-fns-tz's chosen instant.
+    -- Trusted SQL callers must use offered slots to avoid that duplicate hour.
     IF p_start_at IS NULL OR p_start_at < p_now + interval '120 minutes'
         OR p_start_at > p_now + interval '14 days'
         OR extract(dow FROM v_local) <> v_window.day_of_week
@@ -80,7 +85,7 @@ BEGIN
     RETURNING id INTO v_participant_id;
     SELECT id INTO v_landing_id FROM public.landing_sessions
     WHERE school_id = p_school_id AND session_key_hash = p_landing_token_hash;
-    UPDATE public.conversations SET contact_id = v_contact_id
+    UPDATE public.conversations SET contact_id = coalesce(contact_id, v_contact_id)
     WHERE school_id = p_school_id AND ended_at IS NULL AND expires_at > p_now
         AND ((p_conversation_id IS NOT NULL AND id = p_conversation_id)
             OR (p_conversation_id IS NULL AND resume_token_hash = p_resume_token_hash))
@@ -121,5 +126,5 @@ EXCEPTION WHEN unique_violation THEN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.book_trial(uuid, uuid, uuid, timestamptz, text, text, text, text, text, integer, text, text, uuid, timestamptz) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.book_trial(uuid, uuid, uuid, timestamptz, text, text, text, text, text, integer, text, text, uuid, timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.book_trial(uuid, uuid, uuid, timestamptz, text, text, text, text, integer, text, text, text, uuid, timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.book_trial(uuid, uuid, uuid, timestamptz, text, text, text, text, integer, text, text, text, uuid, timestamptz) TO service_role;
