@@ -1323,6 +1323,19 @@ export type Database = {
         Returns: string;
       };
       cancel_dashboard_booking: { Args: { p_booking_id: string }; Returns: string };
+      create_onboarding_school: {
+        Args: {
+          p_city: string;
+          p_name: string;
+          p_notification_email: string;
+          p_owner_email: string;
+          p_owner_user_id: string;
+          p_self_approve?: boolean;
+          p_slug: string;
+          p_timezone: string;
+        };
+        Returns: string;
+      };
       create_settings_faq: {
         Args: { p_answer: string; p_question: string; p_school_id: string };
         Returns: {
