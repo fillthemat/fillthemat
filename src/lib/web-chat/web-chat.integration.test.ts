@@ -383,7 +383,7 @@ describe("a web chat turn's trace", () => {
 
     await whileSavingMessages(
       sql,
-      { schema: "public", conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
+      { conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
       async () => {
         await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
       },
@@ -410,7 +410,6 @@ describe("a web chat turn's trace", () => {
         conversationId,
         role: "assistant",
         statement: "raise exception 'disk full'",
-        schema: "public",
       },
       async () => {
         await (await sendMessage(resumeToken, "question-1", "What can my son try?")).text();
@@ -467,7 +466,7 @@ describe("a web chat turn whose browser disconnects mid-reply", () => {
 
     await whileSavingMessages(
       sql,
-      { schema: "public", conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
+      { conversationId, role: "assistant", statement: "perform pg_sleep(0.5)" },
       async () => {
         const response = await sendMessage(resumeToken, "question-1", "What can my son try?");
         const body = response.body?.getReader();

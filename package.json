@@ -18,7 +18,6 @@
     "dev:stop": "bun scripts/stop-dev-local.ts",
     "doctor": "bun scripts/doctor-local.ts",
     "eval:assistant": "bun scripts/assistant-eval.ts",
-    "lint": "bun lint --no-script --config .oxlintrc.json --type-aware --type-check",
     "logs:prod": "bun --no-env-file scripts/logs-prod.ts",
     "pr:queue": "bun --no-env-file scripts/pr-queue.ts",
     "setup": "bun scripts/setup-local.ts",
