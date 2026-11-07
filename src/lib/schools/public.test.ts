@@ -97,8 +97,37 @@ describe("school access", () => {
 describe("school catalog", () => {
   it("scopes every query and maps scheduling timestamps and profile fields", async () => {
     const reads = [
-      query([{ id: "offering", minimum_age: 5, maximum_age: 12, active: true }]),
-      query([{ id: "window", trial_offering_id: "offering", day_of_week: 1, start_minute: 600 }]),
+      query([
+        {
+          id: "offering",
+          name: "Karate",
+          description: null,
+          minimum_age: 5,
+          maximum_age: 12,
+          active: true,
+          attire: null,
+          expectations: null,
+          school_id: school.id,
+          waiver_notes: "Unused",
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+      ]),
+      query([
+        {
+          id: "window",
+          trial_offering_id: "offering",
+          day_of_week: 1,
+          start_minute: 600,
+          duration_minutes: 60,
+          capacity: 5,
+          label: null,
+          active: true,
+          school_id: school.id,
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+      ]),
       query([{ trial_window_id: "window", start_at: timestamp, booked_count: 2, capacity: 5 }]),
       query([{ question: "Where?", answer: "Here", sort_order: 1 }]),
     ];
@@ -117,22 +146,38 @@ describe("school catalog", () => {
     }
     expect(reads.at(-1)?.order).toHaveBeenCalledWith("sort_order");
     expect(catalog.offerings).toEqual([
-      expect.objectContaining({ minimumAge: 5, maximumAge: 12, active: true }),
+      {
+        id: "offering",
+        name: "Karate",
+        description: null,
+        minimumAge: 5,
+        maximumAge: 12,
+        active: true,
+        attire: null,
+        expectations: null,
+      },
     ]);
     expect(catalog.windows).toEqual([
-      expect.objectContaining({ trialOfferingId: "offering", dayOfWeek: 1, startMinute: 600 }),
+      {
+        id: "window",
+        trialOfferingId: "offering",
+        dayOfWeek: 1,
+        startMinute: 600,
+        durationMinutes: 60,
+        capacity: 5,
+        label: null,
+        active: true,
+      },
     ]);
     expect(catalog.occurrences).toEqual([
-      expect.objectContaining({
+      {
         trialWindowId: "window",
         startAt: new Date(timestamp),
         bookedCount: 2,
         capacity: 5,
-      }),
+      },
     ]);
-    expect(catalog.faqs).toEqual([
-      expect.objectContaining({ question: "Where?", answer: "Here", sortOrder: 1 }),
-    ]);
+    expect(catalog.faqs).toEqual([{ question: "Where?", answer: "Here" }]);
   });
 
   it("reads beyond PostgREST's first page", async () => {

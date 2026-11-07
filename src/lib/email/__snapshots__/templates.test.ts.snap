@@ -14,7 +14,7 @@ Fillthemat",
 }
 `;
 
-exports[`booking email templates > omits optional details and accepts an ISO timestamp at the boundary 1`] = `
+exports[`booking email templates > omits optional details 1`] = `
 {
   "subject": "Trial class confirmed at River Dojo",
   "text": "You're booked for a trial class at River Dojo.
@@ -49,12 +49,50 @@ Fillthemat",
 }
 `;
 
+exports[`booking email templates > ownerBookingEmail preserves the current missing contact email output 1`] = `
+{
+  "subject": "New trial booking: Alex",
+  "text": "A trial class was booked at River Dojo.
+
+Contact: Sam <null> +1 555 987 6543
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+Fillthemat",
+}
+`;
+
 exports[`booking email templates > ownerCancellationEmail preserves the complete subject and body 1`] = `
 {
   "subject": "Trial cancelled: Alex",
   "text": "A trial class was cancelled at River Dojo.
 
 Contact: Sam <sam@example.com>
+School: details below
+Offering: Kids karate
+Participant: Alex (age 8)
+When: Monday, November 9, 2026 at 10:00 AM (America/New_York)
+Where: 12 River Road
+What to know:
+Wear comfortable clothes.
+Arrive early.
+
+Fillthemat",
+}
+`;
+
+exports[`booking email templates > ownerCancellationEmail preserves the current missing contact email output 1`] = `
+{
+  "subject": "Trial cancelled: Alex",
+  "text": "A trial class was cancelled at River Dojo.
+
+Contact: Sam <null>
 School: details below
 Offering: Kids karate
 Participant: Alex (age 8)

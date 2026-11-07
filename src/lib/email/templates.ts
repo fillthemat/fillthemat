@@ -9,7 +9,7 @@ export type EmailSchool = {
 
 /** Immutable booking facts rendered by the templates. */
 export type EmailBooking = {
-  startAt: Date | string;
+  startAt: Date;
   timezoneSnapshot: string;
   offeringNameSnapshot: string;
   participantNameSnapshot: string;

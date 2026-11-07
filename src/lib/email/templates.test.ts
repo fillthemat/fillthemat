@@ -43,12 +43,11 @@ describe("booking email templates", () => {
     });
   }
 
-  it("omits optional details and accepts an ISO timestamp at the boundary", () => {
+  it("omits optional details", () => {
     const message = prospectConfirmationEmail(
       { ...school, phone: null, notificationEmail: null },
       {
         ...booking,
-        startAt: "2026-11-09T15:00:00Z",
         locationSnapshot: null,
         instructionsSnapshot: null,
       },
@@ -56,6 +55,12 @@ describe("booking email templates", () => {
     expect(message).toMatchSnapshot();
     expect(message.text).not.toMatch(/Where:|What to know:|School phone:|School email:|\n{3}/);
   });
+
+  for (const template of [ownerBookingEmail, ownerCancellationEmail]) {
+    it(`${template.name} preserves the current missing contact email output`, () => {
+      expect(template(school, { ...booking, contactEmailSnapshot: null })).toMatchSnapshot();
+    });
+  }
 
   it("omits a missing contact email from WhatsApp failure notifications", () => {
     expect(
