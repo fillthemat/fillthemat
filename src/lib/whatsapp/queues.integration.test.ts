@@ -4,6 +4,8 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import type { Database } from "@/db/types";
 import { POST } from "@/app/api/webhooks/whatsapp/route";
 import * as conversationStore from "@/lib/conversations/conversation-store";
+import { bookSlot } from "@/lib/schedule/book-slot";
+import { listOpenSlots } from "@/lib/schedule/occurrences";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
@@ -55,6 +57,7 @@ beforeAll(async () => {
     ownerId,
     slug: ownerId,
     name: "WhatsApp school",
+    publishedAt: now,
     offerings: [{ name: "Trial" }],
   });
   schoolId = school.schoolId;
@@ -661,6 +664,128 @@ it("permanent failure status queues the confirmation notice exactly once; stale 
     .eq("booking_id", bookingId)
     .throwOnError();
   expect(data).toEqual([]);
+});
+
+it("public book_trial IDs support confirmation death and receipt cancellation hooks", async () => {
+  const { data: window } = await client()
+    .from("trial_windows")
+    .select()
+    .eq("school_id", schoolId)
+    .single()
+    .throwOnError();
+  const trialWindow = requireRow(window, "window");
+  const slot = requireRow(
+    listOpenSlots({
+      offeringId: trialWindow.trial_offering_id,
+      timezone: "America/New_York",
+      now,
+      occurrences: [],
+      windows: [
+        {
+          id: trialWindow.id,
+          trialOfferingId: trialWindow.trial_offering_id,
+          dayOfWeek: trialWindow.day_of_week,
+          startMinute: trialWindow.start_minute,
+          durationMinutes: trialWindow.duration_minutes,
+          capacity: trialWindow.capacity,
+          active: trialWindow.active,
+          label: trialWindow.label,
+        },
+      ],
+    })[0],
+    "slot",
+  );
+  // Same public Book Trial boundary used by booking.ts after #271. Intent,
+  // transcript and legacy school lookups still prevent a full replay until #253/#254.
+  const booked = await bookSlot({
+    school: { id: schoolId },
+    offeringId: trialWindow.trial_offering_id,
+    slotId: slot.slotId,
+    idempotencyKey: randomUUID(),
+    contact: { name: "Family", email: null, phone: "15550000002" },
+    participant: { name: "New participant", age: 10 },
+    now,
+  });
+  expect(booked.ok).toBe(true);
+  if (!booked.ok) throw new Error(booked.code);
+  const id = requireRow(
+    await enqueueWhatsAppDelivery({
+      schoolId,
+      phoneNumberId: phone,
+      recipientWaId: "15550000002",
+      providerIdempotencyKey: `booking-confirmation-template/${booked.booking.id}`,
+      templateName: "booking_confirmation",
+      templateParams: ["WhatsApp school", "New participant", "Trial", "Monday"],
+      bookingId: booked.booking.id,
+    }),
+    "confirmation",
+  );
+  const failure = vi.fn(async () => ({
+    ok: false as const,
+    kind: "whatsapp_error" as const,
+    code: 131026,
+    subcode: null,
+    details: null,
+    status: 400,
+    message: "not deliverable",
+  }));
+  expect(
+    await sendWhatsAppDelivery(await claim(id), {
+      transport: {
+        sendText: failure,
+        sendTemplate: failure,
+        sendInteractive: failure,
+      },
+    }),
+  ).toBe("dead");
+  const { data: notice } = await client()
+    .from("email_deliveries")
+    .select()
+    .eq("booking_id", booked.booking.id)
+    .eq("kind", "owner_whatsapp_confirmation_failed")
+    .single()
+    .throwOnError();
+  expect(notice?.state).toBe("pending");
+  expect(notice?.recipient).toBe(`${ownerId}@local.test`);
+  // A known rejection is terminal; a later unknown attempt exhausted during
+  // crash recovery remains reconcilable, using this same public booking ID.
+  const unknown = requireRow(
+    await enqueueWhatsAppDelivery({
+      schoolId,
+      phoneNumberId: phone,
+      recipientWaId: "15550000002",
+      providerIdempotencyKey: randomUUID(),
+      templateName: "booking_confirmation",
+      bookingId: booked.booking.id,
+    }),
+    "unknown confirmation",
+  );
+  await client()
+    .from("whatsapp_deliveries")
+    .update({
+      state: "claimed",
+      attempts: 5,
+      claimed_at: new Date(now.getTime() - 600_000).toISOString(),
+      claimed_by: "crashed",
+      send_outcome: "unknown",
+    })
+    .eq("id", unknown)
+    .throwOnError();
+  await recoverStuckWhatsAppDeliveries(300_000, now, "public-booking", [phone]);
+  await applyWhatsAppStatuses([
+    status("public-booking-confirmed", "delivered", {
+      callbackData: `${unknown}:5`,
+      phoneNumberId: phone,
+    }),
+  ]);
+  expect((await state(unknown)).state).toBe("delivered");
+  const { data: cancelled } = await client()
+    .from("email_deliveries")
+    .select("id")
+    .eq("booking_id", booked.booking.id)
+    .eq("kind", "owner_whatsapp_confirmation_failed")
+    .throwOnError();
+  expect(cancelled).toEqual([]);
 });
 
 it("platform functions are service_role-only invokers with empty search_path", async () => {

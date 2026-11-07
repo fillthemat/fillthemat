@@ -115,10 +115,13 @@ uses this SQL function as the only definition of the reminder rule (no TS copy),
 records its run in public.cron_runs; ending inactive conversations deliberately
 still calls the legacy conversation store until #253.
 
-During the integration-branch migration, legacy Book Trial/Lead callers
-still enqueue into app.email_deliveries. The dispatcher and reminder scheduler
+During the integration-branch migration, legacy Lead callers
+still enqueue into app.email_deliveries. Book Trial (including the current WhatsApp
+booking caller) uses the service-only `book_trial` function and public outbox.
+It locks the occurrence and owns counters, emails and events: booking triggers
+only handle owner status updates, never INSERT. The dispatcher and reminder scheduler
 read **public only**; those emails and reminders for legacy app bookings are
-intentionally not sent until #250–#251 migrate those workflows. WhatsApp delivery
+intentionally not sent until #251 migrates that workflow. WhatsApp delivery
 death notices now enqueue public email directly through SQL.
 
 ## WhatsApp queues
@@ -192,8 +195,13 @@ Hooks intentionally use transaction `now()` for receipt-window/notification
 eligibility on every path, including fenced table finalizers without `p_now`;
 RPC `p_now` controls claim/recovery cutoffs and retry scheduling only.
 Legacy `app` seeds are empty locally: full
-assistant/confirmation Turns cannot run end-to-end until #253 (and public booking
-effects require #250). Public queue mechanics and signed webhooks are verified
+assistant/confirmation Turns cannot run end-to-end until #253. Book Trial now
+returns public booking IDs compatible with the public confirmation/death hooks;
+the legacy Turn/intent/transcript path still prevents full WhatsApp confirmation.
+Atomic booking plus confirmation transcript/reply writes remain #254; `booking.ts`
+still uses legacy school/intent/message lookups and deliberately omits the legacy
+conversation ID from `book_trial`. Queue identity does not bridge those Turn IDs.
+Public queue mechanics and signed webhooks are verified
 directly in `queues.integration.test.ts` in the meantime.
 
 ## Changes

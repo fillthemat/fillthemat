@@ -142,7 +142,8 @@ export async function confirmWhatsAppBooking(
     idempotencyKey: bookingConfirmationIdempotencyKey(schoolId, wamid),
     contact: { name: participantName, email: null, phone: waId },
     participant: { name: participantName, age: intent.participantAge },
-    conversationId,
+    // app.conversations cannot reference public.bookings; migrate the link in #253.
+    conversationId: undefined,
   });
 
   if (!result.ok) {

@@ -44,9 +44,10 @@ BEGIN
             terminal_cause = v_cause, claimed_at = NULL, claimed_by = NULL WHERE id = d.id RETURNING *;
         RETURN;
     END IF;
-    -- Known failed attempts are terminal for receipts; unknown attempts can be
-    -- rescued by positive evidence, even after budget exhaustion.
-    IF d.state IN ('pending', 'claimed', 'failed') AND d.send_outcome IS DISTINCT FROM 'unknown' THEN RETURN; END IF;
+    -- Only delivered/read may cancel the retry of a known failed attempt.
+    -- A successor start clears provider_id, invalidating the old receipt.
+    IF d.state IN ('pending', 'claimed', 'failed') AND d.send_outcome IS DISTINCT FROM 'unknown'
+        AND p_status = 'sent' THEN RETURN; END IF;
     RETURN QUERY UPDATE public.whatsapp_deliveries SET state = p_status::public.whatsapp_delivery_state,
         send_outcome = 'accepted', provider_id = p_wamid, status_at = v_at, sent_at = coalesce(sent_at, v_at),
         last_error = NULL, failure_code = NULL, failure_reason = NULL, terminal_cause = NULL,
@@ -253,10 +254,11 @@ CREATE OR REPLACE FUNCTION public.whatsapp_confirmation_hook()
   AS $function$
 DECLARE v_email text;
 BEGIN
-    IF NEW.booking_id IS NULL OR NEW.template_name <> 'booking_confirmation' THEN RETURN NEW; END IF;
+    IF NEW.booking_id IS NULL OR NEW.template_name IS DISTINCT FROM 'booking_confirmation' THEN RETURN NEW; END IF;
     IF NEW.state = 'dead' AND OLD.state <> 'dead' AND NEW.terminal_cause <> 'stale'
         AND EXISTS (SELECT 1 FROM public.bookings WHERE id = NEW.booking_id AND school_id = NEW.school_id AND start_at > now()) THEN
         SELECT notification_email INTO v_email FROM public.school_settings WHERE school_id = NEW.school_id;
+        v_email := nullif(btrim(v_email), '');
         IF v_email IS NOT NULL THEN
             PERFORM public.enqueue_email_delivery(NEW.school_id, 'owner_whatsapp_confirmation_failed', v_email,
                 'owner-whatsapp-confirmation-failed/' || NEW.booking_id, NEW.booking_id);
@@ -278,7 +280,7 @@ CREATE OR REPLACE FUNCTION public.whatsapp_job_death_hook()
   AS $function$
 DECLARE v_school uuid; v_window timestamptz; v_recipient text;
 BEGIN
-    IF NEW.state <> 'dead' OR OLD.state = 'dead' OR NEW.terminal_cause <> 'attempts_exhausted'
+    IF NEW.state <> 'dead' OR OLD.state = 'dead' OR NEW.terminal_cause IS DISTINCT FROM 'attempts_exhausted'
         OR NEW.kind <> 'inbound_message' THEN RETURN NEW; END IF;
     v_recipient := NEW.payload->>'waId';
     IF coalesce(v_recipient, '') = '' THEN RETURN NEW; END IF;
