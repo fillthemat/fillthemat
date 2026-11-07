@@ -17,7 +17,7 @@ Related: `docs/v1-deploy-current.md` (what production needs), `docs/whatsapp-pha
 3. **Company card / bank on day one of each new account.** If a vendor trials without a card, add the card before any paid SKU (Vercel Pro, Supabase Pro, Resend, Gateway credits).
 4. **Leave personal stuff personal.** `cosmikmuffin.com` stays on the personal Vercel team. OpenCode on a personal Zen key can stay personal until you decide otherwise. Local Docker / `.env.local` stays on the laptop.
 5. **One extra human recovery path.** `admin@` as the only owner of Google Workspace + Vercel + the bank is a single point of failure. Add a second Workspace super-admin (another person or a break-glass mailbox) before you depend on this in production.
-6. **Do not paste secrets into this repo.** New keys go to the new Vercel project only. Rotate anything that ever lived on the personal account.
+6. **Do not paste secrets into this repo.** Runtime keys go to the new Vercel project; production migration credentials go to GitHub's `production-migrations` environment secrets, restricted to branch `main` (see the deploy guide §5), never repository secrets. Rotate anything that ever lived on the personal account.
 
 ---
 
@@ -161,14 +161,8 @@ Create **new**, do not “transfer project” across orgs (painful and still tie
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - Publishable key → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - Transaction pooler (port **6543**) → `DATABASE_URL`
-   - Direct (port **5432**) → `DIRECT_URL` (also `.env.production.local` on the laptop for `bun run db:migrate:prod`)
-5. Migrate schema:
-
-   ```bash
-   bun run db:migrate:prod
-   ```
-
-   against the **new** `DIRECT_URL` only. Confirm `app.schools` exists.
+   - Direct (port **5432**) → `DIRECT_URL` only while legacy tooling still needs it; Vercel no longer uses it to migrate.
+5. Follow `docs/v1-deploy-current.md` §5: confirm the **new** project ref, create the dedicated GitHub `production-migrations` environment with a deployment-branch rule allowing only branch `main` (no tags), and set its environment secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, and `SUPABASE_PROJECT_REF` (not repository secrets or Vercel's `Production` environment). Use the token scopes and network checklist in that guide, then run **Production migrations** from `main`. Update the read-only MCP ref in `opencode.json` too. Confirm Supabase history matches `supabase/migrations/` and `public.schools` exists before deploying dependent app code. Do not run the removed Drizzle production commands. This applies schema only; production app/data cutover remains a separate task.
 
 6. Auth: Site URL `https://www.fillthemat.com`. Redirects: `/auth/callback`, preview `https://<new-vercel>/**` if you use previews, plus local callbacks if this project is also used from the laptop (prefer not to — local Docker stays local).
 7. Enable Google; paste the new GCP client id/secret from D. Add the new callback URI on the GCP client.
@@ -305,7 +299,7 @@ Do **not** commit `.vercel/`, `.env.production.local`, or keys.
 
 - `.env.local` can keep personal/test Resend and Turnstile test keys. That is not production.
 - `bunx vercel env pull` from the **new** scope if you want real prod OIDC for local Gateway. Do not mix old/new files.
-- `bun run db:migrate:prod` only with the new `DIRECT_URL` in `.env.production.local`.
+- Production migrations run through GitHub Actions with the confirmed new project secrets, not laptop `.env.production.local`.
 - `vercel whoami` should show the company team before any `vercel --prod`.
 
 ---

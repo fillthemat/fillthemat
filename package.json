@@ -4,13 +4,9 @@
   "private": true,
   "scripts": {
     "build": "bun run --bun next build",
-    "build:vercel": "if [ \"$VERCEL_ENV\" = \"production\" ]; then bun run db:migrate:deploy && bun run db:check; fi && bun run build",
-    "db:check": "bun --no-env-file scripts/check-migrations.ts",
-    "db:check:prod": "bun --no-env-file --env-file=.env.production.local scripts/check-migrations.ts",
-    "db:migrate:deploy": "bun --no-env-file scripts/migrate-prod.ts",
+    "build:vercel": "bun run build",
     "db:migrate:down": "supabase migration down --local",
     "db:migrate:gen": "supabase db schema declarative sync --no-apply --yes",
-    "db:migrate:prod": "bun --no-env-file --env-file=.env.production.local scripts/migrate-prod.ts",
     "db:migrate:up": "supabase migration up --local",
     "db:start": "supabase start",
     "db:typegen": "supabase gen types --lang typescript --local > src/db/types.ts",
@@ -87,7 +83,7 @@
     "@vercel/config": "^0.7.0",
     "drizzle-kit": "^0.31.10",
     "skills": "^1.7.4",
-    "supabase": "^3.0.0",
+    "supabase": "3.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "7.0.2",
     "vitest": "^4.1.11"
