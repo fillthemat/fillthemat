@@ -1502,6 +1502,29 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      commit_whatsapp_turn: {
+        Args: {
+          p_conversation_id: string;
+          p_effect: Json;
+          p_generation: string;
+          p_inbound_id: string;
+          p_inbound_text: string;
+          p_now: string;
+          p_phone_number_id: string;
+          p_reply_chunks: Json;
+          p_reply_id: string;
+          p_reply_message_id: string;
+          p_reply_text: string;
+          p_school_id: string;
+          p_wa_id: string;
+          p_wamid: string;
+        };
+        Returns: {
+          delivery_ids: string[];
+          lead_id: string;
+          reply_message_id: string;
+        }[];
+      };
       create_lead: {
         Args: {
           p_channel: string;
@@ -1567,6 +1590,7 @@ export type Database = {
         };
       };
       delete_settings_window: { Args: { p_window_id: string }; Returns: string };
+      end_inactive_conversations: { Args: { p_now: string }; Returns: number };
       end_web_conversation_at_limit: {
         Args: {
           p_conversation_id: string;
@@ -1744,6 +1768,10 @@ export type Database = {
       };
       resolve_web_conversation: {
         Args: { p_now: string; p_school_id: string; p_token_hash: string };
+        Returns: string;
+      };
+      resolve_whatsapp_conversation: {
+        Args: { p_now: string; p_school_id: string; p_token_hash: string; p_wa_id_hash: string };
         Returns: string;
       };
       start_email_delivery: {

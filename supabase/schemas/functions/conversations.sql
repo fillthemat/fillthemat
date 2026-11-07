@@ -34,8 +34,10 @@ BEGIN
     WHERE id = p_conversation_id AND school_id = p_school_id
       AND generating_at = p_generation AND ended_at IS NULL FOR UPDATE;
     IF NOT FOUND THEN RAISE EXCEPTION 'generation_lost' USING ERRCODE = '22023'; END IF;
-    INSERT INTO public.messages (id, conversation_id, message_id, role, parts, completion)
-    VALUES (p_id, p_conversation_id, p_message_id, p_role, p_parts, p_completion)
+    -- Transaction now() is identical for both messages of an atomic Turn.
+    -- Use statement-time insertion order rather than random UUID tie-breaking.
+    INSERT INTO public.messages (id, conversation_id, message_id, role, parts, completion, created_at)
+    VALUES (p_id, p_conversation_id, p_message_id, p_role, p_parts, p_completion, clock_timestamp())
     ON CONFLICT (conversation_id, message_id) DO NOTHING RETURNING id INTO v_id;
     IF v_id IS NOT NULL AND p_role = 'user' THEN
         UPDATE public.conversations SET expires_at = p_now + interval '30 days' WHERE id = p_conversation_id;

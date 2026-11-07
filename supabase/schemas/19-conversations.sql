@@ -24,6 +24,11 @@ CREATE TRIGGER conversations_set_updated_at
 BEFORE UPDATE ON public.conversations
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+CREATE TRIGGER conversations_expire_intents
+AFTER UPDATE ON public.conversations
+FOR EACH ROW WHEN (OLD.ended_at IS NULL AND NEW.ended_at IS NOT NULL)
+EXECUTE FUNCTION public.expire_ended_conversation_intents();
+
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.conversations FROM PUBLIC, anon, authenticated;
 
