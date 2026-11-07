@@ -31,14 +31,14 @@ async function freshUser() {
   return id;
 }
 
-function createSchool(owner: string, slug = randomUUID(), approve = false) {
+function createSchool(owner: string, slug = randomUUID(), approve = false, city = "New York") {
   return admin.rpc("create_onboarding_school", {
     p_owner_user_id: owner,
     p_owner_email: `${owner}@local.test`,
     p_name: "Fresh school",
     p_slug: slug,
     p_timezone: "America/New_York",
-    p_city: "New York",
+    p_city: city,
     p_notification_email: "notifications@local.test",
     p_self_approve: approve,
   });
@@ -49,13 +49,18 @@ afterAll(async () => {
   await sql.end({ timeout: 5 });
 });
 
-it("atomically provisions a fresh auth user and an owner-visible unpublished school", async () => {
-  const owner = await freshUser();
-  expect(await createSchool(owner)).toMatchObject({ data: "created", error: null });
-  await sql.begin(async (tx) => {
-    await tx`set local role authenticated`;
-    await tx`select set_config('request.jwt.claim.sub', ${owner}, true)`;
-    const [row] = await tx`
+it.each(["New York", ""])(
+  "atomically provisions an owner-visible school with city %j",
+  async (city) => {
+    const owner = await freshUser();
+    expect(await createSchool(owner, randomUUID(), false, city)).toMatchObject({
+      data: "created",
+      error: null,
+    });
+    await sql.begin(async (tx) => {
+      await tx`set local role authenticated`;
+      await tx`select set_config('request.jwt.claim.sub', ${owner}, true)`;
+      const [row] = await tx`
       select s.approved_at, s.published_at, p.name, p.city, p.country,
         settings.notification_email, u.email
       from public.school_settings settings
@@ -63,17 +68,18 @@ it("atomically provisions a fresh auth user and an owner-visible unpublished sch
       join public.school_profiles p on p.school_id = s.id
       join public.users u on u.id = settings.owner_user_id
     `;
-    expect(requireRow(row, "new school")).toMatchObject({
-      approved_at: null,
-      published_at: null,
-      name: "Fresh school",
-      city: "New York",
-      country: "US",
-      notification_email: "notifications@local.test",
-      email: `${owner}@local.test`,
+      expect(requireRow(row, "new school")).toMatchObject({
+        approved_at: null,
+        published_at: null,
+        name: "Fresh school",
+        city: city || null,
+        country: "US",
+        notification_email: "notifications@local.test",
+        email: `${owner}@local.test`,
+      });
     });
-  });
-});
+  },
+);
 
 it("maps a taken slug and rolls back the new user and all school rows", async () => {
   const owner = await freshUser();

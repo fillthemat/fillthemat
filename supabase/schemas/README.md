@@ -59,6 +59,11 @@ saves and deadline extensions. Saved messages carry a generation fence so
 an abandoned worker cannot save into a successor's turn. Generation claim/release
 are conditional table updates, scoped to both school and conversation.
 
+School provisioning is also platform-managed: onboarding calls the service-role-only
+`create_onboarding_school` invoker RPC through the secret client after `requireUser()`.
+Browser roles have no INSERT access to `users`, `schools` or `school_settings`, so
+initial identity and ownership creation is an exception to cookie-client owner actions.
+
 ## Changes
 
 1. Edit the table files and/or grouped functions.

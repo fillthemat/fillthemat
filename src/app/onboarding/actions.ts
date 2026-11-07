@@ -35,6 +35,7 @@ export async function createSchoolAction(formData: FormData) {
     p_notification_email: parsed.data.notificationEmail,
     p_self_approve: allowSelfApproval(),
   });
+  if (error?.code === "22023") redirect("/onboarding?error=invalid");
   if (error) throw error;
   if (data === "slug_taken") redirect("/onboarding?error=slug");
   if (data !== "created" && data !== "already_exists") {

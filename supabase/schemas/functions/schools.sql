@@ -91,7 +91,7 @@ BEGIN
     -- the user row lock serializes concurrent onboarding for this owner.
     INSERT INTO public.users (id, email) VALUES (p_owner_user_id, p_owner_email)
     ON CONFLICT (id) DO NOTHING;
-    PERFORM 1 FROM public.users WHERE id = p_owner_user_id FOR UPDATE;
+    PERFORM 1 FROM public.users WHERE id = p_owner_user_id FOR NO KEY UPDATE;
     IF EXISTS (SELECT 1 FROM public.school_settings WHERE owner_user_id = p_owner_user_id) THEN
         RETURN 'already_exists';
     END IF;
@@ -100,7 +100,7 @@ BEGIN
     VALUES (p_slug, p_timezone, CASE WHEN p_self_approve THEN now() ELSE NULL END)
     RETURNING id INTO v_school_id;
     INSERT INTO public.school_profiles (school_id, name, city)
-    VALUES (v_school_id, p_name, p_city);
+    VALUES (v_school_id, p_name, nullif(p_city, ''));
     INSERT INTO public.school_settings (school_id, owner_user_id, notification_email)
     VALUES (v_school_id, p_owner_user_id, p_notification_email);
     RETURN 'created';
