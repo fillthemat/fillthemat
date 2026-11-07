@@ -1323,6 +1323,36 @@ export type Database = {
         Returns: string;
       };
       cancel_dashboard_booking: { Args: { p_booking_id: string }; Returns: string };
+      claim_email_deliveries: {
+        Args: { p_ids?: string[]; p_limit?: number; p_now?: string; p_run_id: string };
+        Returns: {
+          attempts: number;
+          booking_id: string | null;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          failure_reason: string | null;
+          id: string;
+          kind: Database["public"]["Enums"]["email_kind"];
+          last_error: string | null;
+          lead_id: string | null;
+          next_attempt_at: string;
+          provider_id: string | null;
+          provider_idempotency_key: string;
+          recipient: string;
+          school_id: string;
+          sent_at: string | null;
+          state: Database["public"]["Enums"]["email_state"];
+          terminal_cause: string | null;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "email_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       create_onboarding_school: {
         Args: {
           p_city: string;
@@ -1364,6 +1394,19 @@ export type Database = {
         };
         Returns: boolean;
       };
+      enqueue_email_delivery: {
+        Args: {
+          p_booking_id?: string;
+          p_key: string;
+          p_kind: Database["public"]["Enums"]["email_kind"];
+          p_lead_id?: string;
+          p_now?: string;
+          p_recipient: string;
+          p_school_id: string;
+        };
+        Returns: string;
+      };
+      enqueue_email_reminders: { Args: { p_now?: string }; Returns: number };
       get_overview_metrics: {
         Args: { p_now?: string; p_school_id: string };
         Returns: {
@@ -1405,9 +1448,69 @@ export type Database = {
         };
         Returns: boolean;
       };
+      recover_email_deliveries: {
+        Args: { p_ids?: string[]; p_stale_before: string };
+        Returns: {
+          attempts: number;
+          booking_id: string | null;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          failure_reason: string | null;
+          id: string;
+          kind: Database["public"]["Enums"]["email_kind"];
+          last_error: string | null;
+          lead_id: string | null;
+          next_attempt_at: string;
+          provider_id: string | null;
+          provider_idempotency_key: string;
+          recipient: string;
+          school_id: string;
+          sent_at: string | null;
+          state: Database["public"]["Enums"]["email_state"];
+          terminal_cause: string | null;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "email_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       resolve_web_conversation: {
         Args: { p_now: string; p_school_id: string; p_token_hash: string };
         Returns: string;
+      };
+      start_email_delivery: {
+        Args: { p_attempts: number; p_claimed_at: string; p_claimed_by: string; p_id: string };
+        Returns: {
+          attempts: number;
+          booking_id: string | null;
+          claimed_at: string | null;
+          claimed_by: string | null;
+          created_at: string;
+          failure_reason: string | null;
+          id: string;
+          kind: Database["public"]["Enums"]["email_kind"];
+          last_error: string | null;
+          lead_id: string | null;
+          next_attempt_at: string;
+          provider_id: string | null;
+          provider_idempotency_key: string;
+          recipient: string;
+          school_id: string;
+          sent_at: string | null;
+          state: Database["public"]["Enums"]["email_state"];
+          terminal_cause: string | null;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "email_deliveries";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
       };
       update_booking_attendance: {
         Args: { p_booking_id: string; p_status: string };
