@@ -1,4 +1,5 @@
 [fmt]
+printWidth = 100
 ignorePatterns = ["dist/**", "*.min.js"]
 
 [fmt.sortImports]
