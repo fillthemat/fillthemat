@@ -1395,6 +1395,16 @@ export type Database = {
           trial_offering_id: string;
         }[];
       };
+      record_landing_session: {
+        Args: {
+          p_bot_exclusion_reason?: string;
+          p_is_preview: boolean;
+          p_school_id: string;
+          p_session_key_hash: string;
+          p_utm?: Json;
+        };
+        Returns: boolean;
+      };
       resolve_web_conversation: {
         Args: { p_now: string; p_school_id: string; p_token_hash: string };
         Returns: string;
