@@ -25,6 +25,7 @@ CREATE TABLE public.email_deliveries (
 );
 
 CREATE INDEX email_deliveries_due_idx ON public.email_deliveries USING btree (state, next_attempt_at);
+CREATE INDEX email_deliveries_recipient_quota_idx ON public.email_deliveries (school_id, recipient, created_at);
 
 CREATE TRIGGER email_deliveries_set_updated_at
 BEFORE UPDATE ON public.email_deliveries

@@ -33,6 +33,7 @@ CREATE TABLE public.whatsapp_deliveries (
 );
 
 CREATE INDEX whatsapp_deliveries_due_idx ON public.whatsapp_deliveries USING btree (state, next_attempt_at);
+CREATE INDEX whatsapp_deliveries_recipient_quota_idx ON public.whatsapp_deliveries (school_id, recipient_wa_id, created_at);
 
 CREATE TRIGGER whatsapp_deliveries_set_updated_at
 BEFORE UPDATE ON public.whatsapp_deliveries

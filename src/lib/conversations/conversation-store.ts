@@ -11,7 +11,7 @@ import {
 import { type Conversation, conversations, messages, whatsappBookingIntents } from "@/db/schema";
 import { hashToken, hashWaId, randomToken } from "@/lib/crypto";
 import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
-import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
+import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/request-limits";
 
 export type ConversationIdentity =
   { channel: "web"; resumeToken: string } | { channel: "whatsapp"; waId: string };

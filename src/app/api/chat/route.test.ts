@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_REQUEST_BYTES, MAX_USER_MESSAGE_CHARS } from "@/lib/security/limits";
+import { MAX_REQUEST_BYTES, MAX_USER_MESSAGE_CHARS } from "@/lib/security/request-limits";
 import { loadWebTranscript, startWebTurn } from "@/lib/web-chat/web-chat";
 import { GET, maxDuration, POST } from "./route";
 
