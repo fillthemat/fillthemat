@@ -34,7 +34,7 @@ import { deliveryFromRow, updateDeliveryClaim } from "./queue-store";
 import { drainWhatsAppJobs } from "./worker";
 
 vi.mock("server-only", () => ({}));
-// Queue protocol tests deliberately do not run the legacy Turn (#253).
+// Queue protocol tests isolate assistant preparation from queue mechanics.
 vi.mock("next/server", () => ({ after: vi.fn() }));
 loadLocalEnv();
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname))
@@ -398,18 +398,17 @@ it("status webhook ignores regressions but same-attempt delivered/read cancels a
   expect((await state(rejected)).state).toBe("read");
 });
 
-it("legacy Turn IDs never enter public queue FKs and processing errors consume an execution", async () => {
-  const legacyId = randomUUID();
+it("processing errors consume an execution and existing-conversation quotas use public identity", async () => {
   const resolve = vi
     .spyOn(inboundSchool, "resolveInboundSchool")
-    .mockResolvedValue({ resolved: true, schoolId: legacyId });
+    .mockResolvedValue({ resolved: true, schoolId });
   const answered = vi
     .spyOn(conversationStore, "hasWhatsAppMessage")
-    .mockRejectedValue(new Error("legacy Turn failed"));
+    .mockRejectedValue(new Error("Turn failed"));
   try {
     const inbound = message();
     await enqueueInboundJobs([inbound]);
-    const counts = await drainWhatsAppJobs("legacy-failure", 10, { phoneNumberIds: [phone] });
+    const counts = await drainWhatsAppJobs("turn-failure", 10, { phoneNumberIds: [phone] });
     expect(counts).toMatchObject({ claimed: 1, retrying: 1 });
     const { data } = await client()
       .from("whatsapp_jobs")
@@ -418,15 +417,14 @@ it("legacy Turn IDs never enter public queue FKs and processing errors consume a
       .single()
       .throwOnError();
     expect(data).toMatchObject({ school_id: schoolId, attempts: 1, state: "failed" });
-    // An answered legacy marker also completes using public identity, not the
-    // unrelated app school ID. Reply enqueues share the authoritative mapping.
+    // A committed Turn marker completes a retry without another reply.
     answered.mockResolvedValue(true);
     await client()
       .from("whatsapp_jobs")
       .update({ next_attempt_at: new Date().toISOString() })
       .eq("dedupe_key", inbound.wamid)
       .throwOnError();
-    expect(await drainWhatsAppJobs("legacy-done", 10, { phoneNumberIds: [phone] })).toMatchObject({
+    expect(await drainWhatsAppJobs("turn-done", 10, { phoneNumberIds: [phone] })).toMatchObject({
       done: 1,
     });
     const { data: done } = await client()
@@ -437,22 +435,22 @@ it("legacy Turn IDs never enter public queue FKs and processing errors consume a
       .throwOnError();
     expect(done).toMatchObject({ school_id: schoolId, state: "done" });
     const id = await enqueueWhatsAppDelivery({
-      schoolId: legacyId,
+      schoolId,
       phoneNumberId: phone,
       recipientWaId: "1555",
       providerIdempotencyKey: randomUUID(),
     });
     expect((await state(requireRow(id, "reply"))).school_id).toBe(schoolId);
-    // Existing conversations skip the pre-conversation quota check. planReply
-    // must count public deliveries, not the different legacy Turn school ID.
+    // Existing conversations skip the pre-conversation quota check; planReply
+    // must still enforce the public delivery quota.
     const cappedInbound = { ...message(), waId: "15550000003" };
     const conversation = {
       id: randomUUID(),
-      schoolId: legacyId,
+      schoolId,
       landingSessionId: null,
       contactId: null,
-      resumeTokenHash: "legacy",
-      waIdHash: "legacy",
+      resumeTokenHash: "unused",
+      waIdHash: "unused",
       expiresAt: new Date(Date.now() + 3600_000),
       generatingAt: null,
       endedAt: null,
@@ -466,7 +464,9 @@ it("legacy Turn IDs never enter public queue FKs and processing errors consume a
       vi
         .spyOn(conversationStore, "findOrCreateConversation")
         .mockResolvedValue({ ok: true, conversation }),
-      vi.spyOn(conversationStore, "claimGeneration").mockResolvedValue({ release: async () => {} }),
+      vi
+        .spyOn(conversationStore, "claimGeneration")
+        .mockResolvedValue({ generation: now.toISOString(), release: async () => {} }),
       vi.spyOn(conversationStore, "endConversationAtMessageLimit").mockResolvedValue(false),
       vi.spyOn(intents, "getPendingBookingIntent").mockResolvedValue(null),
       transcript,
@@ -489,7 +489,7 @@ it("legacy Turn IDs never enter public queue FKs and processing errors consume a
       expect(
         await drainWhatsAppJobs("existing-cap", 10, { phoneNumberIds: [phone] }),
       ).toMatchObject({ claimed: 1, done: 1, retrying: 0 });
-      expect(transcript).toHaveBeenCalledWith(conversation.id);
+      expect(transcript).toHaveBeenCalledWith(schoolId, conversation.id);
       const { data: notice } = await client()
         .from("whatsapp_deliveries")
         .select("school_id, body")
@@ -757,8 +757,8 @@ it("public book_trial IDs support confirmation death and receipt cancellation ho
     })[0],
     "slot",
   );
-  // Same public Book Trial boundary used by booking.ts after #271. Intent,
-  // transcript and legacy school lookups still prevent a full replay until #253/#254.
+  // Same public Book Trial boundary used by booking.ts. Atomic confirmation
+  // transcript/intent/outbox composition remains #254.
   const booked = await bookSlot({
     school: { id: schoolId },
     offeringId: trialWindow.trial_offering_id,
@@ -853,7 +853,7 @@ it("public book_trial IDs support confirmation death and receipt cancellation ho
 it("platform functions are service_role-only invokers with empty search_path", async () => {
   const functions =
     await sql`SELECT oid::regprocedure::text AS signature, proname, prosecdef, proconfig FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND (proname LIKE '%whatsapp%' AND proname NOT LIKE '%booking%')`;
-  expect(functions.length).toBe(10);
+  expect(functions.length).toBe(12);
   for (const fn of functions) {
     expect(fn.prosecdef).toBe(false);
     expect(fn.proconfig).toContain('search_path=""');

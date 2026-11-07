@@ -1,6 +1,36 @@
 import "server-only";
 import type { SchoolCatalog } from "@/lib/ai/context";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+/** Trusted worker lookup: private instructions never enter a public-school read. */
+export async function loadWhatsAppSchool(schoolId: string) {
+  const { data } = await createAdminClient()
+    .from("schools")
+    .select("*, school_profiles!inner(*), school_settings!inner(agent_instructions)")
+    .eq("id", schoolId)
+    .not("approved_at", "is", null)
+    .not("published_at", "is", null)
+    .maybeSingle()
+    .throwOnError();
+  if (!data) throw new Error("school_missing");
+  const profile = data.school_profiles;
+  return {
+    id: data.id,
+    timezone: data.timezone,
+    name: profile.name,
+    city: profile.city,
+    address: profile.address,
+    phone: profile.phone,
+    website: profile.website,
+    parkingNotes: profile.parking_notes,
+    accessNotes: profile.access_notes,
+    trialGuidance: profile.trial_guidance,
+    pricing: profile.pricing,
+    welcomeMessage: profile.welcome_message,
+    agentInstructions: data.school_settings.agent_instructions,
+  };
+}
 
 // Public domain shape for booking/chat callers; database queries remain typed
 // with generated Supabase rows and never load private school settings.

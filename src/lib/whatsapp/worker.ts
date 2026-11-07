@@ -1,9 +1,6 @@
-import { generateId, type UIMessage, validateUIMessages } from "ai";
+import { type UIMessage, validateUIMessages } from "ai";
 import { addHours } from "date-fns";
-import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { getDb, type TransactionOptions } from "@/db";
-import { schools } from "@/db/schema";
 import { completedReply } from "@/lib/ai/assistant";
 import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
 import {
@@ -17,18 +14,13 @@ import {
 } from "@/lib/conversations/conversation-store";
 import { attemptPendingForLead } from "@/lib/email/deliveries";
 import { InternalFailure, internalFailureReasonFrom, MAX_EXECUTIONS } from "@/lib/retry-policy";
-import { loadSchoolCatalog } from "@/lib/schools/public";
+import { loadSchoolCatalog, loadWhatsAppSchool } from "@/lib/schools/public";
 import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { exportEndedTurns, startTurnTrace, type TurnReply } from "@/lib/tracing/turn-trace";
 import type { InboundWhatsAppMessage } from "./parse";
 import { confirmWhatsAppBooking } from "./booking";
-import {
-  CHOOSE_ANOTHER_TIME_BUTTON_ID,
-  confirmBookingButtonId,
-  isAffirmativeConfirmation,
-  parseConfirmBookingButton,
-} from "./confirmation";
+import { isAffirmativeConfirmation, parseConfirmBookingButton } from "./confirmation";
 import {
   attemptWhatsAppDeliveriesNow,
   drainDueWhatsAppDeliveries,
@@ -41,7 +33,6 @@ import { resolveInboundSchool } from "./inbound";
 import {
   getPendingBookingIntent,
   getPendingBookingIntentById,
-  upsertPendingBookingIntent,
   type WhatsAppBookingIntent,
 } from "./intents";
 import {
@@ -55,9 +46,8 @@ import {
   startJobExecution,
   type WhatsAppJob,
 } from "./jobs";
-import { createLegacyLead as createLead } from "./legacy-create-lead";
 import { publicSchoolIdForPhone } from "./queue-store";
-import { splitWhatsAppText } from "./text";
+import { commitWhatsAppTurn, type PreparedEffect } from "./turn-store";
 
 export const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -69,8 +59,7 @@ type JobContext = {
 };
 
 type InboundContext = JobContext & {
-  /** Public identity for queue-backed limits; schoolId remains the legacy Turn identity. */
-  queueSchoolId: string;
+  generation: string;
   message: InboundWhatsAppMessage;
   inboundText: string;
   /**
@@ -82,20 +71,16 @@ type InboundContext = JobContext & {
   dependencies: WhatsAppWorkerDependencies;
 };
 
-async function saveInboundMessage(
-  ctx: InboundContext,
-  options: TransactionOptions = {},
-): Promise<void> {
-  await appendMessage(
-    {
-      id: ctx.inboundMessageId,
-      conversationId: ctx.conversationId,
-      messageId: ctx.message.wamid,
-      role: "user",
-      parts: [{ type: "text", text: ctx.inboundText }],
-    },
-    options,
-  );
+async function saveInboundMessage(ctx: InboundContext): Promise<void> {
+  await appendMessage({
+    id: ctx.inboundMessageId,
+    schoolId: ctx.schoolId,
+    generation: ctx.generation,
+    conversationId: ctx.conversationId,
+    messageId: ctx.message.wamid,
+    role: "user",
+    parts: [{ type: "text", text: ctx.inboundText }],
+  });
 }
 
 async function enqueueNotice(
@@ -138,9 +123,15 @@ async function handleConfirmation(
   if (!intent) {
     const text =
       "That booking option has expired or was replaced. Please ask for available times again.";
-    await saveInboundMessage(ctx);
-    const deliveryId = await enqueueNotice(ctx, text);
-    if (deliveryId) await attemptWhatsAppDeliveriesNow([deliveryId], ctx.runId, ctx.dependencies);
+    const committed = await commitWhatsAppTurn({
+      ...ctx,
+      ...ctx.message,
+      wamid: ctx.message.wamid,
+      replyText: text,
+      effect: { kind: "expired_confirmation" },
+      now: ctx.dependencies.now(),
+    });
+    await attemptWhatsAppDeliveriesNow(committed?.delivery_ids ?? [], ctx.runId, ctx.dependencies);
     return { text };
   }
 
@@ -148,6 +139,7 @@ async function handleConfirmation(
     {
       schoolId: ctx.schoolId,
       conversationId: ctx.conversationId,
+      generation: ctx.generation,
       intent,
       waId: ctx.message.waId,
       phoneNumberId: ctx.message.phoneNumberId,
@@ -162,35 +154,7 @@ async function handleConfirmation(
   return reply;
 }
 
-async function enqueueTextReplies(
-  ctx: InboundContext,
-  text: string,
-  idempotencyPrefix: string,
-): Promise<string[]> {
-  const chunks = splitWhatsAppText(text);
-  const windowExpiresAt = addHours(ctx.dependencies.now(), 24);
-  const deliveryIds: string[] = [];
-  for (let index = 0; index < chunks.length; index++) {
-    const deliveryId = await enqueueWhatsAppDelivery(
-      {
-        schoolId: ctx.schoolId,
-        recipientWaId: ctx.message.waId,
-        phoneNumberId: ctx.message.phoneNumberId,
-        providerIdempotencyKey: `${idempotencyPrefix}/${index}`,
-        body: chunks[index],
-        windowExpiresAt,
-      },
-      { now: ctx.dependencies.now() },
-    );
-    if (deliveryId) deliveryIds.push(deliveryId);
-  }
-  return deliveryIds;
-}
-
-/**
- * Until #253, commit the legacy Turn before enqueueing the public outbox.
- * This temporary non-atomic seam can lose the reply on a crash after commit.
- */
+/** Prepare outside the transaction; commit all durable effects in one RPC. */
 async function handleAssistantTurn(
   ctx: InboundContext,
   history: UIMessage[],
@@ -206,9 +170,7 @@ async function handleAssistantTurn(
   });
 
   const catalog = await loadSchoolCatalog(ctx.schoolId, { anonymous: true });
-  const db = getDb();
-  const [school] = await db.select().from(schools).where(eq(schools.id, ctx.schoolId)).limit(1);
-  if (!school) throw new InternalFailure("school_missing");
+  const school = await loadWhatsAppSchool(ctx.schoolId);
 
   const reply = await completedReply({
     school,
@@ -233,103 +195,44 @@ async function handleAssistantTurn(
       : { kind: "plain_reply" as const, fallback: "" };
   const replyText = reply.text || turn.fallback;
 
-  const { replyMessageId, enqueueReplies, leadId } = await db.transaction(async (tx) => {
-    const options = { transaction: tx };
-    await saveInboundMessage(ctx, options);
-    let leadId: string | undefined;
-    let enqueueReplies: (() => Promise<string[]>) | undefined;
-    switch (turn.kind) {
-      case "booking_intent": {
-        const intent = await upsertPendingBookingIntent(
-          {
-            schoolId: ctx.schoolId,
-            conversationId: ctx.conversationId,
-            offeringId: turn.input.trialOfferingId,
-            slotId: turn.input.slotId,
-            participantName: turn.input.participantName,
-            participantAge: turn.input.participantAge,
-            now,
-          },
-          options,
-        );
-        enqueueReplies = async () => {
-          const deliveryId = await enqueueWhatsAppDelivery(
-            {
-              schoolId: ctx.schoolId,
-              recipientWaId: ctx.message.waId,
-              phoneNumberId: ctx.message.phoneNumberId,
-              providerIdempotencyKey: `wa-confirm/${ctx.message.wamid}`,
-              body: replyText,
-              interactiveButtons: [
-                {
-                  id: confirmBookingButtonId(intent.id),
-                  title: "Confirm booking",
-                },
-                {
-                  id: CHOOSE_ANOTHER_TIME_BUTTON_ID,
-                  title: "Choose another time",
-                },
-              ],
-              windowExpiresAt: addHours(ctx.dependencies.now(), 24),
-            },
-            { now: ctx.dependencies.now() },
-          );
-          return deliveryId ? [deliveryId] : [];
-        };
-        break;
-      }
-      case "lead_request": {
-        const lead = await createLead(
-          {
-            school,
-            contact: {
-              name: turn.input.participantName ?? ctx.message.profileName ?? "Guest",
-              email: null,
-              phone: ctx.message.waId,
-            },
-            source: { channel: "whatsapp", waId: ctx.message.waId },
-            participantName: turn.input.participantName,
-            participantAge: turn.input.participantAge,
-            offeringId: turn.input.trialOfferingId,
-            statedNeed: turn.input.statedNeed,
-          },
-          options,
-        );
-        leadId = lead.id;
-        break;
-      }
-      case "plain_reply":
-        break;
-    }
-    const replyMessageId = await appendMessage(
-      {
-        role: "assistant",
-        conversationId: ctx.conversationId,
-        messageId: generateId(),
-        parts: replyText ? [{ type: "text", text: replyText }] : [],
-      },
-      options,
-    );
-
-    enqueueReplies ??= () => enqueueTextReplies(ctx, replyText, `wa-reply/${ctx.message.wamid}`);
-    return { replyMessageId, enqueueReplies, leadId };
+  const effect: PreparedEffect =
+    turn.kind === "booking_intent"
+      ? { kind: turn.kind, ...turn.input }
+      : turn.kind === "lead_request"
+        ? {
+            kind: turn.kind,
+            ...turn.input,
+            contactName: turn.input.participantName ?? ctx.message.profileName ?? "Guest",
+          }
+        : { kind: "reply" };
+  const committed = await commitWhatsAppTurn({
+    ...ctx,
+    waId: ctx.message.waId,
+    phoneNumberId: ctx.message.phoneNumberId,
+    wamid: ctx.message.wamid,
+    replyText,
+    effect,
+    now,
   });
-  const deliveryIds = await enqueueReplies();
+  const leadId = committed?.lead_id;
   if (leadId) {
     try {
       await attemptPendingForLead(leadId);
     } catch (error) {
       // The durable email outbox has its own retry lifecycle. An immediate
       // email-attempt failure must not fail this Turn or suppress its reply.
-      console.error("whatsapp_lead_email_attempt_failed", {
-        leadId,
-        runId: ctx.runId,
-        error: error instanceof Error ? error.message : error,
-      });
+      console.error(
+        JSON.stringify({
+          event: "whatsapp_lead_email_attempt_failed",
+          leadId,
+          runId: ctx.runId,
+          error: error instanceof Error ? error.message : error,
+        }),
+      );
     }
   }
-  await attemptWhatsAppDeliveriesNow(deliveryIds, ctx.runId, ctx.dependencies);
-  return { text: replyText, messageId: replyMessageId, provenance };
+  await attemptWhatsAppDeliveriesNow(committed?.delivery_ids ?? [], ctx.runId, ctx.dependencies);
+  return { text: replyText, messageId: committed?.reply_message_id ?? undefined, provenance };
 }
 
 /**
@@ -352,17 +255,18 @@ async function planReply(
     const intent = buttonIntentId
       ? await getPendingBookingIntentById(buttonIntentId, ctx.schoolId, now)
       : pending;
-    return () => handleConfirmation(ctx, intent);
+    return () =>
+      handleConfirmation(ctx, intent?.conversationId === ctx.conversationId ? intent : null);
   }
 
-  const history = await loadTranscript(ctx.conversationId);
-  if (await endConversationAtMessageLimit(ctx.conversationId, history.length, now)) {
+  const history = await loadTranscript(ctx.schoolId, ctx.conversationId);
+  if (await endConversationAtMessageLimit(ctx.schoolId, ctx.conversationId, ctx.generation, now)) {
     await sendNotice(ctx, CONVERSATION_LIMIT_NOTICE);
     return null;
   }
 
   // Daily-cap refusals leave the conversation open and its transcript intact.
-  if (await whatsappOutboundQuotaExceeded(ctx.queueSchoolId, ctx.message.waId, now)) {
+  if (await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)) {
     await sendNotice(ctx, "You've reached today's message limit. Please try again tomorrow.");
     return null;
   }
@@ -383,7 +287,6 @@ export async function processWhatsAppJob(
   const message = job.payload as InboundWhatsAppMessage;
   if (job.state !== "claimed" || job.claimedBy !== runId) return "deferred";
   let started = false;
-  // Exclusively the PUBLIC queue identity, never resolved.schoolId below.
   let schoolId: string | null = null;
   const start = async () => {
     const execution = await startJobExecution(job, schoolId, dependencies.now());
@@ -397,7 +300,10 @@ export async function processWhatsAppJob(
       ? ("done" as const)
       : ("deferred" as const);
   try {
-    schoolId = await publicSchoolIdForPhone(job.phoneNumberId);
+    const resolved = await resolveInboundSchool(message);
+    schoolId = resolved.resolved
+      ? resolved.schoolId
+      : await publicSchoolIdForPhone(job.phoneNumberId);
     if (job.attempts >= MAX_EXECUTIONS) {
       return await failJob(
         job,
@@ -409,7 +315,6 @@ export async function processWhatsAppJob(
         dependencies.now(),
       );
     }
-    const resolved = await resolveInboundSchool(message);
     if (!resolved.resolved) {
       if (resolved.reason === "unknown_phone_number") {
         if (!(await start())) return "deferred";
@@ -427,15 +332,9 @@ export async function processWhatsAppJob(
     if (!schoolId) throw new InternalFailure("unknown_phone_number");
     const now = dependencies.now();
 
-    // The legacy inbound marker commits before public reply enqueue. Until
-    // #253, an answered marker can therefore exist without a queued reply.
-    // The no-intent confirmation notice also saves and enqueues separately.
-    const alreadyAnswered = () =>
-      hasWhatsAppMessage({
-        schoolId: resolved.schoolId,
-        waId: message.waId,
-        messageId: message.wamid,
-      });
+    // Turn replay identity survives ending/replacing its conversation.
+    const inboundIdentity = { schoolId, waId: message.waId, messageId: message.wamid };
+    const alreadyAnswered = () => hasWhatsAppMessage(inboundIdentity);
     if (await alreadyAnswered()) {
       return await done();
     }
@@ -445,7 +344,7 @@ export async function processWhatsAppJob(
     if (
       !parseConfirmBookingButton(message.text ?? "") &&
       !(await findConversation({
-        schoolId: resolved.schoolId,
+        schoolId,
         identity,
         now,
       })) &&
@@ -454,20 +353,19 @@ export async function processWhatsAppJob(
     ) {
       if (!(await start())) return "deferred";
       await sendNotice(
-        { schoolId: resolved.schoolId, message, runId, dependencies },
+        { schoolId, message, runId, dependencies },
         "You've reached today's message limit. Please try again tomorrow.",
       );
       return await done();
     }
     const result = await findOrCreateConversation({
-      schoolId: resolved.schoolId,
+      schoolId,
       identity,
       now,
     });
-    if (!result.ok) throw new InternalFailure(result.reason);
     const conversationId = result.conversation.id;
 
-    const lock = await claimGeneration(conversationId, {
+    const lock = await claimGeneration(schoolId, conversationId, {
       wait: true,
       now,
       sleep: dependencies.sleep,
@@ -485,8 +383,8 @@ export async function processWhatsAppJob(
       }
       if (!(await start())) return "deferred";
       const ctx: InboundContext = {
-        schoolId: resolved.schoolId,
-        queueSchoolId: schoolId,
+        schoolId,
+        generation: lock.generation,
         conversationId,
         message,
         inboundText: message.text ?? "",
@@ -503,7 +401,7 @@ export async function processWhatsAppJob(
         const turn = startTurnTrace({
           channel: "whatsapp",
           conversationId,
-          schoolId: resolved.schoolId,
+          schoolId,
           inboundMessageId: ctx.inboundMessageId,
           inboundText: ctx.inboundText,
         });

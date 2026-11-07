@@ -1,12 +1,11 @@
 import { generateId } from "ai";
 import { formatInTimeZone } from "date-fns-tz";
-import { eq } from "drizzle-orm";
-import { getDb } from "@/db";
-import { schools } from "@/db/schema";
+import { randomUUID } from "node:crypto";
 import { appendMessage } from "@/lib/conversations/conversation-store";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
 import { InternalFailure } from "@/lib/retry-policy";
 import { bookSlot } from "@/lib/schedule/book-slot";
+import { loadWhatsAppSchool } from "@/lib/schools/public";
 import { whatsappBookingQuotaExceeded } from "@/lib/security/limits";
 import type { WhatsAppBookingIntent } from "./intents";
 import { bookingConfirmationIdempotencyKey } from "./confirmation";
@@ -77,6 +76,7 @@ export async function confirmWhatsAppBooking(
   {
     schoolId,
     conversationId,
+    generation,
     intent,
     waId,
     phoneNumberId,
@@ -86,6 +86,7 @@ export async function confirmWhatsAppBooking(
   }: {
     schoolId: string;
     conversationId: string;
+    generation: string;
     intent: WhatsAppBookingIntent;
     waId: string;
     phoneNumberId: string;
@@ -98,8 +99,7 @@ export async function confirmWhatsAppBooking(
   const dependencies = whatsappWorkerDependencies(overrides);
   const now = dependencies.now();
   const windowExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const db = getDb();
-  const [school] = await db.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
+  const school = await loadWhatsAppSchool(schoolId);
   // The school was deleted mid-turn, and its conversation with it.
   if (!school) throw new InternalFailure("school_missing");
 
@@ -142,8 +142,7 @@ export async function confirmWhatsAppBooking(
     idempotencyKey: bookingConfirmationIdempotencyKey(schoolId, wamid),
     contact: { name: participantName, email: null, phone: waId },
     participant: { name: participantName, age: intent.participantAge },
-    // app.conversations cannot reference public.bookings; migrate the link in #253.
-    conversationId: undefined,
+    conversationId,
   });
 
   if (!result.ok) {
@@ -174,6 +173,9 @@ export async function confirmWhatsAppBooking(
     `Booked! ${booking.participantNameSnapshot}'s trial for ${booking.offeringNameSnapshot} is ${when}. ` +
     `${school.name} will see you there.`;
   const transcriptMessageId = await appendMessage({
+    id: randomUUID(),
+    schoolId,
+    generation,
     role: "assistant",
     conversationId,
     messageId: generateId(),
