@@ -1322,6 +1322,28 @@ export type Database = {
         };
         Returns: string;
       };
+      book_trial: {
+        Args: {
+          p_contact_name: string;
+          p_conversation_id?: string;
+          p_email?: string;
+          p_idempotency_key: string;
+          p_landing_token_hash?: string;
+          p_now?: string;
+          p_offering_id: string;
+          p_participant_age: number;
+          p_participant_name: string;
+          p_phone: string;
+          p_resume_token_hash?: string;
+          p_school_id: string;
+          p_start_at: string;
+          p_window_id: string;
+        };
+        Returns: {
+          booking: Database["public"]["Tables"]["bookings"]["Row"];
+          idempotent: boolean;
+        }[];
+      };
       cancel_dashboard_booking: { Args: { p_booking_id: string }; Returns: string };
       claim_email_deliveries: {
         Args: { p_ids?: string[]; p_limit?: number; p_now?: string; p_run_id: string };
