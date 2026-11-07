@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- mise (for the project’s Bun version).
+- mise (installs Bun canary from `mise.toml`; native `bun lint` / `bun fmt` require canary, not stable Bun 1.4.4).
 - A **Docker Engine** reachable via `docker info` — OrbStack, Docker Desktop, or Colima.
 
 ## Quickstart
