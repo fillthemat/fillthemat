@@ -5,10 +5,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: production-supabase-migrations
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
@@ -16,20 +12,19 @@ jobs:
   migrate:
     name: Apply Supabase migrations
     if: github.ref == 'refs/heads/main'
+    environment: production-migrations
+    concurrency:
+      group: production-supabase-migrations
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2.2.0
         with:
-          bun-version: canary
+          persist-credentials: false
 
-      - name: Read pinned CLI version
-        id: cli
-        run: bun -e 'console.log(`version=${JSON.parse(await Bun.file("package.json").text()).devDependencies.supabase}`)' >> "$GITHUB_OUTPUT"
+      # Resolves the exact CLI version from the root bun.lock.
       - uses: supabase/setup-cli@v3
-        with:
-          version: ${{ steps.cli.outputs.version }}
 
       - name: Link and apply pending migrations
         env:

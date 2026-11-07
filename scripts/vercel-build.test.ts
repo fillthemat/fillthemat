@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import { scripts } from "../package.json";
 import { config } from "../vercel";
 
-it("only builds on Vercel, without migration credentials", () => {
+it("configures the Vercel build command to only run the build script", () => {
   expect(config.buildCommand).toBe("bun run build:vercel");
   expect(scripts["build:vercel"]).toBe("bun run build");
 });
