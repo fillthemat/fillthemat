@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { logDeadTransition } from "@/lib/retry-log";
+import { deadEventFrom, logDeadTransition } from "@/lib/retry-log";
 import {
   emailRetryDecision as retryDecision,
   InternalFailure,
@@ -63,6 +63,17 @@ async function renderDelivery(delivery: EmailDelivery) {
       attachments: [],
     };
   }
+  if (
+    ![
+      "prospect_confirmation",
+      "booking_reminder",
+      "booking_cancellation",
+      "owner_booking",
+      "owner_cancellation",
+      "owner_whatsapp_confirmation_failed",
+    ].includes(delivery.kind)
+  )
+    throw new InternalFailure("unknown_email_kind");
   if (!delivery.booking_id) throw new InternalFailure("missing_booking");
   const { data: row } = await client
     .from("bookings")
@@ -110,22 +121,6 @@ async function renderDelivery(delivery: EmailDelivery) {
   }
 }
 
-function logDead(row: EmailDelivery, runId: string) {
-  logDeadTransition({
-    queue: "email_delivery",
-    id: row.id,
-    schoolId: row.school_id,
-    reason: row.failure_reason ?? "unknown_failure",
-    executions: row.attempts,
-    runId,
-    terminalCause:
-      row.terminal_cause === "permanent"
-        ? "permanent"
-        : row.terminal_cause === "stale"
-          ? "stale"
-          : "attempts_exhausted",
-  });
-}
 type SendResult = "sent" | "retrying" | "dead" | "deferred";
 async function failDelivery(
   delivery: EmailDelivery,
@@ -150,7 +145,8 @@ async function failDelivery(
     claimed_by: null,
   });
   if (!row) return "deferred";
-  if (decision.action === "stop") logDead(row, delivery.claimed_by ?? "unknown");
+  if (decision.action === "stop")
+    logDeadTransition(deadEventFrom(row, "email_delivery", delivery.claimed_by ?? "unknown"));
   return decision.action === "stop" ? "dead" : "retrying";
 }
 
@@ -247,7 +243,22 @@ export async function runEmailSendOnce(
     dead: recovered.dead,
     deferred: 0,
   };
-  for (const row of claimed) counts[await sendDelivery(row, dependencies)]++;
+  for (const row of claimed) {
+    try {
+      counts[await sendDelivery(row, dependencies)]++;
+    } catch (error) {
+      // Leave an uncertain execution claimed for recovery, but keep draining.
+      counts.deferred++;
+      console.error(
+        JSON.stringify({
+          event: "email_delivery_attempt_failed",
+          id: row.id,
+          runId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
   return counts;
 }
 
@@ -264,7 +275,7 @@ export async function recoverStuckEmailDeliveries(
     })
     .throwOnError();
   const dead = (data ?? []).filter((row) => row.state === "dead");
-  for (const row of dead) logDead(row, runId);
+  for (const row of dead) logDeadTransition(deadEventFrom(row, "email_delivery", runId));
   return { recovered: data?.length ?? 0, dead: dead.length };
 }
 

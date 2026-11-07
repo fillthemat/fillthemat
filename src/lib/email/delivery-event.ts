@@ -3,7 +3,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 type DeliveryEvent = { type: string; data?: object | null };
 
-/** Applies verified events. Dead deliveries stay terminal, unrelated events are no-ops. */
+const allowedFrom = {
+  delivered: ["sent"],
+  bounced: ["sent", "delivered"],
+  complained: ["sent", "delivered"],
+} as const;
+
+/** Verified events only advance; terminal outcomes cannot be overwritten by replay. */
 export async function recordResendDeliveryEvent(event: DeliveryEvent): Promise<void> {
   const providerId = event.data && "email_id" in event.data ? String(event.data.email_id) : null;
   if (!providerId) return;
@@ -20,6 +26,6 @@ export async function recordResendDeliveryEvent(event: DeliveryEvent): Promise<v
     .from("email_deliveries")
     .update({ state })
     .eq("provider_id", providerId)
-    .neq("state", "dead")
+    .in("state", allowedFrom[state])
     .throwOnError();
 }

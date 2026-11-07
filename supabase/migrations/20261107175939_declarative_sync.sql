@@ -74,7 +74,7 @@ BEGIN
     FROM public.bookings
     WHERE status = 'booked' AND contact_email_snapshot IS NOT NULL
         AND start_at > p_now AND start_at <= p_now + interval '24 hours'
-        AND start_at - created_at >= interval '48 hours'
+        AND start_at - created_at >= interval '36 hours'
     ON CONFLICT (provider_idempotency_key) DO NOTHING;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     RETURN v_count;
@@ -125,6 +125,12 @@ CREATE OR REPLACE FUNCTION public.start_email_delivery (
 $function$;
 
 REVOKE ALL ON FUNCTION "public"."start_email_delivery"(uuid, text, timestamp WITH time zone, integer) FROM PUBLIC, "anon", "authenticated";
+
+CREATE INDEX email_deliveries_booking_id_idx ON public.email_deliveries USING btree (booking_id);
+
+CREATE INDEX email_deliveries_lead_id_idx ON public.email_deliveries USING btree (lead_id);
+
+CREATE INDEX email_deliveries_provider_id_idx ON public.email_deliveries USING btree (provider_id);
 
 REVOKE ALL ON FUNCTION "public"."claim_email_deliveries"(text, integer, timestamp WITH time zone, uuid[]) FROM "postgres";
 

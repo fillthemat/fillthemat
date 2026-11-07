@@ -70,6 +70,9 @@ initial identity and ownership creation is an exception to cookie-client owner a
 invoker, empty-search-path, executable only by `service_role`. Server libraries
 call them with `src/lib/supabase/admin.ts` after the route's authorization check;
 owners only cancel through the cookie client/RLS and the existing booking trigger.
+After a new cancellation, the dashboard action schedules that booking's pending
+deliveries with `after()`. Sending uses the secret client, outside the owner
+transaction/response; failures are logged and recovered by the durable queue.
 
 - **Enqueue:** platform SQL workflows call `enqueue_email_delivery` inside their
   own transaction. Its unique provider key makes replay a no-op (returns null),
@@ -95,8 +98,9 @@ owners only cancel through the cookie client/RLS and the existing booking trigge
   Death preserves prior diagnostics or uses `worker_crashed`, with terminal cause
   `attempts_exhausted`. The caller logs changed dead rows with `queue.dead`.
 - **Provider events:** the signature-verified webhook uses a conditional table
-  update by provider ID to delivered/bounced/complained, never changing dead rows.
-  This preserves the existing replay/order semantics, not a new event-order model.
+  update by provider ID and allowed source states: `sent → delivered`, and
+  `sent/delivered → bounced/complained`. Bounced, complained and dead remain terminal;
+  stale/replayed delivery events cannot regress them or update unsent rows.
 
 Locks are never held during provider I/O. Recovery cannot unsend accepted mail;
 Resend's stable idempotency key protects retries within its 24-hour window. Use
@@ -107,12 +111,14 @@ unchanged until that migration.
 
 `enqueue_email_reminders` atomically inserts reminders using the same unique key
 per booking, 36-hour minimum booking lead and 24-hour reminder window. Maintenance
+uses this SQL function as the only definition of the reminder rule (no TS copy),
 records its run in public.cron_runs; ending inactive conversations deliberately
 still calls the legacy conversation store until #253.
 
 During the integration-branch migration, legacy Book Trial/Lead/WhatsApp callers
-still enqueue into app.email_deliveries. The dispatcher reads **public only**;
-those legacy rows are intentionally not sent until their workflow tickets land.
+still enqueue into app.email_deliveries. The dispatcher and reminder scheduler
+read **public only**; those emails and reminders for legacy app bookings are
+intentionally not sent until #250–#252 migrate those workflows.
 
 ## Changes
 

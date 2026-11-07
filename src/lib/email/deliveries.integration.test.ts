@@ -1,12 +1,14 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createHmac, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import type { Database } from "@/db/types";
 import { POST } from "@/app/api/webhooks/resend/route";
+import { cancelBookingAction } from "@/app/dashboard/bookings/actions";
 import { MAX_EXECUTIONS } from "@/lib/retry-policy";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
+import type { EmailMessage } from "./dependencies";
 import {
   claimDueDeliveries,
   recoverStuckEmailDeliveries,
@@ -18,6 +20,10 @@ import { createDueReminderDeliveries } from "./maintenance";
 import { updateClaim } from "./store";
 
 vi.mock("server-only", () => ({}));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/server", () => ({ after: (work: () => Promise<void>) => afterTasks.push(work) }));
+vi.mock("@/lib/auth/current-school", () => ({ requireSchool: vi.fn(async () => ({})) }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ownerClient }));
 loadLocalEnv();
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname))
   throw new Error("Local database required");
@@ -27,6 +33,8 @@ let schoolId = "";
 let bookingId = "";
 const client = () => createAdminClient();
 const now = new Date();
+const afterTasks: Array<() => Promise<void>> = [];
+let ownerClient: SupabaseClient<Database>;
 
 beforeAll(async () => {
   const school = await seedPublicSchool(sql, {
@@ -36,6 +44,18 @@ beforeAll(async () => {
     offerings: [{ name: "Trial" }],
   });
   schoolId = school.schoolId;
+  const password = randomUUID();
+  await sql`UPDATE auth.users SET encrypted_password = extensions.crypt(${password}, extensions.gen_salt('bf')) WHERE id = ${ownerId}`;
+  ownerClient = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    { auth: { persistSession: false } },
+  );
+  const { error } = await ownerClient.auth.signInWithPassword({
+    email: `${ownerId}@local.test`,
+    password,
+  });
+  if (error) throw error;
   const offering = school.offeringIds[0]!;
   const contact = requireRow(
     (
@@ -68,6 +88,7 @@ beforeAll(async () => {
     VALUES (${bookingId}, ${schoolId}, ${contact.id}, ${participant.id}, ${offering}, ${window.id}, ${occurrence.id}, ${bookingId}, 'Participant', 10, 'Trial', 'UTC', ${start}, ${end}, 'delivered@resend.dev', 'Contact', '+123456789', ${bookingId}, ${new Date(start.getTime() - 36 * 3600_000)})`;
 });
 afterAll(async () => {
+  ownerClient?.auth.stopAutoRefresh();
   vi.unstubAllEnvs();
   await deletePublicSchoolOwner(sql, ownerId);
   await sql.end();
@@ -304,11 +325,12 @@ it("replays signed Resend events, rejects forged signatures and leaves dead rows
   vi.stubEnv("RESEND_WEBHOOK_SECRET", `whsec_${key.toString("base64")}`);
   vi.stubEnv("RESEND_API_KEY", "re_local_integration_no_network");
   try {
-    for (const type of [
-      "email.delivered",
-      "email.delivered",
-      "email.bounced",
-      "email.complained",
+    for (const [type, expected] of [
+      ["email.delivered", "delivered"],
+      ["email.delivered", "delivered"],
+      ["email.complained", "complained"],
+      ["email.delivered", "complained"],
+      ["email.bounced", "complained"],
     ]) {
       const payload = JSON.stringify({ type, data: { email_id: providerId } });
       const id = randomUUID();
@@ -324,7 +346,7 @@ it("replays signed Resend events, rejects forged signatures and leaves dead rows
         });
       expect((await POST(request("v1,forged"))).status).toBe(401);
       expect((await POST(request(`v1,${signature}`))).status).toBe(200);
-      expect((await state(row.id)).state).toBe(type.slice(6));
+      expect((await state(row.id)).state).toBe(expected);
     }
     await client()
       .from("email_deliveries")
@@ -333,6 +355,156 @@ it("replays signed Resend events, rejects forged signatures and leaves dead rows
       .throwOnError();
     await recordResendDeliveryEvent({ type: "email.delivered", data: { email_id: providerId } });
     expect((await state(row.id)).state).toBe("dead");
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it("keeps bounced terminal and ignores provider events before a successful send", async () => {
+  const row = await enqueue();
+  const providerId = randomUUID();
+  await client()
+    .from("email_deliveries")
+    .update({ provider_id: providerId })
+    .eq("id", row.id)
+    .throwOnError();
+  await recordResendDeliveryEvent({ type: "email.delivered", data: { email_id: providerId } });
+  expect((await state(row.id)).state).toBe("pending");
+  await client().from("email_deliveries").update({ state: "sent" }).eq("id", row.id).throwOnError();
+  await recordResendDeliveryEvent({ type: "email.bounced", data: { email_id: providerId } });
+  await recordResendDeliveryEvent({ type: "email.delivered", data: { email_id: providerId } });
+  expect((await state(row.id)).state).toBe("bounced");
+});
+
+it("renders lead contacts and an ICS confirmation with facts from split school tables", async () => {
+  const session = requireRow(
+    (
+      await sql`INSERT INTO public.landing_sessions (school_id, session_key_hash) VALUES (${schoolId}, ${randomUUID()}) RETURNING id`
+    )[0],
+    "session",
+  );
+  const contact = requireRow(
+    (await sql`SELECT contact_id FROM public.bookings WHERE id = ${bookingId}`)[0],
+    "contact",
+  );
+  const lead = requireRow(
+    (
+      await sql`INSERT INTO public.leads (school_id, landing_session_id, contact_id, participant_name, participant_age, stated_need) VALUES (${schoolId}, ${session.id}, ${contact.contact_id}, 'Lead participant', 9, 'Weekend classes') RETURNING id`
+    )[0],
+    "lead",
+  );
+  const { data: leadDelivery } = await client()
+    .from("email_deliveries")
+    .insert({
+      school_id: schoolId,
+      lead_id: lead.id,
+      kind: "owner_lead",
+      recipient: "delivered@resend.dev",
+      provider_idempotency_key: randomUUID(),
+      next_attempt_at: now.toISOString(),
+    })
+    .select()
+    .single()
+    .throwOnError();
+  const confirmation = await enqueue();
+  await client()
+    .from("email_deliveries")
+    .update({ kind: "prospect_confirmation" })
+    .eq("id", confirmation.id)
+    .throwOnError();
+  const messages: EmailMessage[] = [];
+  const result = await runEmailSendOnce(
+    "render",
+    {
+      now: () => now,
+      transport: {
+        send: async (message) => {
+          messages.push(message);
+          return { ok: true, kind: "local_noop", providerId: null };
+        },
+      },
+    },
+    { ids: [requireRow(leadDelivery, "lead delivery").id, confirmation.id] },
+  );
+  expect(result.sent).toBe(2);
+  expect(messages.find((message) => message.subject.includes("lead"))?.text).toContain(
+    "Contact <delivered@resend.dev> +123456789",
+  );
+  expect(messages.find((message) => message.subject.includes("lead"))?.text).toContain(
+    "Weekend classes",
+  );
+  const prospect = requireRow(
+    messages.find((message) => message.subject.includes("confirmed")),
+    "confirmation",
+  );
+  expect(prospect.text).toContain("Email school");
+  expect(prospect.text).toContain(`${ownerId}@local.test`);
+  expect(prospect.attachments?.[0]?.content?.toString()).toContain("METHOD:PUBLISH");
+  expect(prospect.attachments?.[0]?.content?.toString()).toContain(`UID:${bookingId}`);
+});
+
+it("continues the batch after a success-write DB error, leaving that claim for recovery", async () => {
+  const first = await enqueue();
+  const second = await enqueue();
+  await client()
+    .from("email_deliveries")
+    .update({ created_at: new Date(now.getTime() - 86_400_000).toISOString() })
+    .eq("id", first.id)
+    .throwOnError();
+  const name = `test_email_finish_${randomUUID().replaceAll("-", "")}`;
+  await sql.unsafe(
+    `CREATE FUNCTION public.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test_success_write_failed'; END; $$`,
+  );
+  await sql.unsafe(
+    `CREATE TRIGGER ${name} BEFORE UPDATE ON public.email_deliveries FOR EACH ROW WHEN (NEW.id = '${first.id}' AND NEW.state = 'sent') EXECUTE FUNCTION public.${name}()`,
+  );
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const result = await runEmailSendOnce(
+      "db-error",
+      {
+        now: () => now,
+        transport: { send: async () => ({ ok: true, kind: "local_noop", providerId: null }) },
+      },
+      { ids: [first.id, second.id] },
+    );
+    expect(result).toMatchObject({ claimed: 2, sent: 1, deferred: 1 });
+    expect((await state(first.id)).state).toBe("claimed");
+    expect((await state(second.id)).state).toBe("sent");
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('"event":"email_delivery_attempt_failed"'),
+    );
+  } finally {
+    log.mockRestore();
+    await sql.unsafe(`DROP TRIGGER ${name} ON public.email_deliveries`);
+    await sql.unsafe(`DROP FUNCTION public.${name}()`);
+  }
+});
+
+it("dashboard cancellation sends its durable notifications in after(), without a cron", async () => {
+  vi.stubEnv("RESEND_API_KEY", "");
+  try {
+    const form = new FormData();
+    form.set("id", bookingId);
+    await cancelBookingAction(form);
+    expect(afterTasks).toHaveLength(1);
+    const { data: before } = await client()
+      .from("email_deliveries")
+      .select()
+      .eq("booking_id", bookingId)
+      .in("kind", ["booking_cancellation", "owner_cancellation"])
+      .throwOnError();
+    expect(before?.map((row) => row.state)).toEqual(["pending", "pending"]);
+    await afterTasks.shift()!();
+    const { data: sent } = await client()
+      .from("email_deliveries")
+      .select()
+      .eq("booking_id", bookingId)
+      .in("kind", ["booking_cancellation", "owner_cancellation"])
+      .throwOnError();
+    expect(sent?.map((row) => row.state)).toEqual(["sent", "sent"]);
+    await cancelBookingAction(form); // replay must not schedule another inline attempt
+    expect(afterTasks).toHaveLength(0);
   } finally {
     vi.unstubAllEnvs();
   }
