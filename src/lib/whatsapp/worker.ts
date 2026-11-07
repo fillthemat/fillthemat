@@ -69,6 +69,8 @@ type JobContext = {
 };
 
 type InboundContext = JobContext & {
+  /** Public identity for queue-backed limits; schoolId remains the legacy Turn identity. */
+  queueSchoolId: string;
   message: InboundWhatsAppMessage;
   inboundText: string;
   /**
@@ -360,7 +362,7 @@ async function planReply(
   }
 
   // Daily-cap refusals leave the conversation open and its transcript intact.
-  if (await whatsappOutboundQuotaExceeded(ctx.schoolId, ctx.message.waId, now)) {
+  if (await whatsappOutboundQuotaExceeded(ctx.queueSchoolId, ctx.message.waId, now)) {
     await sendNotice(ctx, "You've reached today's message limit. Please try again tomorrow.");
     return null;
   }
@@ -422,6 +424,7 @@ export async function processWhatsAppJob(
       if (!(await start())) return "deferred";
       return await done();
     }
+    if (!schoolId) throw new InternalFailure("unknown_phone_number");
     const now = dependencies.now();
 
     // The legacy inbound marker commits before public reply enqueue. Until
@@ -483,6 +486,7 @@ export async function processWhatsAppJob(
       if (!(await start())) return "deferred";
       const ctx: InboundContext = {
         schoolId: resolved.schoolId,
+        queueSchoolId: schoolId,
         conversationId,
         message,
         inboundText: message.text ?? "",

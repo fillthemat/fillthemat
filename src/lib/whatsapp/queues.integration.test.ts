@@ -6,6 +6,7 @@ import { POST } from "@/app/api/webhooks/whatsapp/route";
 import * as conversationStore from "@/lib/conversations/conversation-store";
 import { bookSlot } from "@/lib/schedule/book-slot";
 import { listOpenSlots } from "@/lib/schedule/occurrences";
+import { MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY } from "@/lib/security/limits";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
@@ -19,6 +20,7 @@ import {
   sendWhatsAppDelivery,
 } from "./deliveries";
 import * as inboundSchool from "./inbound";
+import * as intents from "./intents";
 import * as jobs from "./jobs";
 import {
   claimDueWhatsAppJobs,
@@ -441,6 +443,66 @@ it("legacy Turn IDs never enter public queue FKs and processing errors consume a
       providerIdempotencyKey: randomUUID(),
     });
     expect((await state(requireRow(id, "reply"))).school_id).toBe(schoolId);
+    // Existing conversations skip the pre-conversation quota check. planReply
+    // must count public deliveries, not the different legacy Turn school ID.
+    const cappedInbound = { ...message(), waId: "15550000003" };
+    const conversation = {
+      id: randomUUID(),
+      schoolId: legacyId,
+      landingSessionId: null,
+      contactId: null,
+      resumeTokenHash: "legacy",
+      waIdHash: "legacy",
+      expiresAt: new Date(Date.now() + 3600_000),
+      generatingAt: null,
+      endedAt: null,
+      endReason: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const transcript = vi.spyOn(conversationStore, "loadTranscript").mockResolvedValue([]);
+    const existingConversationMocks = [
+      vi.spyOn(conversationStore, "findConversation").mockResolvedValue(conversation),
+      vi
+        .spyOn(conversationStore, "findOrCreateConversation")
+        .mockResolvedValue({ ok: true, conversation }),
+      vi.spyOn(conversationStore, "claimGeneration").mockResolvedValue({ release: async () => {} }),
+      vi.spyOn(conversationStore, "endConversationAtMessageLimit").mockResolvedValue(false),
+      vi.spyOn(intents, "getPendingBookingIntent").mockResolvedValue(null),
+      transcript,
+    ];
+    try {
+      answered.mockResolvedValue(false);
+      await client()
+        .from("whatsapp_deliveries")
+        .insert(
+          Array.from({ length: MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY }, () => ({
+            school_id: schoolId,
+            phone_number_id: phone,
+            recipient_wa_id: cappedInbound.waId,
+            provider_idempotency_key: randomUUID(),
+            state: "sent" as const,
+          })),
+        )
+        .throwOnError();
+      await enqueueInboundJobs([cappedInbound]);
+      expect(
+        await drainWhatsAppJobs("existing-cap", 10, { phoneNumberIds: [phone] }),
+      ).toMatchObject({ claimed: 1, done: 1, retrying: 0 });
+      expect(transcript).toHaveBeenCalledWith(conversation.id);
+      const { data: notice } = await client()
+        .from("whatsapp_deliveries")
+        .select("school_id, body")
+        .eq("provider_idempotency_key", `wa-notice/${cappedInbound.waId}/${cappedInbound.wamid}`)
+        .single()
+        .throwOnError();
+      expect(notice).toEqual({
+        school_id: schoolId,
+        body: "You've reached today's message limit. Please try again tomorrow.",
+      });
+    } finally {
+      for (const mock of existingConversationMocks) mock.mockRestore();
+    }
   } finally {
     resolve.mockRestore();
     answered.mockRestore();
