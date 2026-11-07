@@ -115,8 +115,11 @@ uses this SQL function as the only definition of the reminder rule (no TS copy),
 records its run in public.cron_runs; ending inactive conversations deliberately
 still calls the legacy conversation store until #253.
 
-During the integration-branch migration, legacy Book Trial/Lead/WhatsApp callers
-still enqueue into app.email_deliveries. The dispatcher and reminder scheduler
+During the integration-branch migration, legacy Lead callers
+still enqueue into app.email_deliveries. Book Trial (including the current WhatsApp
+booking caller) uses the service-only `book_trial` function and public outbox.
+It locks the occurrence and owns counters, emails and events: booking triggers
+only handle owner status updates, never INSERT. The dispatcher and reminder scheduler
 read **public only**; those emails and reminders for legacy app bookings are
 intentionally not sent until #250–#252 migrate those workflows.
 
