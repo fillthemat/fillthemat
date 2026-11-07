@@ -14,8 +14,7 @@ import { CONVERSATION_INACTIVITY_DAYS } from "@/lib/schedule/constants";
 import { MAX_CHAT_MESSAGES_PER_CONVERSATION } from "@/lib/security/limits";
 
 export type ConversationIdentity =
-  | { channel: "web"; resumeToken: string }
-  | { channel: "whatsapp"; waId: string };
+  { channel: "web"; resumeToken: string } | { channel: "whatsapp"; waId: string };
 
 type ConversationInput = {
   schoolId: string;
@@ -56,8 +55,7 @@ export async function findConversation(
 }
 
 export type FindOrCreateConversationResult =
-  | { ok: true; conversation: Conversation }
-  | { ok: false; reason: "invalid_conversation" };
+  { ok: true; conversation: Conversation } | { ok: false; reason: "invalid_conversation" };
 
 /** The unique identity indexes settle concurrent first-message inserts. */
 export async function findOrCreateConversation({

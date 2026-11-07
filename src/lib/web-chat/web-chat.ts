@@ -33,8 +33,7 @@ export type WebTurnResult =
     };
 
 export type WebTranscriptResult =
-  | { ok: true; messages: UIMessage[] }
-  | { ok: false; reason: "not_found" };
+  { ok: true; messages: UIMessage[] } | { ok: false; reason: "not_found" };
 
 /** Read only: an unknown token never creates a conversation. */
 export async function loadWebTranscript({

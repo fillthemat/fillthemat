@@ -8,9 +8,7 @@
  */
 
 export type WhatsAppUtilityTemplateName =
-  | "booking_confirmation"
-  | "booking_reminder"
-  | "lead_confirmation";
+  "booking_confirmation" | "booking_reminder" | "lead_confirmation";
 
 export const WHATSAPP_TEMPLATE_LANGUAGE = "en_US";
 
