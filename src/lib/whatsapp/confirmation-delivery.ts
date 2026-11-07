@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { bookings, emailDeliveries, schools, type WhatsAppDelivery } from "@/db/schema";
+import { bookings, emailDeliveries, schools } from "@/db/schema";
+import type { WhatsAppDelivery } from "./deliveries";
 
 type Database = ReturnType<typeof getDb>;
 export type DeliveryTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];

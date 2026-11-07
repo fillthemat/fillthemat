@@ -1,27 +1,23 @@
-import type { Faq, School, TrialOffering } from "@/db/schema";
 import type { SlotOccurrence, SlotWindow } from "@/lib/schedule/occurrences";
 import type { SchoolPromptInput } from "./instructions";
 
 /** The school's id plus the details its instructions show the model. */
-export type AssistantSchool = Pick<School, "id"> & Omit<SchoolPromptInput, "faqs">;
+export type AssistantSchool = { id: string } & Omit<SchoolPromptInput, "faqs">;
 
 export type SchoolCatalog = {
-  offerings: Array<
-    Pick<
-      TrialOffering,
-      | "id"
-      | "name"
-      | "description"
-      | "minimumAge"
-      | "maximumAge"
-      | "attire"
-      | "expectations"
-      | "active"
-    >
-  >;
+  offerings: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    minimumAge: number | null;
+    maximumAge: number | null;
+    attire: string | null;
+    expectations: string | null;
+    active: boolean;
+  }>;
   windows: SlotWindow[];
   occurrences: SlotOccurrence[];
-  faqs: Array<Pick<Faq, "question" | "answer">>;
+  faqs: SchoolPromptInput["faqs"];
 };
 
 /** Data loaded once for a turn; tools do not fetch data themselves. */

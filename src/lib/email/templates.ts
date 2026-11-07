@@ -1,7 +1,33 @@
 import { formatInTimeZone } from "date-fns-tz";
-import type { Booking, Lead, School } from "@/db/schema";
 
-function formatWhen(booking: Booking): string {
+/** Contact details included in transactional emails, independent of storage. */
+export type EmailSchool = {
+  name: string;
+  phone: string | null;
+  notificationEmail: string | null;
+};
+
+/** Immutable booking facts rendered by the templates. */
+export type EmailBooking = {
+  startAt: Date | string;
+  timezoneSnapshot: string;
+  offeringNameSnapshot: string;
+  participantNameSnapshot: string;
+  participantAgeSnapshot: number;
+  locationSnapshot: string | null;
+  instructionsSnapshot: string | null;
+  contactNameSnapshot: string;
+  contactEmailSnapshot: string | null;
+  contactPhoneSnapshot: string;
+};
+
+export type EmailLead = {
+  participantName: string | null;
+  participantAge: number | null;
+  statedNeed: string | null;
+};
+
+function formatWhen(booking: EmailBooking): string {
   return `${formatInTimeZone(
     booking.startAt,
     booking.timezoneSnapshot,
@@ -9,7 +35,7 @@ function formatWhen(booking: Booking): string {
   )} (${booking.timezoneSnapshot})`;
 }
 
-function snapshotBlock(booking: Booking): string {
+function snapshotBlock(booking: EmailBooking): string {
   return [
     `School: details below`,
     `Offering: ${booking.offeringNameSnapshot}`,
@@ -22,7 +48,7 @@ function snapshotBlock(booking: Booking): string {
     .join("\n");
 }
 
-export function prospectConfirmationEmail(school: School, booking: Booking) {
+export function prospectConfirmationEmail(school: EmailSchool, booking: EmailBooking) {
   const text = `You're booked for a trial class at ${school.name}.
 
 ${snapshotBlock(booking)}
@@ -40,7 +66,7 @@ Fillthemat`;
   };
 }
 
-export function prospectReminderEmail(school: School, booking: Booking) {
+export function prospectReminderEmail(school: EmailSchool, booking: EmailBooking) {
   const date = formatInTimeZone(booking.startAt, booking.timezoneSnapshot, "EEEE, MMMM d");
   const text = `Reminder: ${booking.participantNameSnapshot}'s trial class at ${school.name} is on ${date}.
 
@@ -57,7 +83,7 @@ Fillthemat`;
   };
 }
 
-export function prospectCancellationEmail(school: School, booking: Booking) {
+export function prospectCancellationEmail(school: EmailSchool, booking: EmailBooking) {
   const text = `Your trial class at ${school.name} has been cancelled.
 
 ${snapshotBlock(booking)}
@@ -74,7 +100,7 @@ Fillthemat`;
   };
 }
 
-export function ownerBookingEmail(school: School, booking: Booking) {
+export function ownerBookingEmail(school: EmailSchool, booking: EmailBooking) {
   const text = `A trial class was booked at ${school.name}.
 
 Contact: ${booking.contactNameSnapshot} <${booking.contactEmailSnapshot}> ${booking.contactPhoneSnapshot}
@@ -87,7 +113,7 @@ Fillthemat`;
   };
 }
 
-export function ownerCancellationEmail(school: School, booking: Booking) {
+export function ownerCancellationEmail(school: EmailSchool, booking: EmailBooking) {
   const text = `A trial class was cancelled at ${school.name}.
 
 Contact: ${booking.contactNameSnapshot} <${booking.contactEmailSnapshot}>
@@ -100,7 +126,7 @@ Fillthemat`;
   };
 }
 
-export function ownerWhatsAppConfirmationFailedEmail(school: School, booking: Booking) {
+export function ownerWhatsAppConfirmationFailedEmail(school: EmailSchool, booking: EmailBooking) {
   return {
     subject: `Please contact ${booking.participantNameSnapshot} about their trial booking`,
     text: `We couldn't confirm this booking with ${booking.participantNameSnapshot} on WhatsApp. Please contact them to let them know they're booked at ${school.name}.
@@ -115,8 +141,8 @@ Fillthemat`,
 }
 
 export function ownerLeadEmail(
-  school: School,
-  lead: Lead,
+  school: EmailSchool,
+  lead: EmailLead,
   contact: {
     name: string;
     email: string;

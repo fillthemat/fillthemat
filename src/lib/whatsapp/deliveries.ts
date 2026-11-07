@@ -1,6 +1,7 @@
 import { and, asc, eq, gt, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
+import type { Enums } from "@/db/types";
 import { getDb, type TransactionOptions } from "@/db";
-import { schools, whatsappDeliveries, type WhatsAppDelivery } from "@/db/schema";
+import { schools, whatsappDeliveries } from "@/db/schema";
 import {
   orderClaimedRows,
   ownedQueueClaim,
@@ -12,6 +13,7 @@ import {
   internalFailureReasonFrom,
   MAX_EXECUTIONS,
   type RetryFailure,
+  type TerminalCause,
   whatsappRetryDecision as retryDecision,
 } from "@/lib/retry-policy";
 import type { WhatsAppSendOutcome } from "./client";
@@ -23,6 +25,28 @@ import {
 } from "./confirmation-delivery";
 import { type WhatsAppWorkerDependencies, whatsappWorkerDependencies } from "./dependencies";
 import { WHATSAPP_TEMPLATE_LANGUAGE } from "./templates";
+
+/** Send inputs and claim fencing; persistence-only fields stay in the query layer. */
+export type WhatsAppDelivery = {
+  id: string;
+  schoolId: string;
+  bookingId: string | null;
+  recipientWaId: string;
+  phoneNumberId: string;
+  state: Enums<"whatsapp_delivery_state">;
+  attempts: number;
+  templateName: string | null;
+  templateParams: unknown;
+  body: string | null;
+  interactiveButtons: Array<{ id: string; title: string }> | null;
+  windowExpiresAt: Date | null;
+  claimedAt: Date | null;
+  claimedBy: string | null;
+  lastError: string | null;
+  failureReason: string | null;
+  failureCode: number | null;
+  terminalCause: TerminalCause | null;
+};
 
 function ownedClaim(delivery: WhatsAppDelivery) {
   return ownedQueueClaim(whatsappDeliveries, delivery);
@@ -204,7 +228,7 @@ export async function claimDueWhatsAppDeliveries(
     retryOnly?: boolean;
     phoneNumberIds?: string[];
   },
-) {
+): Promise<WhatsAppDelivery[]> {
   const db = getDb();
   const now = opts?.now ?? new Date();
   const limit = opts?.limit ?? 25;
