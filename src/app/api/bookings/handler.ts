@@ -9,7 +9,7 @@ import type { getPublicSchoolBySlug } from "@/lib/schools/public";
 import type { emailBookingQuotaExceeded, recipientQuotaExceeded } from "@/lib/security/limits";
 import type { verifyTurnstile } from "@/lib/security/turnstile";
 import { getRequestIp } from "@/lib/request";
-import { requestBodyTooLarge } from "@/lib/security/limits";
+import { requestBodyTooLarge } from "@/lib/security/request-limits";
 import { bookingRequestSchema } from "@/lib/validation";
 
 export type BookingFailure = {

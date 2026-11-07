@@ -40,6 +40,8 @@ CREATE TABLE public.bookings (
 );
 
 CREATE UNIQUE INDEX bookings_active_participant_occurrence ON public.bookings USING btree (trial_occurrence_id, participant_id) WHERE status <> 'cancelled';
+CREATE INDEX bookings_email_quota_idx ON public.bookings (school_id, contact_email_snapshot, created_at);
+CREATE INDEX bookings_phone_quota_idx ON public.bookings (school_id, contact_phone_snapshot, created_at);
 
 CREATE TRIGGER bookings_set_updated_at
 BEFORE UPDATE ON public.bookings

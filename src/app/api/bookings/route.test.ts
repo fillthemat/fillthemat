@@ -18,6 +18,7 @@ vi.mock("@/lib/schools/public", () => ({
 vi.mock("@/lib/security/turnstile", () => ({
   verifyTurnstile: dependencies.verifyTurnstile,
 }));
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/security/limits", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/security/limits")>()),
   emailBookingQuotaExceeded: dependencies.emailBookingQuotaExceeded,
