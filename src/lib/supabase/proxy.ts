@@ -2,6 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
 export async function updateSession(request: NextRequest) {
+  // Platform endpoints authenticate with their cron secret/provider signature,
+  // not an owner's browser session. Keep this list exact, not all /api routes.
+  if (
+    request.nextUrl.pathname === "/api/cron/maintenance" ||
+    request.nextUrl.pathname === "/api/webhooks/resend"
+  ) {
+    return NextResponse.next({ request });
+  }
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

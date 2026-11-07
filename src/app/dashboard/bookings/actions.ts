@@ -27,7 +27,6 @@ export async function cancelBookingAction(formData: FormData) {
   const { error } = await supabase.rpc("cancel_dashboard_booking", { p_booking_id: id });
   if (error) throw error;
   // Cancellation emails are queued atomically in public.email_deliveries.
-  // The legacy app-schema dispatcher must not be used for these rows.
   revalidatePath("/dashboard/bookings");
   revalidatePath("/dashboard");
 }

@@ -1,14 +1,12 @@
-import { and, eq, ne } from "drizzle-orm";
-import { getDb } from "@/db";
-import { emailDeliveries } from "@/db/schema";
+import "server-only";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type DeliveryEvent = { type: string; data?: object | null };
 
-/** Applies a verified provider event; unrelated events are acknowledged unchanged. */
+/** Applies verified events. Dead deliveries stay terminal, unrelated events are no-ops. */
 export async function recordResendDeliveryEvent(event: DeliveryEvent): Promise<void> {
   const providerId = event.data && "email_id" in event.data ? String(event.data.email_id) : null;
   if (!providerId) return;
-
   const state =
     event.type === "email.delivered"
       ? "delivered"
@@ -18,9 +16,10 @@ export async function recordResendDeliveryEvent(event: DeliveryEvent): Promise<v
           ? "complained"
           : null;
   if (!state) return;
-
-  await getDb()
-    .update(emailDeliveries)
-    .set({ state, updatedAt: new Date() })
-    .where(and(eq(emailDeliveries.providerId, providerId), ne(emailDeliveries.state, "dead")));
+  await createAdminClient()
+    .from("email_deliveries")
+    .update({ state })
+    .eq("provider_id", providerId)
+    .neq("state", "dead")
+    .throwOnError();
 }

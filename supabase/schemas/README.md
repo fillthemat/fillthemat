@@ -64,6 +64,56 @@ School provisioning is also platform-managed: onboarding calls the service-role-
 Browser roles have no INSERT access to `users`, `schools` or `school_settings`, so
 initial identity and ownership creation is an exception to cookie-client owner actions.
 
+## Email queue claim pattern (reference for WhatsApp)
+
+`functions/email-deliveries.sql` is the platform queue reference. All RPCs are
+invoker, empty-search-path, executable only by `service_role`. Server libraries
+call them with `src/lib/supabase/admin.ts` after the route's authorization check;
+owners only cancel through the cookie client/RLS and the existing booking trigger.
+
+- **Enqueue:** platform SQL workflows call `enqueue_email_delivery` inside their
+  own transaction. Its unique provider key makes replay a no-op (returns null),
+  not an update of an already queued/sent payload. Owner cancellation triggers
+  insert directly under their narrowly scoped trigger-only policy.
+- **Claim:** `pending/failed → claimed`. `claim_email_deliveries` locks due rows
+  with `FOR UPDATE SKIP LOCKED`, reserves `floor(limit/5)` slots for retries,
+  fills the rest with fresh rows, then refills either spare lane. It returns
+  fresh-first, oldest-first snapshots. Claims do not spend an execution.
+- **Start:** `start_email_delivery` conditionally increments attempts before I/O.
+  The fence is **(id, state=claimed, claimed_by, claimed_at, attempts)**. Even two
+  starts from the same snapshot cannot send twice. Keep timestamps as returned
+  strings: converting a database microsecond timestamp to JS Date loses precision.
+- **Finish/fail:** the TypeScript worker renders typed public-school/booking/lead
+  data and calls Resend (or the local log), then uses a single conditional table
+  update with the full fence: `claimed → sent/failed/dead`, clearing the claim.
+  This needs no RPC: the predicate and update are atomic, service_role has table
+  access and bypasses RLS, and browser roles have no UPDATE grant. Retry-policy.ts
+  still determines permanent failures and exponential backoff (1, 2, 4, 8 minutes).
+- **Recover:** `recover_email_deliveries` locks stale claims with SKIP LOCKED and
+  clears their fence: `claimed → pending`, or `dead` at five started executions.
+  This budget matches `MAX_EXECUTIONS` in retry-policy.ts; change both together.
+  Death preserves prior diagnostics or uses `worker_crashed`, with terminal cause
+  `attempts_exhausted`. The caller logs changed dead rows with `queue.dead`.
+- **Provider events:** the signature-verified webhook uses a conditional table
+  update by provider ID to delivered/bounced/complained, never changing dead rows.
+  This preserves the existing replay/order semantics, not a new event-order model.
+
+Locks are never held during provider I/O. Recovery cannot unsend accepted mail;
+Resend's stable idempotency key protects retries within its 24-hour window. Use
+unique run IDs in production. Do not replace the full fence with an ID/run-ID-only
+filter. WhatsApp should reuse this protocol with queue-specific functions and
+death hooks, not a dynamic-SQL generic queue RPC. Its legacy queue-claims.ts stays
+unchanged until that migration.
+
+`enqueue_email_reminders` atomically inserts reminders using the same unique key
+per booking, 36-hour minimum booking lead and 24-hour reminder window. Maintenance
+records its run in public.cron_runs; ending inactive conversations deliberately
+still calls the legacy conversation store until #253.
+
+During the integration-branch migration, legacy Book Trial/Lead/WhatsApp callers
+still enqueue into app.email_deliveries. The dispatcher reads **public only**;
+those legacy rows are intentionally not sent until their workflow tickets land.
+
 ## Changes
 
 1. Edit the table files and/or grouped functions.

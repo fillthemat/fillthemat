@@ -1,23 +1,6 @@
-import { and, asc, eq, gt, inArray, lt, lte, notInArray, sql } from "drizzle-orm";
+import "server-only";
 import { randomUUID } from "node:crypto";
-import { getDb } from "@/db";
-import {
-  type Booking,
-  bookings,
-  contacts,
-  emailDeliveries,
-  type EmailDelivery,
-  leads,
-  type School,
-  schools,
-} from "@/db/schema";
-import {
-  orderClaimedRows,
-  ownedQueueClaim,
-  recoverClaimedRows,
-  takeClaimLanes,
-} from "@/lib/queue-claims";
-import { deadEventFrom, logDeadTransition } from "@/lib/retry-log";
+import { logDeadTransition } from "@/lib/retry-log";
 import {
   emailRetryDecision as retryDecision,
   InternalFailure,
@@ -25,8 +8,10 @@ import {
   MAX_EXECUTIONS,
   type RetryFailure,
 } from "@/lib/retry-policy";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { type EmailSendDependencies, emailSendDependencies } from "./dependencies";
 import { buildTrialIcs } from "./ics";
+import { emailBooking, type EmailDelivery, updateClaim } from "./store";
 import {
   ownerBookingEmail,
   ownerCancellationEmail,
@@ -37,93 +22,109 @@ import {
   prospectReminderEmail,
 } from "./templates";
 
-function icsAttachment(booking: Booking, method: "PUBLISH" | "CANCEL", now: Date) {
-  const ics = buildTrialIcs({
-    uid: booking.icsUid,
-    sequence: booking.icsSequence,
-    method,
-    dtstamp: now,
-    start: booking.startAt,
-    end: booking.endAt,
-    summary: `${booking.offeringNameSnapshot} trial`,
-    description: booking.instructionsSnapshot ?? booking.offeringNameSnapshot,
-    location: booking.locationSnapshot ?? "",
-  });
-  return {
-    filename: method === "CANCEL" ? "cancel.ics" : "trial.ics",
-    content: Buffer.from(ics, "utf8"),
-    contentType: "text/calendar; charset=utf-8",
+async function renderDelivery(delivery: EmailDelivery) {
+  const client = createAdminClient();
+  const { data: school } = await client
+    .from("schools")
+    .select("approved_at, school_profiles(name, phone), school_settings(notification_email)")
+    .eq("id", delivery.school_id)
+    .maybeSingle()
+    .throwOnError();
+  if (!school) throw new InternalFailure("school_missing");
+  if (!school.approved_at) throw new InternalFailure("school_not_approved");
+  if (!school.school_profiles || !school.school_settings)
+    throw new InternalFailure("school_missing");
+  const facts = {
+    name: school.school_profiles.name,
+    phone: school.school_profiles.phone,
+    notificationEmail: school.school_settings.notification_email,
   };
-}
-
-async function renderDelivery(
-  delivery: EmailDelivery,
-  school: School,
-  booking: Booking | null,
-  now: Date,
-) {
+  if (delivery.kind === "owner_lead") {
+    if (!delivery.lead_id) throw new InternalFailure("missing_lead");
+    const { data: lead } = await client
+      .from("leads")
+      .select("*, contacts(name, email, phone)")
+      .eq("id", delivery.lead_id)
+      .eq("school_id", delivery.school_id)
+      .maybeSingle()
+      .throwOnError();
+    if (!lead) throw new InternalFailure("missing_lead");
+    if (!lead.contacts) throw new InternalFailure("missing_contact");
+    return {
+      ...ownerLeadEmail(
+        facts,
+        {
+          participantName: lead.participant_name,
+          participantAge: lead.participant_age,
+          statedNeed: lead.stated_need,
+        },
+        { ...lead.contacts, email: lead.contacts.email ?? "" },
+      ),
+      attachments: [],
+    };
+  }
+  if (!delivery.booking_id) throw new InternalFailure("missing_booking");
+  const { data: row } = await client
+    .from("bookings")
+    .select()
+    .eq("id", delivery.booking_id)
+    .eq("school_id", delivery.school_id)
+    .maybeSingle()
+    .throwOnError();
+  if (!row) throw new InternalFailure("missing_booking");
+  const booking = emailBooking(row);
+  const attachment = (method: "PUBLISH" | "CANCEL") => ({
+    filename: method === "CANCEL" ? "cancel.ics" : "trial.ics",
+    content: Buffer.from(
+      buildTrialIcs({
+        uid: booking.icsUid,
+        sequence: booking.icsSequence,
+        method,
+        // Stable bytes across retries using the same Resend idempotency key.
+        dtstamp: new Date(delivery.created_at),
+        start: booking.startAt,
+        end: booking.endAt,
+        summary: `${booking.offeringNameSnapshot} trial`,
+        description: booking.instructionsSnapshot ?? booking.offeringNameSnapshot,
+        location: booking.locationSnapshot ?? "",
+      }),
+      "utf8",
+    ),
+    contentType: "text/calendar; charset=utf-8",
+  });
   switch (delivery.kind) {
     case "prospect_confirmation":
-      if (!booking) throw new InternalFailure("missing_booking");
-      return {
-        ...prospectConfirmationEmail(school, booking),
-        attachments: [icsAttachment(booking, "PUBLISH", now)],
-      };
+      return { ...prospectConfirmationEmail(facts, booking), attachments: [attachment("PUBLISH")] };
     case "booking_reminder":
-      if (!booking) throw new InternalFailure("missing_booking");
-      return {
-        ...prospectReminderEmail(school, booking),
-        attachments: [icsAttachment(booking, "PUBLISH", now)],
-      };
+      return { ...prospectReminderEmail(facts, booking), attachments: [attachment("PUBLISH")] };
     case "booking_cancellation":
-      if (!booking) throw new InternalFailure("missing_booking");
-      return {
-        ...prospectCancellationEmail(school, booking),
-        attachments: [icsAttachment(booking, "CANCEL", now)],
-      };
+      return { ...prospectCancellationEmail(facts, booking), attachments: [attachment("CANCEL")] };
     case "owner_booking":
-      if (!booking) throw new InternalFailure("missing_booking");
-      return { ...ownerBookingEmail(school, booking), attachments: [] };
+      return { ...ownerBookingEmail(facts, booking), attachments: [] };
     case "owner_cancellation":
-      if (!booking) throw new InternalFailure("missing_booking");
-      return { ...ownerCancellationEmail(school, booking), attachments: [] };
+      return { ...ownerCancellationEmail(facts, booking), attachments: [] };
     case "owner_whatsapp_confirmation_failed":
-      if (!booking) throw new InternalFailure("missing_booking");
-      return {
-        ...ownerWhatsAppConfirmationFailedEmail(school, booking),
-        attachments: [],
-      };
-    case "owner_lead": {
-      if (!delivery.leadId) throw new InternalFailure("missing_lead");
-      const db = getDb();
-      const [lead] = await db.select().from(leads).where(eq(leads.id, delivery.leadId)).limit(1);
-      if (!lead) throw new InternalFailure("missing_lead");
-      const [contact] = await db
-        .select()
-        .from(contacts)
-        .where(eq(contacts.id, lead.contactId))
-        .limit(1);
-      if (!contact) throw new InternalFailure("missing_contact");
-      // `contacts.email` is nullable for the WhatsApp no-email path; the owner
-      // email is still delivered (to `school.notificationEmail`) and only the
-      // displayed contact line loses the email.
-      const email = contact.email ?? "";
-      return {
-        ...ownerLeadEmail(school, lead, {
-          name: contact.name,
-          email,
-          phone: contact.phone,
-        }),
-        attachments: [],
-      };
-    }
+      return { ...ownerWhatsAppConfirmationFailedEmail(facts, booking), attachments: [] };
     default:
       throw new InternalFailure("unknown_email_kind");
   }
 }
 
-function ownedClaim(delivery: EmailDelivery) {
-  return ownedQueueClaim(emailDeliveries, delivery);
+function logDead(row: EmailDelivery, runId: string) {
+  logDeadTransition({
+    queue: "email_delivery",
+    id: row.id,
+    schoolId: row.school_id,
+    reason: row.failure_reason ?? "unknown_failure",
+    executions: row.attempts,
+    runId,
+    terminalCause:
+      row.terminal_cause === "permanent"
+        ? "permanent"
+        : row.terminal_cause === "stale"
+          ? "stale"
+          : "attempts_exhausted",
+  });
 }
 type SendResult = "sent" | "retrying" | "dead" | "deferred";
 async function failDelivery(
@@ -136,36 +137,29 @@ async function failDelivery(
   const reason =
     failure.kind === "internal"
       ? failure.reason === "attempts_exhausted"
-        ? (delivery.failureReason ?? failure.reason)
+        ? (delivery.failure_reason ?? failure.reason)
         : failure.reason
       : failure.name;
-  const [row] = await getDb()
-    .update(emailDeliveries)
-    .set({
-      state: decision.action === "stop" ? "dead" : "failed",
-      nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
-      lastError: message.slice(0, 500),
-      failureReason: reason,
-      terminalCause: decision.action === "stop" ? decision.cause : null,
-      claimedAt: null,
-      claimedBy: null,
-      updatedAt: now,
-    })
-    .where(ownedClaim(delivery))
-    .returning();
+  const row = await updateClaim(delivery, {
+    state: decision.action === "stop" ? "dead" : "failed",
+    next_attempt_at: decision.action === "retry" ? decision.at.toISOString() : undefined,
+    last_error: message.slice(0, 500),
+    failure_reason: reason,
+    terminal_cause: decision.action === "stop" ? decision.cause : null,
+    claimed_at: null,
+    claimed_by: null,
+  });
   if (!row) return "deferred";
-  if (decision.action === "stop")
-    logDeadTransition(deadEventFrom(row, "email_delivery", delivery.claimedBy ?? "unknown"));
+  if (decision.action === "stop") logDead(row, delivery.claimed_by ?? "unknown");
   return decision.action === "stop" ? "dead" : "retrying";
 }
 
-/** A row snapshot carries the fence; an ID-only caller must obtain a due claim. */
+/** A snapshot carries the full fence; ID-only callers first obtain a due claim. */
 export async function sendDelivery(
   deliveryOrId: EmailDelivery | string,
   overrides: Partial<EmailSendDependencies> = {},
 ): Promise<SendResult> {
   const dependencies = emailSendDependencies(overrides);
-  const db = getDb();
   const delivery =
     typeof deliveryOrId === "string"
       ? (
@@ -181,58 +175,30 @@ export async function sendDelivery(
       delivery,
       {
         kind: "internal",
-        reason: internalFailureReasonFrom(delivery.failureReason, "attempts_exhausted"),
+        reason: internalFailureReasonFrom(delivery.failure_reason, "attempts_exhausted"),
       },
-      delivery.lastError ?? "attempts_exhausted",
+      delivery.last_error ?? "attempts_exhausted",
       dependencies.now(),
     );
-  const [executing] = await db
-    .update(emailDeliveries)
-    .set({
-      attempts: sql`${emailDeliveries.attempts} + 1`,
-      updatedAt: dependencies.now(),
+  if (!delivery.claimed_at || !delivery.claimed_by) return "deferred";
+  const { data } = await createAdminClient()
+    .rpc("start_email_delivery", {
+      p_id: delivery.id,
+      p_claimed_by: delivery.claimed_by,
+      p_claimed_at: delivery.claimed_at,
+      p_attempts: delivery.attempts,
     })
-    .where(and(ownedClaim(delivery), lt(emailDeliveries.attempts, MAX_EXECUTIONS)))
-    .returning();
+    .throwOnError();
+  const executing = data?.[0];
   if (!executing) return "deferred";
+  let result;
   try {
-    const [school] = await db
-      .select()
-      .from(schools)
-      .where(eq(schools.id, executing.schoolId))
-      .limit(1);
-    if (!school) throw new InternalFailure("school_missing");
-    if (!school.approvedAt) throw new InternalFailure("school_not_approved");
-    const booking = executing.bookingId
-      ? (await db.select().from(bookings).where(eq(bookings.id, executing.bookingId)).limit(1))[0]
-      : null;
-    // Keep ICS DTSTAMP stable when reusing Resend's idempotency key on retry:
-    // changing attachment bytes would cause invalid_idempotent_request (409).
-    // https://resend.com/docs/dashboard/emails/idempotency-keys
-    const rendered = await renderDelivery(executing, school, booking ?? null, executing.createdAt);
-    const result = await dependencies.transport.send({
+    const rendered = await renderDelivery(executing);
+    result = await dependencies.transport.send({
       to: executing.recipient,
       ...rendered,
-      idempotencyKey: executing.providerIdempotencyKey,
+      idempotencyKey: executing.provider_idempotency_key,
     });
-    if (!result.ok) return failDelivery(executing, result, result.message, dependencies.now());
-    const now = dependencies.now();
-    const rows = await db
-      .update(emailDeliveries)
-      .set({
-        state: "sent",
-        providerId: result.kind === "local_noop" ? `local-noop:${executing.id}` : result.providerId,
-        sentAt: now,
-        lastError: null,
-        failureReason: null,
-        terminalCause: null,
-        claimedAt: null,
-        claimedBy: null,
-        updatedAt: now,
-      })
-      .where(ownedClaim(executing))
-      .returning({ id: emailDeliveries.id });
-    return rows.length ? "sent" : "deferred";
   } catch (error) {
     return failDelivery(
       executing,
@@ -244,6 +210,18 @@ export async function sendDelivery(
       dependencies.now(),
     );
   }
+  if (!result.ok) return failDelivery(executing, result, result.message, dependencies.now());
+  const row = await updateClaim(executing, {
+    state: "sent",
+    provider_id: result.kind === "local_noop" ? `local-noop:${executing.id}` : result.providerId,
+    sent_at: dependencies.now().toISOString(),
+    last_error: null,
+    failure_reason: null,
+    terminal_cause: null,
+    claimed_at: null,
+    claimed_by: null,
+  });
+  return row ? "sent" : "deferred";
 }
 
 export async function runEmailSendOnce(
@@ -279,117 +257,56 @@ export async function recoverStuckEmailDeliveries(
   runId = "recovery",
   ids?: string[],
 ) {
-  if (ids?.length === 0) return { recovered: 0, dead: 0 };
-  const result = await getDb().transaction(async (tx) => {
-    const stale = await tx
-      .select()
-      .from(emailDeliveries)
-      .where(
-        and(
-          eq(emailDeliveries.state, "claimed"),
-          lt(emailDeliveries.claimedAt, new Date(now.getTime() - staleBeforeMs)),
-          ids ? inArray(emailDeliveries.id, ids) : undefined,
-        ),
-      )
-      .for("update", { skipLocked: true });
-    return recoverClaimedRows(stale, async (delivery) => {
-      const decision = retryDecision(
-        { kind: "internal", reason: "worker_crashed" },
-        delivery.attempts,
-        now,
-      );
-      const [row] = await tx
-        .update(emailDeliveries)
-        .set({
-          state: decision.action === "stop" ? "dead" : "pending",
-          claimedAt: null,
-          claimedBy: null,
-          updatedAt: now,
-          failureReason:
-            decision.action === "stop"
-              ? (delivery.failureReason ?? "worker_crashed")
-              : delivery.failureReason,
-          lastError:
-            decision.action === "stop"
-              ? (delivery.lastError ?? "worker_crashed")
-              : delivery.lastError,
-          terminalCause: decision.action === "stop" ? decision.cause : null,
-        })
-        .where(ownedClaim(delivery))
-        .returning();
-      return row;
-    });
-  });
-  for (const row of result.dead) logDeadTransition(deadEventFrom(row, "email_delivery", runId));
-  return { recovered: result.recovered, dead: result.dead.length };
+  const { data } = await createAdminClient()
+    .rpc("recover_email_deliveries", {
+      p_stale_before: new Date(now.getTime() - staleBeforeMs).toISOString(),
+      p_ids: ids,
+    })
+    .throwOnError();
+  const dead = (data ?? []).filter((row) => row.state === "dead");
+  for (const row of dead) logDead(row, runId);
+  return { recovered: data?.length ?? 0, dead: dead.length };
 }
 
+async function attemptPending(
+  column: "booking_id" | "lead_id",
+  id: string,
+  overrides: Partial<EmailSendDependencies>,
+) {
+  const { data } = await createAdminClient()
+    .from("email_deliveries")
+    .select("id")
+    .eq(column, id)
+    .throwOnError();
+  return runEmailSendOnce(`${column}:${randomUUID()}`, overrides, {
+    ids: (data ?? []).map((row) => row.id),
+  });
+}
 export async function attemptPendingForBooking(
-  bookingId: string,
+  id: string,
   overrides: Partial<EmailSendDependencies> = {},
 ) {
-  const db = getDb();
-  const pending = await db
-    .select()
-    .from(emailDeliveries)
-    .where(eq(emailDeliveries.bookingId, bookingId));
-  return runEmailSendOnce(`booking:${randomUUID()}`, overrides, {
-    ids: pending.map((row) => row.id),
-  });
+  return attemptPending("booking_id", id, overrides);
 }
-
 export async function attemptPendingForLead(
-  leadId: string,
+  id: string,
   overrides: Partial<EmailSendDependencies> = {},
 ) {
-  const db = getDb();
-  const pending = await db.select().from(emailDeliveries).where(eq(emailDeliveries.leadId, leadId));
-  return runEmailSendOnce(`lead:${randomUUID()}`, overrides, {
-    ids: pending.map((row) => row.id),
-  });
+  return attemptPending("lead_id", id, overrides);
 }
-
 export async function claimDueDeliveries(
   runId: string,
   limit = 25,
   opts: { now?: Date; ids?: string[] } = {},
 ) {
-  const db = getDb();
-  const now = opts.now ?? new Date();
-  if (opts.ids?.length === 0 || limit <= 0) return [];
-  return db.transaction(async (tx) => {
-    const due = await takeClaimLanes(limit, async (fresh, count, excludedIds) => {
-      const rows = await tx
-        .select()
-        .from(emailDeliveries)
-        .where(
-          and(
-            inArray(emailDeliveries.state, ["pending", "failed"]),
-            lte(emailDeliveries.nextAttemptAt, now),
-            fresh ? eq(emailDeliveries.attempts, 0) : gt(emailDeliveries.attempts, 0),
-            opts.ids ? inArray(emailDeliveries.id, opts.ids) : undefined,
-            excludedIds.length ? notInArray(emailDeliveries.id, excludedIds) : undefined,
-          ),
-        )
-        .orderBy(asc(emailDeliveries.createdAt), asc(emailDeliveries.id))
-        .for("update", { skipLocked: true })
-        .limit(count);
-      return rows;
-    });
-
-    if (due.length === 0) return [];
-
-    const ids = due.map((row) => row.id);
-    const claimed = await tx
-      .update(emailDeliveries)
-      .set({
-        state: "claimed",
-        claimedAt: now,
-        claimedBy: runId,
-        updatedAt: now,
-      })
-      .where(inArray(emailDeliveries.id, ids))
-      .returning();
-    return orderClaimedRows(due, claimed);
-  });
+  if (limit <= 0 || opts.ids?.length === 0) return [];
+  const { data } = await createAdminClient()
+    .rpc("claim_email_deliveries", {
+      p_run_id: runId,
+      p_limit: limit,
+      p_now: (opts.now ?? new Date()).toISOString(),
+      p_ids: opts.ids,
+    })
+    .throwOnError();
+  return data ?? [];
 }
