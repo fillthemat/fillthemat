@@ -1,6 +1,8 @@
 import { addHours, subHours } from "date-fns";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { planWhatsAppDelivery, type WhatsappDeliveryPlan } from "./deliveries";
+
+vi.mock("server-only", () => ({}));
 
 const now = new Date("2026-09-11T12:00:00Z");
 
