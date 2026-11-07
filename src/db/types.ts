@@ -1419,24 +1419,11 @@ export type Database = {
         | "owner_lead"
         | "owner_whatsapp_confirmation_failed";
       email_state:
-        | "pending"
-        | "claimed"
-        | "sent"
-        | "failed"
-        | "delivered"
-        | "bounced"
-        | "complained"
-        | "dead";
+        "pending" | "claimed" | "sent" | "failed" | "delivered" | "bounced" | "complained" | "dead";
       message_completion: "complete" | "streaming" | "aborted" | "error";
       whatsapp_booking_intent_state: "pending" | "confirmed" | "expired" | "superseded";
       whatsapp_delivery_state:
-        | "pending"
-        | "claimed"
-        | "sent"
-        | "delivered"
-        | "read"
-        | "failed"
-        | "dead";
+        "pending" | "claimed" | "sent" | "delivered" | "read" | "failed" | "dead";
       whatsapp_job_state: "pending" | "claimed" | "done" | "failed" | "dead";
       whatsapp_send_outcome: "accepted" | "unknown" | "rejected";
     };
@@ -1477,8 +1464,7 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
   TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -1500,8 +1486,7 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
   TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -1523,8 +1508,7 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
+    keyof DefaultSchema["Enums"] | { schema: keyof DatabaseWithoutInternals },
   EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -1538,8 +1522,7 @@ export type Enums<
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
+    keyof DefaultSchema["CompositeTypes"] | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }

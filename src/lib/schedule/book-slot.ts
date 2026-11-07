@@ -55,11 +55,7 @@ export type BookSlotResult =
   | {
       ok: false;
       code:
-        | "invalid_slot"
-        | "slot_unavailable"
-        | "ineligible"
-        | "already_booked"
-        | "school_not_public";
+        "invalid_slot" | "slot_unavailable" | "ineligible" | "already_booked" | "school_not_public";
     };
 
 function isUniqueViolation(error: unknown): boolean {
