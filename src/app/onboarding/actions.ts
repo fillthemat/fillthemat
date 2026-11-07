@@ -1,12 +1,10 @@
 "use server";
 
-import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { getDb } from "@/db";
-import { schools } from "@/db/schema";
 import { getCurrentSchool } from "@/lib/auth/current-school";
 import { requireUser } from "@/lib/auth/current-user";
 import { allowSelfApproval } from "@/lib/dev-flags";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isValidTimezone } from "@/lib/timezones";
 import { onboardingSchema } from "@/lib/validation";
 
@@ -26,24 +24,23 @@ export async function createSchoolAction(formData: FormData) {
     redirect("/onboarding?error=invalid");
   }
 
-  const db = getDb();
-  const taken = await db
-    .select({ id: schools.id })
-    .from(schools)
-    .where(eq(schools.slug, parsed.data.slug))
-    .limit(1);
-  if (taken[0]) redirect("/onboarding?error=slug");
-
-  await db.insert(schools).values({
-    ownerUserId: user.id,
-    name: parsed.data.name,
-    slug: parsed.data.slug,
-    timezone: parsed.data.timezone,
-    city: parsed.data.city,
-    notificationEmail: parsed.data.notificationEmail,
-    country: "US",
-    approvedAt: allowSelfApproval() ? new Date() : null,
+  // Ownership and approval are platform-managed. Never accept either from the form.
+  const { data, error } = await createAdminClient().rpc("create_onboarding_school", {
+    p_owner_user_id: user.id,
+    p_owner_email: user.email,
+    p_name: parsed.data.name,
+    p_slug: parsed.data.slug,
+    p_timezone: parsed.data.timezone,
+    p_city: parsed.data.city ?? "",
+    p_notification_email: parsed.data.notificationEmail,
+    p_self_approve: allowSelfApproval(),
   });
+  if (error?.code === "22023") redirect("/onboarding?error=invalid");
+  if (error) throw error;
+  if (data === "slug_taken") redirect("/onboarding?error=slug");
+  if (data !== "created" && data !== "already_exists") {
+    throw new Error(`Unexpected onboarding result: ${data}`);
+  }
 
   redirect("/dashboard/settings");
 }
