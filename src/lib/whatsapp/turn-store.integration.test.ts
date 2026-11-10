@@ -456,18 +456,6 @@ it("message-limit termination and TTL maintenance expire pending choices", async
   expect(data?.ended_at).toBeNull();
 });
 
-it("expired confirmation notice and inbound marker commit together without an assistant message", async () => {
-  const input = await turn({ kind: "expired_confirmation" });
-  const result = requireRow(await commitWhatsAppTurn(input), "notice");
-  expect(result.reply_message_id).toBeNull();
-  expect(result.delivery_ids).toHaveLength(1);
-  expect(
-    (await conversations.loadTranscript(schoolId, input.conversationId)).map(
-      (message) => message.role,
-    ),
-  ).toEqual(["user"]);
-});
-
 it("rejects mismatched prepared offering/window scope and rolls back inbound", async () => {
   const input = await turn({ ...bookingEffect(), trialOfferingId: randomUUID() });
   await expect(commitWhatsAppTurn(input)).rejects.toMatchObject({ message: "invalid_slot_scope" });
@@ -616,7 +604,7 @@ it("replay after conversation replacement explicitly reports already committed w
   }
 });
 
-it.each(["assistant", "expired_confirmation"] as const)(
+it.each(["assistant", "booking_confirmation"] as const)(
   "worker suppresses post-commit effects and answer tracing for a replayed %s Turn",
   async (kind) => {
     const end = vi.fn();

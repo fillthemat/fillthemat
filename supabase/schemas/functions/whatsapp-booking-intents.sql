@@ -44,8 +44,8 @@ BEGIN
     PERFORM public.append_web_message(p_school_id, p_conversation_id, p_generation,
         p_inbound_id, p_wamid, 'user', jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_inbound_text)), 'complete', p_now);
     IF v_intent.id IS NOT NULL AND v_intent.state = 'pending' AND v_intent.expires_at > p_now THEN
-        -- Serialize the quota across replacement conversations. Keep six per
-        -- 24 hours aligned with MAX_BOOKINGS_PER_WA_ID_PER_DAY in limits.ts.
+        -- This boundary owns the six-per-24-hours booking cap. Serialize the
+        -- quota across replacement conversations for the same recipient.
         PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
             'wa-booking-quota:' || p_school_id::text || ':' || v_hash, 0));
         IF (SELECT count(*) FROM public.bookings WHERE school_id = p_school_id

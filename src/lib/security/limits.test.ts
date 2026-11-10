@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   emailBookingQuotaExceeded,
   recipientQuotaExceeded,
-  whatsappBookingQuotaExceeded,
   whatsappOutboundQuotaExceeded,
 } from "./limits";
 
@@ -24,7 +23,6 @@ beforeEach(() => {
 describe.each([
   [emailBookingQuotaExceeded, "bookings", "contact_email_snapshot", 6],
   [recipientQuotaExceeded, "email_deliveries", "recipient", 12],
-  [whatsappBookingQuotaExceeded, "bookings", "contact_phone_snapshot", 6],
   [whatsappOutboundQuotaExceeded, "whatsapp_deliveries", "recipient_wa_id", 12],
 ] as const)("%s", (check, table, column, threshold) => {
   it.each([0, threshold - 1, threshold, threshold + 1])(

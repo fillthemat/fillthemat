@@ -12,6 +12,8 @@ describe("parseConfirmBookingButton", () => {
     expect(parseConfirmBookingButton("yes")).toBeNull();
     expect(parseConfirmBookingButton(null)).toBeNull();
     expect(parseConfirmBookingButton("confirm_booking:")).toBeNull();
+    expect(parseConfirmBookingButton("confirm_booking:1")).toBeNull();
+    expect(parseConfirmBookingButton("confirm_booking:abcdefghijklmnopqrst")).toBeNull();
   });
 });
 

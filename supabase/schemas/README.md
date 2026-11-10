@@ -200,14 +200,13 @@ The application prepares assistant output; the function commits it. Inputs:
   text and pre-split text chunks; timestamp for lifecycle deadlines.
 - One typed prepared effect: `reply`, `booking_intent` (offering, encoded slot,
   participant name/age), `lead_request` (offering, participant details, contact name,
-  stated need), or the deterministic `expired_confirmation` notice.
+  stated need).
 
 Effects in order: inbound append/deadline extension; pending intent supersession
 and replacement OR `create_lead` (including contact, email and event); assistant
 append; reply enqueue. For a Booking Intent, the interactive confirmation notice
 is the reply delivery, not a duplicate text send. SQL builds buttons from the new
-intent ID. Expired confirmation saves only inbound + notice, preserving the existing
-transcript policy. Lead contact attachment is school-scoped. SQL validates slot
+intent ID. Lead contact attachment is school-scoped. SQL validates slot
 window/offering scope; confirmation must recheck availability. No booking is created.
 
 Return: explicit `already_committed` flag, assistant row ID, optional lead ID,

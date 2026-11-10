@@ -147,6 +147,8 @@ it("assistant append failure rolls back booking, intent, inbound, counters, emai
 it("full slot returns the existing response without confirming or booking", async () => {
   const input = await confirmation();
   await sql`UPDATE public.trial_occurrences SET capacity = booked_count WHERE trial_window_id = ${windowId}`;
+  const occurrences =
+    await sql`SELECT * FROM public.trial_occurrences WHERE school_id = ${schoolId} ORDER BY id`;
   try {
     const result = await confirmWhatsAppBooking(input);
     expect(result.outcome).toBe("slot_unavailable");
@@ -154,9 +156,56 @@ it("full slot returns the existing response without confirming or booking", asyn
     expect(
       await sql`SELECT id FROM public.bookings WHERE conversation_id = ${input.conversationId}`,
     ).toHaveLength(0);
+    const [intent] =
+      await sql`SELECT state FROM public.whatsapp_booking_intents WHERE id = ${input.intentId}`;
+    expect(intent?.state).toBe("pending");
+    expect(
+      await sql`SELECT role, message_id FROM public.messages WHERE conversation_id = ${input.conversationId}`,
+    ).toEqual([expect.objectContaining({ role: "user", message_id: input.wamid })]);
+    expect(
+      await sql`SELECT body, state FROM public.whatsapp_deliveries WHERE recipient_wa_id = ${input.waId}`,
+    ).toEqual([expect.objectContaining({ body: result.reply_text, state: "pending" })]);
+    expect(
+      await sql`SELECT id FROM public.contacts WHERE school_id = ${schoolId} AND phone = ${input.waId}`,
+    ).toHaveLength(0);
+    // The pre-existing full occurrence survives unchanged; no new row or counter
+    // change from the rejected booking escapes Book Trial's rollback.
+    expect(
+      await sql`SELECT * FROM public.trial_occurrences WHERE school_id = ${schoolId} ORDER BY id`,
+    ).toEqual(occurrences);
   } finally {
     await sql`UPDATE public.trial_occurrences SET capacity = 50 WHERE trial_window_id = ${windowId}`;
   }
+});
+
+it("missing age saves the inbound and queues an incomplete notice without booking", async () => {
+  const input = await confirmation();
+  await sql`UPDATE public.whatsapp_booking_intents SET participant_age = NULL WHERE id = ${input.intentId}`;
+  const occurrences =
+    await sql`SELECT * FROM public.trial_occurrences WHERE school_id = ${schoolId} ORDER BY id`;
+  const result = await confirmWhatsAppBooking(input);
+  expect(result.outcome).toBe("incomplete");
+  expect(result.reply_text).toBe(
+    "I still need the participant's age to complete the booking. Could you tell me their age in years?",
+  );
+  const [intent] =
+    await sql`SELECT state FROM public.whatsapp_booking_intents WHERE id = ${input.intentId}`;
+  expect(intent?.state).toBe("pending");
+  expect(
+    await sql`SELECT role, message_id FROM public.messages WHERE conversation_id = ${input.conversationId}`,
+  ).toEqual([expect.objectContaining({ role: "user", message_id: input.wamid })]);
+  expect(
+    await sql`SELECT body, state FROM public.whatsapp_deliveries WHERE recipient_wa_id = ${input.waId}`,
+  ).toEqual([expect.objectContaining({ body: result.reply_text, state: "pending" })]);
+  expect(
+    await sql`SELECT id FROM public.bookings WHERE conversation_id = ${input.conversationId}`,
+  ).toHaveLength(0);
+  expect(
+    await sql`SELECT id FROM public.contacts WHERE school_id = ${schoolId} AND phone = ${input.waId}`,
+  ).toHaveLength(0);
+  expect(
+    await sql`SELECT * FROM public.trial_occurrences WHERE school_id = ${schoolId} ORDER BY id`,
+  ).toEqual(occurrences);
 });
 
 it("rejects stale generations and mismatched recipient scope before writes", async () => {

@@ -15,7 +15,6 @@ function intentFromRow(row: Tables<"whatsapp_booking_intents">) {
     expiresAt: new Date(row.expires_at),
   };
 }
-export type WhatsAppBookingIntent = ReturnType<typeof intentFromRow>;
 
 async function ensureNotExpired(row: Tables<"whatsapp_booking_intents"> | null, now: Date) {
   if (!row) return null;

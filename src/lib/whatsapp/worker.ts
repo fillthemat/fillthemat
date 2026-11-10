@@ -113,6 +113,7 @@ async function handleConfirmation(
     now,
   });
   if (committed.already_committed) return replayedTurn(ctx);
+  await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
   if (committed.booking_id) {
     try {
       await attemptPendingForBooking(committed.booking_id);
@@ -127,7 +128,6 @@ async function handleConfirmation(
       );
     }
   }
-  await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
   return { text: committed.reply_text, messageId: committed.reply_message_id ?? undefined };
 }
 
@@ -203,13 +203,14 @@ async function handleAssistantTurn(
     now,
   });
   if (committed.already_committed) return replayedTurn(ctx);
+  await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
   const leadId = committed.lead_id;
   if (leadId) {
     try {
       await attemptPendingForLead(leadId);
     } catch (error) {
       // The durable email outbox has its own retry lifecycle. An immediate
-      // email-attempt failure must not fail this Turn or suppress its reply.
+      // email-attempt failure must not fail this Turn after sending its reply.
       console.error(
         JSON.stringify({
           event: "whatsapp_lead_email_attempt_failed",
@@ -220,7 +221,6 @@ async function handleAssistantTurn(
       );
     }
   }
-  await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
   return { text: replyText, messageId: committed.reply_message_id ?? undefined, provenance };
 }
 
