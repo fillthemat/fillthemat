@@ -11,8 +11,6 @@ vi.mock("next/headers", () => ({ cookies: async () => ({ getAll: () => [] }) }))
 // The external CAPTCHA is unrelated to the database quota.
 vi.mock("@/lib/security/turnstile", () => ({ verifyTurnstile: async () => true }));
 loadLocalEnv();
-if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname))
-  throw new Error("Local database required");
 const sql = authSql();
 const ownerId = randomUUID();
 const slug = `quota-${ownerId}`;

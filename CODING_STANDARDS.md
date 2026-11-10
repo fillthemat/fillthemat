@@ -10,7 +10,7 @@ Routes in `src/app/api` check requests, call library functions and return respon
 _Example_: `src/app/api/bookings/route.ts` → `src/lib/schedule/book-slot.ts`
 
 **Separate database setup from business work**:
-`src/db` holds the connection, table definitions and database row types; `drizzle` holds migrations. Library functions and dashboard server code run queries; booking checks and writes stay together in `book-slot.ts`.
+`supabase/schemas` holds declarative definitions and `supabase/migrations` holds generated migrations. `src/db/types.ts` holds generated Supabase types. Library functions and dashboard server code use Supabase clients; direct SQL connections are only for test fixtures and helpers. Booking checks and writes stay together in `book-slot.ts`.
 
 **The assistant prepares; the platform books**:
 The assistant proposes a Booking Intent or Lead Request, never a booking or lead. Enforce rules in code, not just instructions; keep school facts in instructions and fetch trial offerings and occurrences through tools.
@@ -60,7 +60,7 @@ Use `bun run` scripts for project commands and Bun's native `bun lint` / `bun fm
 Use lowercase, hyphenated file and folder names, such as `book-slot.ts`; keep Next.js names such as `page.tsx` and `route.ts`. Use PascalCase for components and types, and camelCase for functions and variables.
 
 **Keep types and validation with their owners**:
-Export shared types from the file that defines the work; database row types live in `src/db/schema.ts`. Reuse Zod checks from `src/lib/validation.ts`, with chat checks in `src/lib/chat/requests.ts` and settings checks beside the settings page.
+Export shared types from the file that defines the work; generated database types live in `src/db/types.ts`. Reuse Zod checks from `src/lib/validation.ts`, with chat checks in `src/lib/chat/requests.ts` and settings checks beside the settings page.
 
 **Keep tests beside the code**:
 Use `*.test.ts` for unit tests and `*.integration.test.ts` for database-backed tests. Shared test helpers and fixtures live in `src/test`; browser tests live in `e2e`.

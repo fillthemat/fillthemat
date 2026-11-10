@@ -11,9 +11,6 @@ import {
 } from "@/test/integration-env";
 
 loadLocalEnv();
-if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname)) {
-  throw new Error("Onboarding tests require a local database");
-}
 const sql = authSql();
 const admin = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

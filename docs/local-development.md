@@ -25,7 +25,8 @@ For deployed Next.js environments, set `SUPABASE_SECRET_KEY` to that Supabase
 project's secret key (Dashboard → Settings → API Keys). Never prefix it with
 `NEXT_PUBLIC_`, log it, or commit it. It bypasses RLS; only trusted server code
 may use this client. The publishable-key client remains subject to RLS.
-Keep `DATABASE_URL` and `DIRECT_URL` while unmigrated workflows/tooling use them.
+The app uses Supabase alone. Setup writes `SUPABASE_DB_URL` only for integration
+test fixtures; it is not an application or deployment credential.
 
 ## Optional integrations
 
@@ -45,8 +46,7 @@ All optional. The app degrades cleanly without them.
 
 See [CODING_STANDARDS.md](/CODING_STANDARDS.md#quality-checks).
 
-For the opt-in native Supabase declarative schema trial (without changing the
-Drizzle runtime or resetting a local stack), see
+For the native Supabase declarative schema workflow, see
 [supabase/schemas/README.md](../supabase/schemas/README.md).
 
 ## Worktrees

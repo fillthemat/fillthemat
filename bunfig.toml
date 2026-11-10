@@ -32,7 +32,6 @@ ignorePatterns = [
   "dist/**",
   "build/**",
   "public/**",
-  "drizzle/**",
   ".worktrees/**",
   ".agent-logs/**",
 ]
@@ -48,6 +47,13 @@ restriction = "off"
 nursery = "off"
 
 [lint.rules]
+"no-restricted-imports" = [
+  "error",
+  { patterns = [
+    { group = ["drizzle-orm", "drizzle-orm/**"], message = "Use the Supabase client." },
+    { group = ["postgres", "postgres/**"], message = "Direct SQL is only for test fixtures and helpers." },
+  ] },
+]
 "react/rules-of-hooks" = "error"
 "react/only-export-components" = ["warn", { allowConstantExport = true }]
 "shadcn/no-restyle" = [
@@ -74,12 +80,17 @@ files = ["src/app/api/**"]
   ] },
 ]
 
-# Tests may import database modules.
+# Tests may use SQL fixtures, but never the removed ORM.
 [[lint.overrides]]
-files = ["src/app/api/**/*.test.*", "src/app/api/**/*.spec.*", "src/app/api/**/__tests__/**"]
+files = ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "src/test/**"]
 
 [lint.overrides.rules]
-"no-restricted-imports" = "off"
+"no-restricted-imports" = [
+  "error",
+  { patterns = [
+    { group = ["drizzle-orm", "drizzle-orm/**"], message = "Use the Supabase client." },
+  ] },
+]
 
 # UI primitives are exempt from these styling restrictions.
 [[lint.overrides]]

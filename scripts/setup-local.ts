@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { hasGatewayToken } from "../src/lib/ai/gateway-token";
 import { getSupabaseEnv, upsertEnv } from "./local-env";
 import { claimAppPort } from "./local-ports";
@@ -23,12 +22,6 @@ async function main() {
 
   // Commit the updated vars to the current process.
   Object.assign(process.env, updatedVars);
-
-  console.log("Applying Drizzle migrations…");
-  execFileSync("bunx", ["drizzle-kit", "migrate"], {
-    stdio: "inherit",
-    env: { ...process.env },
-  });
 
   console.log("");
   console.log("Local stack is ready.");
@@ -83,8 +76,7 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
 
   // Set Supabase vars
   const SUPABASE_MAPPINGS = [
-    ["DB_URL", "DATABASE_URL"],
-    ["DB_URL", "DIRECT_URL"],
+    ["DB_URL", "SUPABASE_DB_URL"],
     ["API_URL", "NEXT_PUBLIC_SUPABASE_URL"],
     ["PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"],
     ["SECRET_KEY", "SUPABASE_SECRET_KEY"],
