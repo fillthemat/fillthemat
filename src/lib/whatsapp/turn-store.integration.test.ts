@@ -4,13 +4,18 @@ import { POST } from "@/app/api/webhooks/whatsapp/route";
 import * as assistant from "@/lib/ai/assistant";
 import * as conversations from "@/lib/conversations/conversation-store";
 import { hashWaId } from "@/lib/crypto";
+import * as emailDeliveries from "@/lib/email/deliveries";
 import { encodeSlotId } from "@/lib/schedule/slot-id";
 import { createAdminClient } from "@/lib/supabase/admin";
+import * as turnTrace from "@/lib/tracing/turn-trace";
 import { authSql, loadLocalEnv, requireRow, whileSavingMessages } from "@/test/integration-env";
 import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
 import { post, textInboundPayload } from "@/test/whatsapp-webhook";
+import * as deliveries from "./deliveries";
 import { getPendingBookingIntent } from "./intents";
 import { loadWhatsAppSchool } from "./school";
+import * as schoolLoader from "./school";
+import * as turnStore from "./turn-store";
 import { commitWhatsAppTurn, type PreparedEffect } from "./turn-store";
 import { drainWhatsAppJobs } from "./worker";
 
@@ -609,3 +614,70 @@ it("replay after conversation replacement explicitly reports already committed w
     await lock.release();
   }
 });
+
+it.each(["assistant", "expired_confirmation"] as const)(
+  "worker suppresses post-commit effects and answer tracing for a replayed %s Turn",
+  async (kind) => {
+    const end = vi.fn();
+    const spies = [
+      vi.spyOn(conversations, "hasWhatsAppMessage").mockResolvedValue(false),
+      vi.spyOn(turnTrace, "startTurnTrace").mockReturnValue({
+        run: async (work) => work(),
+        end,
+        exportWhenEnded: async () => {},
+      }),
+    ];
+    const commit = vi.spyOn(turnStore, "commitWhatsAppTurn").mockResolvedValue({
+      already_committed: true,
+      reply_message_id: randomUUID(),
+      lead_id: randomUUID(),
+      delivery_ids: [randomUUID()],
+    });
+    const email = vi
+      .spyOn(emailDeliveries, "attemptPendingForLead")
+      .mockRejectedValue(new Error("replay must not attempt email"));
+    const send = vi
+      .spyOn(deliveries, "attemptWhatsAppDeliveriesNow")
+      .mockRejectedValue(new Error("replay must not attempt delivery"));
+    const school = vi.spyOn(schoolLoader, "loadWhatsAppSchool");
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    const model = vi.spyOn(assistant, "completedReply").mockResolvedValue({
+      text: "This reply must not be reported",
+      bookingIntent: null,
+      leadRequest: {
+        trialOfferingId: offeringId,
+        participantName: "Guest",
+        participantAge: 10,
+        statedNeed: "Weekend please",
+      },
+      provenance: { modelId: "replay-test", platformInstructionsHash: "test" },
+    });
+    try {
+      const waId = randomUUID();
+      await POST(
+        post(
+          textInboundPayload({
+            phoneNumberId: phone,
+            waId,
+            wamid: randomUUID(),
+            text: kind === "assistant" ? "Weekend please" : `confirm_booking:${randomUUID()}`,
+          }),
+        ),
+      );
+      expect(await drainWhatsAppJobs(randomUUID(), 10, { phoneNumberIds: [phone] })).toMatchObject({
+        done: 1,
+        retrying: 0,
+        dead: 0,
+      });
+      expect(commit).toHaveBeenCalledOnce();
+      expect(email).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(end).toHaveBeenCalledExactlyOnceWith({ text: "" });
+      expect(school).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"whatsapp_turn_replayed"'));
+      expect(model).toHaveBeenCalledTimes(kind === "assistant" ? 1 : 0);
+    } finally {
+      for (const spy of [...spies, commit, email, send, school, log, model]) spy.mockRestore();
+    }
+  },
+);

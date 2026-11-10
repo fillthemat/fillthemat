@@ -59,6 +59,7 @@ type JobContext = {
 };
 
 type InboundContext = JobContext & {
+  school: Awaited<ReturnType<typeof loadWhatsAppSchool>>;
   generation: string;
   message: InboundWhatsAppMessage;
   inboundText: string;
@@ -133,6 +134,7 @@ async function handleConfirmation(
       effect: { kind: "expired_confirmation" },
       now,
     });
+    if (committed.already_committed) return replayedTurn(ctx);
     await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
     return { text };
   }
@@ -156,6 +158,18 @@ async function handleConfirmation(
   return reply;
 }
 
+function replayedTurn(ctx: InboundContext): TurnReply {
+  console.info(
+    JSON.stringify({
+      event: "whatsapp_turn_replayed",
+      schoolId: ctx.schoolId,
+      conversationId: ctx.conversationId,
+      runId: ctx.runId,
+    }),
+  );
+  return { text: "" };
+}
+
 /** Prepare outside the transaction; commit all durable effects in one RPC. */
 async function handleAssistantTurn(
   ctx: InboundContext,
@@ -172,10 +186,9 @@ async function handleAssistantTurn(
   });
 
   const catalog = await loadSchoolCatalog(ctx.schoolId, { anonymous: true });
-  const school = await loadWhatsAppSchool(ctx.schoolId);
 
   const reply = await completedReply({
-    school,
+    school: ctx.school,
     catalog,
     messages: uiMessages,
     now,
@@ -216,6 +229,7 @@ async function handleAssistantTurn(
     effect,
     now,
   });
+  if (committed.already_committed) return replayedTurn(ctx);
   const leadId = committed.lead_id;
   if (leadId) {
     try {
@@ -332,7 +346,7 @@ export async function processWhatsAppJob(
     if (!schoolId) throw new InternalFailure("unknown_phone_number");
     const now = dependencies.now();
     // Reject draft/missing schools permanently before creating any conversation.
-    await loadWhatsAppSchool(schoolId);
+    const school = await loadWhatsAppSchool(schoolId);
 
     // Turn replay identity survives ending/replacing its conversation.
     const inboundIdentity = { schoolId, waId: message.waId, messageId: message.wamid };
@@ -385,6 +399,7 @@ export async function processWhatsAppJob(
       }
       if (!(await start())) return "deferred";
       const ctx: InboundContext = {
+        school,
         schoolId,
         generation: lock.generation,
         conversationId,
