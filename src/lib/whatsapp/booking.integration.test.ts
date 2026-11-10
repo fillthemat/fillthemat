@@ -206,3 +206,98 @@ it("uses public school IDs for the six-booking recipient quota", async () => {
     await sql`SELECT id FROM public.bookings WHERE school_id = ${schoolId} AND contact_phone_snapshot = ${input.waId}`,
   ).toHaveLength(6);
 });
+
+it("outbox failure rolls back all preceding booking and transcript effects", async () => {
+  const input = await confirmation();
+  const name = `test_confirmation_${randomUUID().replaceAll("-", "")}`;
+  await sql.unsafe(
+    `CREATE FUNCTION public.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'outbox_crash'; END $$`,
+  );
+  await sql.unsafe(`CREATE TRIGGER ${name} BEFORE INSERT ON public.whatsapp_deliveries FOR EACH ROW
+    WHEN (new.recipient_wa_id = '${input.waId}') EXECUTE FUNCTION public.${name}()`);
+  try {
+    await expect(confirmWhatsAppBooking(input)).rejects.toMatchObject({ message: "outbox_crash" });
+    expect(
+      await sql`SELECT id FROM public.messages WHERE conversation_id = ${input.conversationId}`,
+    ).toHaveLength(0);
+    expect(
+      await sql`SELECT id FROM public.bookings WHERE conversation_id = ${input.conversationId}`,
+    ).toHaveLength(0);
+    const [intent] =
+      await sql`SELECT state FROM public.whatsapp_booking_intents WHERE id = ${input.intentId}`;
+    expect(intent?.state).toBe("pending");
+    expect(
+      await sql`SELECT id FROM public.contacts WHERE school_id = ${schoolId} AND phone = ${input.waId}`,
+    ).toHaveLength(0);
+    // Each email must still reference a surviving booking; the crashed booking's
+    // owner email cannot escape its transaction.
+    expect(
+      await sql`SELECT e.id FROM public.email_deliveries e LEFT JOIN public.bookings b ON b.id = e.booking_id
+      WHERE e.school_id = ${schoolId} AND b.id IS NULL`,
+    ).toHaveLength(0);
+  } finally {
+    await sql.unsafe(`DROP TRIGGER ${name} ON public.whatsapp_deliveries`);
+    await sql.unsafe(`DROP FUNCTION public.${name}()`);
+  }
+});
+
+it("a confirmation delivery still invokes the owner-notice death hook", async () => {
+  const result = await confirmWhatsAppBooking(await confirmation());
+  await sql`UPDATE public.whatsapp_deliveries SET state = 'dead', terminal_cause = 'permanent'
+    WHERE booking_id = ${result.booking_id}`;
+  expect(
+    await sql`SELECT id FROM public.email_deliveries WHERE booking_id = ${result.booking_id}
+    AND kind = 'owner_whatsapp_confirmation_failed'`,
+  ).toHaveLength(1);
+});
+
+it("the same confirmed intent cannot book twice under different inbound IDs", async () => {
+  const input = await confirmation();
+  const results = await Promise.all([
+    confirmWhatsAppBooking(input),
+    confirmWhatsAppBooking({ ...input, wamid: randomUUID(), inboundMessageId: randomUUID() }),
+  ]);
+  expect(results.map((result) => result.outcome).sort()).toEqual(["booked", "expired"]);
+  expect(
+    await sql`SELECT id FROM public.bookings WHERE conversation_id = ${input.conversationId}`,
+  ).toHaveLength(1);
+});
+
+it("cannot confirm another conversation's intent, even in the same school", async () => {
+  const input = await confirmation();
+  const other = await confirmation();
+  expect((await confirmWhatsAppBooking({ ...input, intentId: other.intentId })).outcome).toBe(
+    "expired",
+  );
+  const [intent] =
+    await sql`SELECT state FROM public.whatsapp_booking_intents WHERE id = ${other.intentId}`;
+  expect(intent?.state).toBe("pending");
+  expect(
+    await sql`SELECT id FROM public.bookings WHERE conversation_id = ${input.conversationId}`,
+  ).toHaveLength(0);
+});
+
+it("replay remains already_committed after the original conversation is replaced", async () => {
+  const input = await confirmation();
+  await confirmWhatsAppBooking(input);
+  await sql`UPDATE public.conversations SET ended_at = ${now}, end_reason = 'inactivity' WHERE id = ${input.conversationId}`;
+  const replacement = await findOrCreateConversation({
+    schoolId,
+    identity: { channel: "whatsapp", waId: input.waId },
+    now,
+  });
+  const lock = requireRow(
+    await claimGeneration(schoolId, replacement.id, { now }),
+    "replacement generation",
+  );
+  expect(
+    await confirmWhatsAppBooking({
+      ...input,
+      conversationId: replacement.id,
+      generation: lock.generation,
+    }),
+  ).toMatchObject({ already_committed: true, delivery_ids: [] });
+  expect(
+    await sql`SELECT id FROM public.messages WHERE conversation_id = ${replacement.id}`,
+  ).toHaveLength(0);
+});

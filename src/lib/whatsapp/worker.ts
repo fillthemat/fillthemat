@@ -231,7 +231,7 @@ async function handleAssistantTurn(
  *
  * Deterministic confirmation path (addendum "Deterministic confirmation"): a
  * `confirm_booking:<id>` reply button, or an exact affirmative while a pending
- * intent exists, goes straight to `bookSlot` instead of the assistant.
+ * intent exists, goes straight to the atomic confirmation RPC, not the assistant.
  */
 async function planReply(
   ctx: InboundContext,
@@ -239,9 +239,10 @@ async function planReply(
 ): Promise<(() => Promise<TurnReply>) | null> {
   // Booking confirmations bypass the assistant's message limit.
   const buttonIntentId = parseConfirmBookingButton(ctx.inboundText);
+  if (buttonIntentId) return () => handleConfirmation(ctx, buttonIntentId, now);
   const pending = await getPendingBookingIntent(ctx.conversationId, now);
-  if (buttonIntentId || (pending && isAffirmativeConfirmation(ctx.inboundText))) {
-    return () => handleConfirmation(ctx, buttonIntentId ?? pending?.id ?? null, now);
+  if (pending && isAffirmativeConfirmation(ctx.inboundText)) {
+    return () => handleConfirmation(ctx, pending.id, now);
   }
 
   const history = await loadTranscript(ctx.schoolId, ctx.conversationId);

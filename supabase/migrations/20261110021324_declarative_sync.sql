@@ -101,7 +101,7 @@ BEGIN
         booking_id := v_booking.id;
         UPDATE public.whatsapp_booking_intents SET state = 'confirmed' WHERE id = v_intent.id;
         SELECT name INTO STRICT v_school_name FROM public.school_profiles WHERE school_id = p_school_id;
-        v_when := to_char(v_booking.start_at AT TIME ZONE v_booking.timezone_snapshot, 'FMDay FMMon FMDD "at" FMHH12:MI am');
+        v_when := to_char(v_booking.start_at AT TIME ZONE v_booking.timezone_snapshot, 'FMDay FMMon FMDD "at" FMHH12:MI AM');
         reply_text := 'Booked! ' || v_booking.participant_name_snapshot || '''s trial for ' ||
             v_booking.offering_name_snapshot || ' is ' || v_when || '. ' || v_school_name || ' will see you there.';
         reply_message_id := public.append_web_message(p_school_id, p_conversation_id, p_generation,

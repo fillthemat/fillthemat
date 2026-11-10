@@ -240,13 +240,27 @@ maintenance also expires 30-minute intents on conversations that remain open.
 Web-chat lazy expiry is preserved, with proactive maintenance now reaching public
 web-chat rows too. An expired WhatsApp conversation with a live worker is not replaced.
 
-### Remaining booking confirmation work (#254)
+### WhatsApp booking confirmation
 
-Booking confirmation now reads public school/intent data, carries public school
-IDs into booking quotas, links the public conversation to `book_trial`, and uses
-fenced public message appends. Its booking, intent-confirmed transition, transcript
-and reply are still separate commits: #254 must make that workflow atomic and
-cover replay after booking succeeds but a follow-up fails. No dual-write remains.
+`functions/whatsapp-booking-intents.sql` owns `confirm_whatsapp_booking`, a
+service-role-only, empty-search-path SECURITY INVOKER boundary. It locks and checks
+the public conversation's school, recipient, routing and generation before locking
+the intent in the same conversation. An inbound replay returns `already_committed`
+with no effects, even across conversation replacement. Missing, expired, superseded
+or confirmed intents return the existing expired-option notice without booking.
+
+A live pending intent passes the public-school recipient booking quota (six per
+24 hours, serialized per identity) and concrete-age check. SQL calls `book_trial`
+with the public conversation ID, then marks the intent confirmed. The inbound,
+assistant confirmation and WhatsApp template outbox commit with the booking,
+capacity, owner email and event. The inbound append extends the generation's
+deadline before booking, and `clock_timestamp()` preserves user-before-assistant
+ordering. Expected Book Trial failures queue existing notices; unexpected errors
+roll back everything. Failure notices retain the inbound-only transcript policy.
+Sending happens after commit; replay suppresses sends, email attempts and answer
+tracing. The existing template/booking linkage retains confirmation-death owner
+notices and delivered/read cleanup hooks. No Drizzle or multi-request confirmation
+write path remains.
 
 Hooks intentionally use transaction `now()` for receipt-window/notification
 eligibility; queue RPC `p_now` controls claim/recovery scheduling only.
