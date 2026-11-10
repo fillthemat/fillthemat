@@ -128,8 +128,8 @@ WhatsApp composes `create_lead` inside `commit_whatsapp_turn`, so the inbound
 replay marker, lead, owner email, event, assistant message and WhatsApp reply
 outbox commit together. No legacy adapter or public/legacy identity bridge remains.
 
-During the integration-branch migration, Book Trial (including the current WhatsApp
-booking caller) uses the service-only `book_trial` function and public outbox.
+Book Trial (including the WhatsApp booking caller) uses the service-only
+`book_trial` function and public outbox.
 It locks the occurrence and owns counters, emails and events: booking triggers
 only handle owner status updates, never INSERT. The dispatcher and reminder scheduler
 read **public only**. WhatsApp delivery
@@ -258,8 +258,7 @@ ordering. Expected Book Trial failures queue existing notices; unexpected errors
 roll back everything. Failure notices retain the inbound-only transcript policy.
 Sending happens after commit; replay suppresses sends, email attempts and answer
 tracing. The existing template/booking linkage retains confirmation-death owner
-notices and delivered/read cleanup hooks. No Drizzle or multi-request confirmation
-write path remains.
+notices and delivered/read cleanup hooks. Confirmation commits in one SQL call.
 
 Hooks intentionally use transaction `now()` for receipt-window/notification
 eligibility; queue RPC `p_now` controls claim/recovery scheduling only.

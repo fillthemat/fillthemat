@@ -156,17 +156,16 @@ Create **new**, do not “transfer project” across orgs (painful and still tie
 
 1. New org under `admin@fillthemat.com`. Company card. For anything public-facing, **Pro** ($25/mo) so the project does not pause after a week idle — see cost notes in the funding discussion; Free is how founder-alpha got paused-risk.
 2. New project, region **us-east-2** (keep the same region unless you have a reason). Empty.
-3. Data API: do **not** expose schema `app` (browser uses Auth only). Same as `docs/v1-deploy-current.md`.
+3. Data API: expose `public`; grants and RLS protect owner data. Same as `docs/v1-deploy-current.md`.
 4. Copy into the new Vercel env:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - Publishable key → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-   - Transaction pooler (port **6543**) → `DATABASE_URL`
-   - Direct (port **5432**) → `DIRECT_URL` only while legacy tooling still needs it; Vercel no longer uses it to migrate.
-5. Follow `docs/v1-deploy-current.md` §5: confirm the **new** project ref, create the dedicated GitHub `production-migrations` environment with a deployment-branch rule allowing only branch `main` (no tags), and set its environment secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, and `SUPABASE_PROJECT_REF` (not repository secrets or Vercel's `Production` environment). Use the token scopes and network checklist in that guide, then run **Production migrations** from `main`. Update the read-only MCP ref in `opencode.json` too. Confirm Supabase history matches `supabase/migrations/` and `public.schools` exists before deploying dependent app code. Do not run the removed Drizzle production commands. This applies schema only; production app/data cutover remains a separate task.
+   - Server-only secret key → `SUPABASE_SECRET_KEY`
+5. Follow `docs/v1-deploy-current.md` §5: confirm the **new** project ref, create the dedicated GitHub `production-migrations` environment with a deployment-branch rule allowing only branch `main` (no tags), and set its environment secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, and `SUPABASE_PROJECT_REF` (not repository secrets or Vercel's `Production` environment). Use the token scopes and network checklist in that guide, then run **Production migrations** from `main`. Update the read-only MCP ref in `opencode.json` too. Confirm Supabase history matches `supabase/migrations/` and `public.schools` exists before deploying dependent app code. This applies schema only; production app/data cutover remains a separate task.
 
 6. Auth: Site URL `https://www.fillthemat.com`. Redirects: `/auth/callback`, preview `https://<new-vercel>/**` if you use previews, plus local callbacks if this project is also used from the laptop (prefer not to — local Docker stays local).
 7. Enable Google; paste the new GCP client id/secret from D. Add the new callback URI on the GCP client.
-8. **Data:** founder-alpha hosted data is not sacred. Prefer **recreate the school in the new dashboard** (onboarding → Studio `approved_at` → publish). Dump/restore only if you have real bookings you cannot lose. Auth user ids will not match a naive SQL copy; if you restore `app.*` without `auth.users`, FKs break.
+8. **Data:** founder-alpha hosted data is not sacred. Prefer **recreate the school in the new dashboard** (onboarding → Studio `approved_at` → publish). Dump/restore only if you have real bookings you cannot lose. Auth user ids will not match a naive SQL copy; if you restore application rows without `auth.users`, FKs break.
 9. Optional now: second Supabase project for Vercel Preview (known gap). Same org, extra ~$10/mo on Pro.
 10. After cutover: enable backups/PITR on Pro before inviting gyms.
 
@@ -185,11 +184,10 @@ The current team is Hobby, personal, `planIteration: legacy`. You want a **new t
    This rewrites local `.vercel/project.json` (gitignored). Old team link is gone from this checkout.
 
 4. Git: connect the **org** repo. Confirm `gh-pages` is not deployed (`vercel.ts` already disables it; set the same Ignored Build Step on the new project).
-5. Env: set every key from `.env.example` for Production (and Preview if used). **New values** from G/F/E. Do not copy personal `DATABASE_URL` / Resend / Turnstile / WhatsApp tokens.
+5. Env: set production keys from `.env.example` for Production (and Preview if used); omit local-only `SUPABASE_DB_URL` and development flags. **New values** from G/F/E. Do not copy personal Supabase / Resend / Turnstile / WhatsApp tokens.
 
    ```
-   DATABASE_URL=
-   DIRECT_URL=
+   SUPABASE_SECRET_KEY=
    NEXT_PUBLIC_SUPABASE_URL=
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
    NEXT_PUBLIC_SITE_URL=https://www.fillthemat.com

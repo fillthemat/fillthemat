@@ -7,8 +7,6 @@ import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-sc
 
 vi.mock("server-only", () => ({}));
 loadLocalEnv();
-if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname))
-  throw new Error("Local database required");
 const sql = authSql();
 const ownerId = randomUUID();
 let schoolId = "";

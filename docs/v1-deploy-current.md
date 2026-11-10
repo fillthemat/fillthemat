@@ -20,14 +20,19 @@ Do **not** point production at `127.0.0.1` database URLs.
 
 ## 1. Hosted Supabase
 
+**Production cutover follow-up (#241):** production still has the historical
+`app` and `drizzle` schemas. After the public-schema app/data cutover is verified,
+remove those schemas in a separately reviewed production operation (not a fresh
+installation migration), and remove `DATABASE_URL` / `DIRECT_URL` from Vercel
+Production and Preview environments. Local setup creates neither legacy schema.
+
 1. Create a dedicated Supabase project (empty). Prefer a second project later for preview; for this first deploy one production project is enough.
-2. Disable exposing schema `app` in Data API settings (plan: browser uses Auth only).
+2. Expose the application schema `public` in Data API settings; grants and RLS protect owner data.
 3. Copy:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - Publishable/anon key → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-   - Transaction pooler URI (port **6543**, `?pgbouncer=true` or Supavisor transaction mode) → `DATABASE_URL`
-   - Direct or session-pooler URI (port **5432**) → `DIRECT_URL`
-4. Configure the GitHub migration workflow using the human checklist in §5 before merging to `main`. Vercel builds and app startup never apply migrations. `DIRECT_URL` is no longer a deploy credential; retain database URLs only while legacy runtime/tooling still needs them.
+   - Server-only secret key → `SUPABASE_SECRET_KEY`
+4. Configure the GitHub migration workflow using the human checklist in §5 before merging to `main`. Vercel builds and app startup never apply migrations. The app uses the Supabase Data API, not a direct database connection.
 
 5. Turn on Google in that project:
    - New (or additional) Google Web OAuth client **or** extra redirect URIs on the existing client.
@@ -47,8 +52,7 @@ Pick a stable host. First deploy can use `fillthemat.vercel.app` (or the project
 Add **Production** (and Preview if you will use preview deploys) environment variables in the Vercel project. Do not upload local Docker URLs.
 
 ```
-DATABASE_URL=
-DIRECT_URL=
+SUPABASE_SECRET_KEY=
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 NEXT_PUBLIC_SITE_URL=
@@ -129,7 +133,7 @@ The **Production migrations** GitHub Action runs on every push to `main`, or man
 
 For later releases, use **expand → migrate → activate → contract across separate releases**. Migrations must work with the currently deployed app; new code must also tolerate the pre-migration schema until the migration succeeds. Do not activate a new schema-dependent path in the same push: merge the additive migration first, confirm the Action succeeded, then ship/enable dependent code in a later release. Drops, renames and stricter constraints require a separate compatibility rollout. Vercel Deployment Checks could gate production promotion in a future improvement; this workflow does not implement that gate.
 
-**Failure, retry and rollback:** A failed link/push fails the Action visibly, but **does not stop Vercel**. Do not activate dependent code on a failed run. Inspect the error, fix credentials/network or add a corrective migration, then rerun the workflow on `main`. Successfully recorded migrations are skipped; never edit an applied migration or automatically repair history. A timeout/interruption requires checking history and schema before retrying. Roll back application code only to a schema-compatible deployment; schema changes are forward-only. Redeploying/promoting Vercel does not run migrations. Use the Action for recovery, not the removed Drizzle commands or laptop production pushes.
+**Failure, retry and rollback:** A failed link/push fails the Action visibly, but **does not stop Vercel**. Do not activate dependent code on a failed run. Inspect the error, fix credentials/network or add a corrective migration, then rerun the workflow on `main`. Successfully recorded migrations are skipped; never edit an applied migration or automatically repair history. A timeout/interruption requires checking history and schema before retrying. Roll back application code only to a schema-compatible deployment; schema changes are forward-only. Redeploying/promoting Vercel does not run migrations. Use the Action for recovery, not laptop production pushes.
 
 ### Booking incident: 2026-10-11
 

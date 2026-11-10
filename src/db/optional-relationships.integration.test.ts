@@ -3,10 +3,6 @@ import { afterAll, expect, it } from "vitest";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
 
 loadLocalEnv();
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(databaseUrl).hostname)) {
-  throw new Error("Optional relationship tests require a local database");
-}
 const sql = authSql();
 afterAll(() => sql.end({ timeout: 5 }));
 

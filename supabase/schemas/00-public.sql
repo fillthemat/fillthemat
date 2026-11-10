@@ -1,4 +1,4 @@
--- Side-by-side copies of Drizzle app objects; public already exists in Supabase.
+-- Application objects live in public, which already exists in Supabase.
 CREATE SCHEMA IF NOT EXISTS public;
 
 -- Data API roles may use declared objects, never install their own triggers or

@@ -16,9 +16,6 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => request.client }));
 
 loadLocalEnv();
-if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname)) {
-  throw new Error("Public school tests require a local database");
-}
 const sql = authSql();
 const owners: string[] = [];
 const schools = new Map<string, string>();

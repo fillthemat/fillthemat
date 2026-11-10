@@ -4,9 +4,6 @@ import { afterAll, expect, it } from "vitest";
 import { authSql, loadLocalEnv } from "@/test/integration-env";
 
 loadLocalEnv();
-if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname)) {
-  throw new Error("Seed tests require a local database");
-}
 const sql = authSql();
 afterAll(() => sql.end({ timeout: 5 }));
 
