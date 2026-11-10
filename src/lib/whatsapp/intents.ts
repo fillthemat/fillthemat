@@ -40,28 +40,3 @@ export async function getPendingBookingIntent(conversationId: string, now = new 
     .throwOnError();
   return ensureNotExpired(data, now);
 }
-
-export async function getPendingBookingIntentById(
-  intentId: string,
-  schoolId: string,
-  now = new Date(),
-) {
-  const { data } = await createAdminClient()
-    .from("whatsapp_booking_intents")
-    .select()
-    .eq("id", intentId)
-    .eq("school_id", schoolId)
-    .eq("state", "pending")
-    .maybeSingle()
-    .throwOnError();
-  return ensureNotExpired(data, now);
-}
-
-export async function markBookingIntentConfirmed(intentId: string) {
-  await createAdminClient()
-    .from("whatsapp_booking_intents")
-    .update({ state: "confirmed" })
-    .eq("id", intentId)
-    .eq("state", "pending")
-    .throwOnError();
-}

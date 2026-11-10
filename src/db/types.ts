@@ -1526,6 +1526,31 @@ export type Database = {
           reply_message_id: string;
         }[];
       };
+      confirm_whatsapp_booking: {
+        Args: {
+          p_conversation_id: string;
+          p_generation: string;
+          p_inbound_id: string;
+          p_inbound_text: string;
+          p_intent_id?: string;
+          p_now?: string;
+          p_phone_number_id: string;
+          p_profile_name?: string;
+          p_reply_id: string;
+          p_reply_message_id: string;
+          p_school_id: string;
+          p_wa_id: string;
+          p_wamid: string;
+        };
+        Returns: {
+          already_committed: boolean;
+          booking_id: string;
+          delivery_ids: string[];
+          outcome: string;
+          reply_message_id: string;
+          reply_text: string;
+        }[];
+      };
       create_lead: {
         Args: {
           p_channel: string;
