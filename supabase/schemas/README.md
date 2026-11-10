@@ -210,8 +210,12 @@ intent ID. Expired confirmation saves only inbound + notice, preserving the exis
 transcript policy. Lead contact attachment is school-scoped. SQL validates slot
 window/offering scope; confirmation must recheck availability. No booking is created.
 
-Return: assistant row ID, optional lead ID, queued delivery IDs. Inbound replay
-across active or ended conversations returns no rows/no writes. Stale generation
+Return: explicit `already_committed` flag, assistant row ID, optional lead ID,
+queued delivery IDs. Inbound replay across active or ended conversations returns
+`already_committed: true` with no writes or queued deliveries. Empty model output
+saves the user message and an empty assistant message, queues no reply, and
+completes the job without retry. The worker rejects missing or unpublished/unapproved
+schools permanently before conversation creation, with no apology. Stale generation
 or mismatched scope raises `generation_or_scope_lost`; malformed effects/chunks,
 cross-tenant references and constraint/append/outbox failures raise and roll back
 **all** writes. Email and WhatsApp sends happen only after commit; durable outboxes
