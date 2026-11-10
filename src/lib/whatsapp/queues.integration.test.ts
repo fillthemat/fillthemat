@@ -461,9 +461,7 @@ it("processing errors consume an execution and existing-conversation quotas use 
     const transcript = vi.spyOn(conversationStore, "loadTranscript").mockResolvedValue([]);
     const existingConversationMocks = [
       vi.spyOn(conversationStore, "findConversation").mockResolvedValue(conversation),
-      vi
-        .spyOn(conversationStore, "findOrCreateConversation")
-        .mockResolvedValue({ ok: true, conversation }),
+      vi.spyOn(conversationStore, "findOrCreateConversation").mockResolvedValue(conversation),
       vi
         .spyOn(conversationStore, "claimGeneration")
         .mockResolvedValue({ generation: now.toISOString(), release: async () => {} }),

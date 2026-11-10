@@ -1520,6 +1520,7 @@ export type Database = {
           p_wamid: string;
         };
         Returns: {
+          already_committed: boolean;
           delivery_ids: string[];
           lead_id: string;
           reply_message_id: string;

@@ -51,9 +51,10 @@ CREATE OR REPLACE FUNCTION public.commit_whatsapp_turn (
   p_now              timestamp with time zone
 )
   RETURNS TABLE (
-    reply_message_id uuid,
-    lead_id          uuid,
-    delivery_ids     uuid[]
+    already_committed boolean,
+    reply_message_id  uuid,
+    lead_id           uuid,
+    delivery_ids      uuid[]
   )
   LANGUAGE plpgsql
   SET search_path TO ''
@@ -80,7 +81,13 @@ BEGIN
         RAISE EXCEPTION 'invalid_prepared_effect' USING ERRCODE = '22023';
     END IF;
     IF EXISTS (SELECT 1 FROM public.messages m JOIN public.conversations c ON c.id = m.conversation_id
-        WHERE c.school_id = p_school_id AND c.wa_id_hash = v_hash AND m.message_id = p_wamid) THEN RETURN; END IF;
+        WHERE c.school_id = p_school_id AND c.wa_id_hash = v_hash AND m.message_id = p_wamid) THEN
+        already_committed := true;
+        delivery_ids := '{}';
+        RETURN NEXT;
+        RETURN;
+    END IF;
+    already_committed := false;
     PERFORM public.append_web_message(p_school_id, p_conversation_id, p_generation,
         p_inbound_id, p_wamid, 'user', jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_inbound_text)), 'complete', p_now);
     IF v_kind = 'booking_intent' THEN
@@ -110,7 +117,8 @@ BEGIN
     IF v_kind <> 'expired_confirmation' THEN
         reply_message_id := public.append_web_message(p_school_id, p_conversation_id, p_generation,
             p_reply_id, p_reply_message_id, 'assistant',
-            jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_reply_text)), 'complete', p_now);
+            CASE WHEN p_reply_text = '' THEN '[]'::jsonb ELSE
+                jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_reply_text)) END, 'complete', p_now);
     END IF;
     IF v_kind IN ('booking_intent', 'expired_confirmation') THEN
         v_delivery := public.enqueue_whatsapp_delivery(p_school_id, p_wa_id, p_phone_number_id,
@@ -122,7 +130,8 @@ BEGIN
             p_window_expires_at => p_now + interval '24 hours', p_now => p_now);
         IF v_delivery IS NOT NULL THEN v_deliveries := array_append(v_deliveries, v_delivery); END IF;
     ELSE
-        IF jsonb_typeof(p_reply_chunks) IS DISTINCT FROM 'array' OR jsonb_array_length(p_reply_chunks) = 0 THEN
+        IF jsonb_typeof(p_reply_chunks) IS DISTINCT FROM 'array'
+            OR (jsonb_array_length(p_reply_chunks) = 0 AND p_reply_text <> '') THEN
             RAISE EXCEPTION 'reply_chunks_required' USING ERRCODE = '22023';
         END IF;
         FOR v_chunk IN SELECT jsonb_array_elements_text(p_reply_chunks) LOOP

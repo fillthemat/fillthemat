@@ -16,7 +16,6 @@ function intentFromRow(row: Tables<"whatsapp_booking_intents">) {
   };
 }
 export type WhatsAppBookingIntent = ReturnType<typeof intentFromRow>;
-export const WHATSAPP_BOOKING_INTENT_TTL_MS = 30 * 60 * 1000;
 
 async function ensureNotExpired(row: Tables<"whatsapp_booking_intents"> | null, now: Date) {
   if (!row) return null;

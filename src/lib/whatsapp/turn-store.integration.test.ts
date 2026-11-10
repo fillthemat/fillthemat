@@ -10,6 +10,7 @@ import { authSql, loadLocalEnv, requireRow, whileSavingMessages } from "@/test/i
 import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
 import { post, textInboundPayload } from "@/test/whatsapp-webhook";
 import { getPendingBookingIntent } from "./intents";
+import { loadWhatsAppSchool } from "./school";
 import { commitWhatsAppTurn, type PreparedEffect } from "./turn-store";
 import { drainWhatsAppJobs } from "./worker";
 
@@ -54,7 +55,7 @@ async function turn(effect: PreparedEffect = { kind: "reply" }) {
     identity: { channel: "whatsapp", waId },
     now,
   });
-  const conversationId = resolved.conversation.id;
+  const conversationId = resolved.id;
   const lock = requireRow(
     await conversations.claimGeneration(schoolId, conversationId, { now }),
     "generation",
@@ -102,7 +103,10 @@ it("commits ordered messages and a public reply outbox, and replay is a no-op", 
   expect(
     await conversations.hasWhatsAppMessage({ schoolId, waId: input.waId, messageId: input.wamid }),
   ).toBe(true);
-  expect(await commitWhatsAppTurn(input)).toBeUndefined();
+  expect(await commitWhatsAppTurn(input)).toMatchObject({
+    already_committed: true,
+    delivery_ids: [],
+  });
   const { data } = await client()
     .from("whatsapp_deliveries")
     .select()
@@ -271,8 +275,8 @@ it("serializes concurrent first jobs and keeps terminal history on replacement",
       }),
     ),
   );
-  expect(new Set(results.map((result) => result.conversation.id)).size).toBe(1);
-  const id = results[0]!.conversation.id;
+  expect(new Set(results.map((result) => result.id)).size).toBe(1);
+  const id = results[0]!.id;
   await client()
     .from("conversations")
     .update({ expires_at: now.toISOString() })
@@ -283,7 +287,7 @@ it("serializes concurrent first jobs and keeps terminal history on replacement",
     identity: { channel: "whatsapp", waId },
     now,
   });
-  expect(next.conversation.id).not.toBe(id);
+  expect(next.id).not.toBe(id);
   const { data } = await client()
     .from("conversations")
     .select("ended_at, end_reason, resume_token_hash")
@@ -477,5 +481,131 @@ it("all Turn/lifecycle functions are service-only invokers with empty search_pat
       has_function_privilege('authenticated', ${fn.signature}, 'EXECUTE') AS owner,
       has_function_privilege('service_role', ${fn.signature}, 'EXECUTE') AS service`;
     expect(grants).toEqual({ anon: false, owner: false, service: true });
+  }
+});
+
+it("empty assistant output commits an empty message, queues nothing, and completes without retry", async () => {
+  const waId = randomUUID();
+  const wamid = randomUUID();
+  const mock = vi.spyOn(assistant, "completedReply").mockResolvedValueOnce({
+    text: "",
+    bookingIntent: null,
+    leadRequest: null,
+    provenance: { modelId: "empty-test", platformInstructionsHash: "test" },
+  });
+  try {
+    await POST(post(textInboundPayload({ phoneNumberId: phone, waId, wamid })));
+    expect(await drainWhatsAppJobs(randomUUID(), 10, { phoneNumberIds: [phone] })).toMatchObject({
+      done: 1,
+      retrying: 0,
+      dead: 0,
+    });
+    expect(mock).toHaveBeenCalledTimes(1);
+    const { data } = await client()
+      .from("conversations")
+      .select("id")
+      .eq("school_id", schoolId)
+      .eq("wa_id_hash", hashWaId(waId))
+      .single()
+      .throwOnError();
+    const history = await conversations.loadTranscript(schoolId, data!.id);
+    expect(history.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(history[1]?.parts).toEqual([]);
+    const { count } = await client()
+      .from("whatsapp_deliveries")
+      .select("id", { count: "exact", head: true })
+      .eq("recipient_wa_id", waId)
+      .throwOnError();
+    expect(count).toBe(0);
+  } finally {
+    mock.mockRestore();
+  }
+});
+
+it("draft school fails permanently without a conversation or apology", async () => {
+  const draftOwner = randomUUID();
+  const draftPhone = randomUUID();
+  const draft = await seedPublicSchool(sql, {
+    ownerId: draftOwner,
+    slug: draftOwner,
+    name: "Draft",
+    offerings: [],
+  });
+  await sql`UPDATE public.school_settings SET whatsapp_phone_number_id = ${draftPhone} WHERE school_id = ${draft.schoolId}`;
+  try {
+    const wamid = randomUUID();
+    await POST(post(textInboundPayload({ phoneNumberId: draftPhone, waId: randomUUID(), wamid })));
+    expect(
+      await drainWhatsAppJobs(randomUUID(), 10, { phoneNumberIds: [draftPhone] }),
+    ).toMatchObject({ done: 0, retrying: 0, dead: 1 });
+    const { data: job } = await client()
+      .from("whatsapp_jobs")
+      .select("state, attempts, failure_reason, terminal_cause")
+      .eq("dedupe_key", wamid)
+      .single()
+      .throwOnError();
+    expect(job).toMatchObject({
+      state: "dead",
+      attempts: 1,
+      failure_reason: "school_not_approved",
+      terminal_cause: "permanent",
+    });
+    const { count: conversationsCount } = await client()
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("school_id", draft.schoolId)
+      .throwOnError();
+    const { count: deliveriesCount } = await client()
+      .from("whatsapp_deliveries")
+      .select("id", { count: "exact", head: true })
+      .eq("school_id", draft.schoolId)
+      .throwOnError();
+    expect(conversationsCount).toBe(0);
+    expect(deliveriesCount).toBe(0);
+    await expect(loadWhatsAppSchool(randomUUID())).rejects.toMatchObject({
+      reason: "school_missing",
+    });
+  } finally {
+    await sql`DELETE FROM public.whatsapp_jobs WHERE phone_number_id = ${draftPhone}`;
+    await deletePublicSchoolOwner(sql, draftOwner);
+  }
+});
+
+it("replay after conversation replacement explicitly reports already committed without writes", async () => {
+  const input = await turn();
+  expect(await commitWhatsAppTurn(input)).toMatchObject({ already_committed: false });
+  await client()
+    .from("conversations")
+    .update({ ended_at: now.toISOString(), end_reason: "inactivity" })
+    .eq("id", input.conversationId)
+    .throwOnError();
+  const replacement = await conversations.findOrCreateConversation({
+    schoolId,
+    identity: { channel: "whatsapp", waId: input.waId },
+    now,
+  });
+  expect(replacement.id).not.toBe(input.conversationId);
+  const lock = requireRow(
+    await conversations.claimGeneration(schoolId, replacement.id, { now }),
+    "replacement generation",
+  );
+  try {
+    expect(
+      await commitWhatsAppTurn({
+        ...input,
+        conversationId: replacement.id,
+        generation: lock.generation,
+      }),
+    ).toMatchObject({ already_committed: true, delivery_ids: [] });
+    expect(await conversations.loadTranscript(schoolId, replacement.id)).toEqual([]);
+    expect(await conversations.loadTranscript(schoolId, input.conversationId)).toHaveLength(2);
+    const { count } = await client()
+      .from("whatsapp_deliveries")
+      .select("id", { count: "exact", head: true })
+      .eq("recipient_wa_id", input.waId)
+      .throwOnError();
+    expect(count).toBe(1);
+  } finally {
+    await lock.release();
   }
 });

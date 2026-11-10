@@ -1,5 +1,60 @@
 -- Service-only transaction boundaries. Public clients must go through the
 -- application, which checks school visibility and holds the raw resume token.
+-- Identity is school + hashWaId(wa_id). A random, unshared resume-token hash
+-- satisfies the shared NOT NULL column; WhatsApp never resolves by that token.
+CREATE FUNCTION public.resolve_whatsapp_conversation(p_school_id uuid, p_wa_id_hash text, p_token_hash text, p_now timestamptz)
+RETURNS uuid LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE v_conversation public.conversations;
+BEGIN
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+        'whatsapp:' || p_school_id::text || ':' || p_wa_id_hash, 0));
+    SELECT * INTO v_conversation FROM public.conversations
+    WHERE school_id = p_school_id AND wa_id_hash = p_wa_id_hash AND ended_at IS NULL FOR UPDATE;
+    IF FOUND THEN
+        IF v_conversation.expires_at > p_now OR v_conversation.generating_at >= p_now - interval '10 minutes' THEN
+            RETURN v_conversation.id;
+        END IF;
+        UPDATE public.conversations SET ended_at = p_now, end_reason = 'inactivity' WHERE id = v_conversation.id;
+    END IF;
+    INSERT INTO public.conversations (school_id, wa_id_hash, resume_token_hash, expires_at)
+    VALUES (p_school_id, p_wa_id_hash, p_token_hash, p_now + interval '30 days') RETURNING id INTO v_conversation.id;
+    RETURN v_conversation.id;
+END;
+$$;
+
+-- End transitions on either channel expire pending intents in the same commit.
+CREATE FUNCTION public.expire_ended_conversation_intents() RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+BEGIN
+    UPDATE public.whatsapp_booking_intents SET state = 'expired'
+    WHERE conversation_id = NEW.id AND state = 'pending';
+    RETURN NEW;
+END;
+$$;
+
+-- Shared maintenance: retain transcripts, end inactive rows on both channels,
+-- never interrupt live generations, and expire short-lived pending choices.
+CREATE FUNCTION public.end_inactive_conversations(p_now timestamptz)
+RETURNS integer LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE v_count integer;
+BEGIN
+    UPDATE public.conversations SET ended_at = p_now, end_reason = 'inactivity'
+    WHERE ended_at IS NULL AND expires_at <= p_now
+        AND (generating_at IS NULL OR generating_at < p_now - interval '10 minutes');
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    UPDATE public.whatsapp_booking_intents SET state = 'expired'
+    WHERE state = 'pending' AND expires_at <= p_now;
+    RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.resolve_whatsapp_conversation(uuid, text, text, timestamptz) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.expire_ended_conversation_intents() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.end_inactive_conversations(timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.resolve_whatsapp_conversation(uuid, text, text, timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.expire_ended_conversation_intents() TO service_role;
+GRANT EXECUTE ON FUNCTION public.end_inactive_conversations(timestamptz) TO service_role;
+
 CREATE FUNCTION public.resolve_web_conversation(p_school_id uuid, p_token_hash text, p_now timestamptz)
 RETURNS uuid
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$

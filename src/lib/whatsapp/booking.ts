@@ -3,15 +3,14 @@ import { formatInTimeZone } from "date-fns-tz";
 import { randomUUID } from "node:crypto";
 import { appendMessage } from "@/lib/conversations/conversation-store";
 import { attemptPendingForBooking } from "@/lib/email/deliveries";
-import { InternalFailure } from "@/lib/retry-policy";
 import { bookSlot } from "@/lib/schedule/book-slot";
-import { loadWhatsAppSchool } from "@/lib/schools/public";
 import { whatsappBookingQuotaExceeded } from "@/lib/security/limits";
 import type { WhatsAppBookingIntent } from "./intents";
 import { bookingConfirmationIdempotencyKey } from "./confirmation";
 import { enqueueAndAttemptWhatsAppDelivery } from "./deliveries";
 import { type WhatsAppWorkerDependencies, whatsappWorkerDependencies } from "./dependencies";
 import { markBookingIntentConfirmed } from "./intents";
+import { loadWhatsAppSchool } from "./school";
 
 /**
  * What the person was sent: the booking confirmation, saved as a message, or
@@ -100,8 +99,6 @@ export async function confirmWhatsAppBooking(
   const now = dependencies.now();
   const windowExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const school = await loadWhatsAppSchool(schoolId);
-  // The school was deleted mid-turn, and its conversation with it.
-  if (!school) throw new InternalFailure("school_missing");
 
   // 429-equivalent: per-wa_id daily booking cap (Phase 5 abuse controls).
   if (await whatsappBookingQuotaExceeded(schoolId, waId, now)) {

@@ -41,7 +41,7 @@ export async function findOrCreateConversation({
     })
     .throwOnError();
   if (!data) throw new Error("conversation_missing");
-  return { ok: true as const, conversation: { id: data } };
+  return { id: data };
 }
 
 /** Waiting is channel policy; the claim and release fence are shared with web chat. */

@@ -1,51 +1,3 @@
--- Identity is school + hashWaId(wa_id). A random, unshared resume-token hash
--- satisfies the shared NOT NULL column; WhatsApp never resolves by that token.
-CREATE FUNCTION public.resolve_whatsapp_conversation(p_school_id uuid, p_wa_id_hash text, p_token_hash text, p_now timestamptz)
-RETURNS uuid LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
-DECLARE v_conversation public.conversations;
-BEGIN
-    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
-        'whatsapp:' || p_school_id::text || ':' || p_wa_id_hash, 0));
-    SELECT * INTO v_conversation FROM public.conversations
-    WHERE school_id = p_school_id AND wa_id_hash = p_wa_id_hash AND ended_at IS NULL FOR UPDATE;
-    IF FOUND THEN
-        IF v_conversation.expires_at > p_now OR v_conversation.generating_at >= p_now - interval '10 minutes' THEN
-            RETURN v_conversation.id;
-        END IF;
-        UPDATE public.conversations SET ended_at = p_now, end_reason = 'inactivity' WHERE id = v_conversation.id;
-    END IF;
-    INSERT INTO public.conversations (school_id, wa_id_hash, resume_token_hash, expires_at)
-    VALUES (p_school_id, p_wa_id_hash, p_token_hash, p_now + interval '30 days') RETURNING id INTO v_conversation.id;
-    RETURN v_conversation.id;
-END;
-$$;
-
--- End transitions on either channel expire pending intents in the same commit.
-CREATE FUNCTION public.expire_ended_conversation_intents() RETURNS trigger
-LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
-BEGIN
-    UPDATE public.whatsapp_booking_intents SET state = 'expired'
-    WHERE conversation_id = NEW.id AND state = 'pending';
-    RETURN NEW;
-END;
-$$;
-
--- Shared maintenance: retain transcripts, end inactive rows on both channels,
--- never interrupt live generations, and expire short-lived pending choices.
-CREATE FUNCTION public.end_inactive_conversations(p_now timestamptz)
-RETURNS integer LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
-DECLARE v_count integer;
-BEGIN
-    UPDATE public.conversations SET ended_at = p_now, end_reason = 'inactivity'
-    WHERE ended_at IS NULL AND expires_at <= p_now
-        AND (generating_at IS NULL OR generating_at < p_now - interval '10 minutes');
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    UPDATE public.whatsapp_booking_intents SET state = 'expired'
-    WHERE state = 'pending' AND expires_at <= p_now;
-    RETURN v_count;
-END;
-$$;
-
 -- Atomic Turn contract. The app prepares text/chunks and exactly one effect:
 -- reply, booking_intent, lead_request, or expired_confirmation (notice).
 -- Check scope/control, save inbound, apply effect, save reply and enqueue.
@@ -57,7 +9,7 @@ CREATE FUNCTION public.commit_whatsapp_turn(
     p_inbound_text text, p_reply_id uuid, p_reply_message_id text,
     p_reply_text text, p_reply_chunks jsonb, p_effect jsonb, p_now timestamptz
 )
-RETURNS TABLE (reply_message_id uuid, lead_id uuid, delivery_ids uuid[])
+RETURNS TABLE (already_committed boolean, reply_message_id uuid, lead_id uuid, delivery_ids uuid[])
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE
     v_hash text := encode(sha256(convert_to('wa:' || p_wa_id, 'UTF8')), 'hex');
@@ -81,7 +33,13 @@ BEGIN
         RAISE EXCEPTION 'invalid_prepared_effect' USING ERRCODE = '22023';
     END IF;
     IF EXISTS (SELECT 1 FROM public.messages m JOIN public.conversations c ON c.id = m.conversation_id
-        WHERE c.school_id = p_school_id AND c.wa_id_hash = v_hash AND m.message_id = p_wamid) THEN RETURN; END IF;
+        WHERE c.school_id = p_school_id AND c.wa_id_hash = v_hash AND m.message_id = p_wamid) THEN
+        already_committed := true;
+        delivery_ids := '{}';
+        RETURN NEXT;
+        RETURN;
+    END IF;
+    already_committed := false;
     PERFORM public.append_web_message(p_school_id, p_conversation_id, p_generation,
         p_inbound_id, p_wamid, 'user', jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_inbound_text)), 'complete', p_now);
     IF v_kind = 'booking_intent' THEN
@@ -111,7 +69,8 @@ BEGIN
     IF v_kind <> 'expired_confirmation' THEN
         reply_message_id := public.append_web_message(p_school_id, p_conversation_id, p_generation,
             p_reply_id, p_reply_message_id, 'assistant',
-            jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_reply_text)), 'complete', p_now);
+            CASE WHEN p_reply_text = '' THEN '[]'::jsonb ELSE
+                jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_reply_text)) END, 'complete', p_now);
     END IF;
     IF v_kind IN ('booking_intent', 'expired_confirmation') THEN
         v_delivery := public.enqueue_whatsapp_delivery(p_school_id, p_wa_id, p_phone_number_id,
@@ -123,7 +82,8 @@ BEGIN
             p_window_expires_at => p_now + interval '24 hours', p_now => p_now);
         IF v_delivery IS NOT NULL THEN v_deliveries := array_append(v_deliveries, v_delivery); END IF;
     ELSE
-        IF jsonb_typeof(p_reply_chunks) IS DISTINCT FROM 'array' OR jsonb_array_length(p_reply_chunks) = 0 THEN
+        IF jsonb_typeof(p_reply_chunks) IS DISTINCT FROM 'array'
+            OR (jsonb_array_length(p_reply_chunks) = 0 AND p_reply_text <> '') THEN
             RAISE EXCEPTION 'reply_chunks_required' USING ERRCODE = '22023';
         END IF;
         FOR v_chunk IN SELECT jsonb_array_elements_text(p_reply_chunks) LOOP
@@ -143,11 +103,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.resolve_whatsapp_conversation(uuid, text, text, timestamptz) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.expire_ended_conversation_intents() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.end_inactive_conversations(timestamptz) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.commit_whatsapp_turn(uuid, uuid, timestamptz, text, text, text, uuid, text, uuid, text, text, jsonb, jsonb, timestamptz) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.resolve_whatsapp_conversation(uuid, text, text, timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION public.expire_ended_conversation_intents() TO service_role;
-GRANT EXECUTE ON FUNCTION public.end_inactive_conversations(timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION public.commit_whatsapp_turn(uuid, uuid, timestamptz, text, text, text, uuid, text, uuid, text, text, jsonb, jsonb, timestamptz) TO service_role;

@@ -43,5 +43,7 @@ export async function commitWhatsAppTurn(input: {
       p_now: input.now.toISOString(),
     })
     .throwOnError();
-  return data?.[0];
+  const result = data?.[0];
+  if (!result) throw new Error("turn_result_missing");
+  return result;
 }
