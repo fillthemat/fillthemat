@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   bookingConfirmationIdempotencyKey,
-  confirmBookingButtonId,
   isAffirmativeConfirmation,
   parseConfirmBookingButton,
 } from "./confirmation";
@@ -9,7 +8,7 @@ import {
 describe("parseConfirmBookingButton", () => {
   it("parses a confirm_booking:<id> button reply", () => {
     const id = "a1b2c3d4-0000-0000-0000-000000000000";
-    expect(parseConfirmBookingButton(confirmBookingButtonId(id))).toBe(id);
+    expect(parseConfirmBookingButton(`confirm_booking:${id}`)).toBe(id);
   });
 
   it("rejects non-confirm button ids and garbage", () => {

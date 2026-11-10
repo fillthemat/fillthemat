@@ -1,148 +1,67 @@
-import { and, eq } from "drizzle-orm";
-import type { Enums } from "@/db/types";
-import { getDb, type Transaction, type TransactionOptions, withTransaction } from "@/db";
-import { whatsappBookingIntents } from "@/db/schema";
+import "server-only";
+import type { Tables } from "@/db/types";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-/** A prepared choice that the platform can confirm, not a database row. */
-export type WhatsAppBookingIntent = {
-  id: string;
-  schoolId: string;
-  conversationId: string;
-  offeringId: string;
-  slotId: string;
-  participantName: string | null;
-  participantAge: number | null;
-  state: Enums<"whatsapp_booking_intent_state">;
-  expiresAt: Date;
-};
-
-/** How long a prepared booking stays confirmable before it needs re-picking. */
-export const WHATSAPP_BOOKING_INTENT_TTL_MS = 30 * 60 * 1000;
-
-export type BookingIntentInput = {
-  schoolId: string;
-  conversationId: string;
-  offeringId: string;
-  slotId: string;
-  participantName: string | null;
-  participantAge: number | null;
-  now?: Date;
-};
-
-/**
- * Persist/refresh the one active pending intent for a conversation. Any prior
- * pending intent is superseded first so the partial unique index
- * (`conversation_id` WHERE state = 'pending') stays satisfiable and stale
- * intents can never be confirmed after a newer pick.
- *
- * The agent NEVER writes this — the platform calls it after a successful
- * `prepare_booking` tool capture.
- * An optional transaction includes the intent in the caller's Turn commit.
- */
-export async function upsertPendingBookingIntent(
-  input: BookingIntentInput,
-  options: TransactionOptions = {},
-): Promise<WhatsAppBookingIntent> {
-  const now = input.now ?? new Date();
-  const write = async (tx: Transaction) => {
-    await tx
-      .update(whatsappBookingIntents)
-      .set({ state: "superseded", updatedAt: now })
-      .where(
-        and(
-          eq(whatsappBookingIntents.conversationId, input.conversationId),
-          eq(whatsappBookingIntents.state, "pending"),
-        ),
-      );
-
-    const [intent] = await tx
-      .insert(whatsappBookingIntents)
-      .values({
-        schoolId: input.schoolId,
-        conversationId: input.conversationId,
-        offeringId: input.offeringId,
-        slotId: input.slotId,
-        participantName: input.participantName,
-        participantAge: input.participantAge,
-        state: "pending",
-        expiresAt: new Date(now.getTime() + WHATSAPP_BOOKING_INTENT_TTL_MS),
-      })
-      .returning();
-    if (!intent) throw new Error("whatsapp_booking_intent_insert_failed");
-    return intent;
+function intentFromRow(row: Tables<"whatsapp_booking_intents">) {
+  return {
+    id: row.id,
+    schoolId: row.school_id,
+    conversationId: row.conversation_id,
+    offeringId: row.offering_id,
+    slotId: row.slot_id,
+    participantName: row.participant_name,
+    participantAge: row.participant_age,
+    state: row.state,
+    expiresAt: new Date(row.expires_at),
   };
-  return withTransaction(write, options);
 }
+export type WhatsAppBookingIntent = ReturnType<typeof intentFromRow>;
 
-/** Mark an expired row expired and return null (intents are short-lived). */
-async function ensureNotExpired(
-  intent: WhatsAppBookingIntent,
-  now: Date,
-): Promise<WhatsAppBookingIntent | null> {
-  if (intent.expiresAt > now) return intent;
-  const db = getDb();
-  if (intent.state === "pending") {
-    await db
-      .update(whatsappBookingIntents)
-      .set({ state: "expired", updatedAt: now })
-      .where(eq(whatsappBookingIntents.id, intent.id));
-  }
+async function ensureNotExpired(row: Tables<"whatsapp_booking_intents"> | null, now: Date) {
+  if (!row) return null;
+  if (new Date(row.expires_at) > now) return intentFromRow(row);
+  await createAdminClient()
+    .from("whatsapp_booking_intents")
+    .update({ state: "expired" })
+    .eq("id", row.id)
+    .eq("state", "pending")
+    .lte("expires_at", now.toISOString())
+    .throwOnError();
   return null;
 }
 
-/** The current pending intent for a conversation, if any and not expired. */
-export async function getPendingBookingIntent(
-  conversationId: string,
-  now = new Date(),
-): Promise<WhatsAppBookingIntent | null> {
-  const db = getDb();
-  const [intent] = await db
+export async function getPendingBookingIntent(conversationId: string, now = new Date()) {
+  const { data } = await createAdminClient()
+    .from("whatsapp_booking_intents")
     .select()
-    .from(whatsappBookingIntents)
-    .where(
-      and(
-        eq(whatsappBookingIntents.conversationId, conversationId),
-        eq(whatsappBookingIntents.state, "pending"),
-      ),
-    )
-    .limit(1);
-  if (!intent) return null;
-  return ensureNotExpired(intent, now);
+    .eq("conversation_id", conversationId)
+    .eq("state", "pending")
+    .maybeSingle()
+    .throwOnError();
+  return ensureNotExpired(data, now);
 }
 
-/**
- * A pending intent addressed by id (used by the `confirm_booking:<id>` reply
- * button). Validates it is still pending and only returns it when it belongs
- * to the given school (defense against cross-school id guessing).
- */
 export async function getPendingBookingIntentById(
   intentId: string,
   schoolId: string,
   now = new Date(),
-): Promise<WhatsAppBookingIntent | null> {
-  const db = getDb();
-  const [intent] = await db
+) {
+  const { data } = await createAdminClient()
+    .from("whatsapp_booking_intents")
     .select()
-    .from(whatsappBookingIntents)
-    .where(
-      and(
-        eq(whatsappBookingIntents.id, intentId),
-        eq(whatsappBookingIntents.schoolId, schoolId),
-        eq(whatsappBookingIntents.state, "pending"),
-      ),
-    )
-    .limit(1);
-  if (!intent) return null;
-  return ensureNotExpired(intent, now);
+    .eq("id", intentId)
+    .eq("school_id", schoolId)
+    .eq("state", "pending")
+    .maybeSingle()
+    .throwOnError();
+  return ensureNotExpired(data, now);
 }
 
-/** Transition a pending intent to confirmed once `bookSlot` succeeds. */
-export async function markBookingIntentConfirmed(intentId: string): Promise<void> {
-  const db = getDb();
-  await db
-    .update(whatsappBookingIntents)
-    .set({ state: "confirmed", updatedAt: new Date() })
-    .where(
-      and(eq(whatsappBookingIntents.id, intentId), eq(whatsappBookingIntents.state, "pending")),
-    );
+export async function markBookingIntentConfirmed(intentId: string) {
+  await createAdminClient()
+    .from("whatsapp_booking_intents")
+    .update({ state: "confirmed" })
+    .eq("id", intentId)
+    .eq("state", "pending")
+    .throwOnError();
 }

@@ -1,14 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const CONFIRM_BUTTON_PREFIX = "confirm_booking:";
-export const CHOOSE_ANOTHER_TIME_BUTTON_ID = "choose_another_time";
-
 const AFFIRMATIVE_ANSWERS = new Set(["yes", "confirm", "yep", "ok", "sure"]);
-
-/** Build the reply-button id embedded in the interactive confirmation message. */
-export function confirmBookingButtonId(intentId: string): string {
-  return `${CONFIRM_BUTTON_PREFIX}${intentId}`;
-}
 
 /**
  * Parse a `confirm_booking:<intentId>` reply-button id back to the intent id.
@@ -16,8 +8,10 @@ export function confirmBookingButtonId(intentId: string): string {
  */
 export function parseConfirmBookingButton(text: string | null): string | null {
   const trimmed = (text ?? "").trim();
-  if (!trimmed.startsWith(CONFIRM_BUTTON_PREFIX)) return null;
-  const intentId = trimmed.slice(CONFIRM_BUTTON_PREFIX.length).trim();
+  // SQL owns button construction; this is the inbound wire-protocol parser.
+  const match = /^confirm_booking:(.*)$/.exec(trimmed);
+  if (!match) return null;
+  const intentId = match[1]!.trim();
   // The intent id is a UUID; a loose length guard keeps garbage cheap to reject
   // before it reaches `getPendingBookingIntentById`.
   return intentId.length >= 16 && intentId.length <= 64 ? intentId : null;

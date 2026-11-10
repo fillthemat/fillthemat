@@ -6,7 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 type JobRow = Database["public"]["Tables"]["whatsapp_jobs"]["Row"];
 type DeliveryRow = Database["public"]["Tables"]["whatsapp_deliveries"]["Row"];
 
-/** Queue identity is public even while the Turn still resolves legacy schools. */
+/** Private inbound routing; never expose settings to a browser client. */
 export async function publicSchoolIdForPhone(phoneNumberId: string) {
   const { data } = await createAdminClient()
     .from("school_settings")

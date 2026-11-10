@@ -1,7 +1,5 @@
-import { eq } from "drizzle-orm";
-import { getDb } from "@/db";
-import { schools } from "@/db/schema";
 import type { InboundWhatsAppMessage } from "./parse";
+import { publicSchoolIdForPhone } from "./queue-store";
 
 export type ResolveInboundResult =
   | { resolved: true; schoolId: string }
@@ -12,11 +10,7 @@ export async function resolveInboundSchool(
   input: InboundWhatsAppMessage,
 ): Promise<ResolveInboundResult> {
   if (!input.text) return { resolved: false, reason: "empty_text" };
-  const [school] = await getDb()
-    .select({ id: schools.id })
-    .from(schools)
-    .where(eq(schools.whatsappPhoneNumberId, input.phoneNumberId))
-    .limit(1);
-  if (!school) return { resolved: false, reason: "unknown_phone_number" };
-  return { resolved: true, schoolId: school.id };
+  const schoolId = await publicSchoolIdForPhone(input.phoneNumberId);
+  if (!schoolId) return { resolved: false, reason: "unknown_phone_number" };
+  return { resolved: true, schoolId };
 }

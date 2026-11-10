@@ -53,7 +53,7 @@ termination. Browser roles cannot call them. Resolution serializes each school/t
 pair, returning only the conversation ID. Tokens are scoped to schools: using the
 same token at another school creates an independent conversation, never access to
 the original transcript. Expired conversations are retained as history; resolving
-a web conversation does not touch WhatsApp booking intents. The advisory lock
+a web conversation expires pending intents through the shared end trigger. The advisory lock
 settles concurrent first creation; a row lock coordinates expiry with message
 saves and deadline extensions. Saved messages carry a generation fence so
 an abandoned worker cannot save into a successor's turn. Generation claim/release
@@ -112,8 +112,7 @@ protocol below; the unused legacy queue helper has been removed.
 `enqueue_email_reminders` atomically inserts reminders using the same unique key
 per booking, 36-hour minimum booking lead and 24-hour reminder window. Maintenance
 uses this SQL function as the only definition of the reminder rule (no TS copy),
-records its run in public.cron_runs; ending inactive conversations deliberately
-still calls the legacy conversation store until #253.
+records its run in public.cron_runs and calls `end_inactive_conversations` on public.
 
 Lead Request uses the service-only `create_lead` invoker function for contact
 upsert, school-scoped landing-session attachment, lead, owner email and funnel event.
@@ -125,20 +124,15 @@ is blank. SQL callers can compose it in an outer
 transaction. Application access, CAPTCHA and recipient limits stay before the RPC;
 the route attempts delivery only after the RPC commits.
 
-Until #253, WhatsApp still resolves legacy school/offering/conversation IDs, not
-public IDs. Its Turn therefore retains the existing transaction-bound lead write
-in `src/lib/whatsapp/legacy-create-lead.ts`; no public/legacy ID bridge or dual-write
-is added. That path still writes `app.leads` and `app.email_deliveries`, which the
-public dashboard/dispatcher do not read. #253 must delete the legacy adapter and
-call `create_lead` inside its public SQL Turn transaction. The public RPC already
-supports the no-email contact and WhatsApp pseudo-session semantics it needs.
+WhatsApp composes `create_lead` inside `commit_whatsapp_turn`, so the inbound
+replay marker, lead, owner email, event, assistant message and WhatsApp reply
+outbox commit together. No legacy adapter or public/legacy identity bridge remains.
 
 During the integration-branch migration, Book Trial (including the current WhatsApp
 booking caller) uses the service-only `book_trial` function and public outbox.
 It locks the occurrence and owns counters, emails and events: booking triggers
 only handle owner status updates, never INSERT. The dispatcher and reminder scheduler
-read **public only**; those emails and reminders for legacy app bookings are
-intentionally not sent until #253 migrates the legacy Turn and its lead workflow. WhatsApp delivery
+read **public only**. WhatsApp delivery
 death notices now enqueue public email directly through SQL.
 
 ## WhatsApp queues
@@ -149,7 +143,7 @@ durable execution start, five-execution budget, and full
 `(id, claimed, claimed_by, claimed_at, attempts)` fence. Claim timestamps remain
 unmodified strings in TypeScript; deadlines alone become Dates. Retry-only and
 school-number-scoped sweeps retain the existing worker budget behavior.
-`enqueue_whatsapp_delivery` is composable from SQL, ready for the #253 Turn.
+`commit_whatsapp_turn` composes `enqueue_whatsapp_delivery` inside its transaction.
 All functions, including trigger helpers, are empty-search-path invokers with
 service-role-only execution. Finalizers use one fenced table update; provider
 I/O never holds a lock. Dead transitions use the shared `queue.dead` logger.
@@ -194,32 +188,68 @@ receipt's 24-hour service window, resolving the school via private
 do not notify. Delivered/read removes only pending/failed, zero-execution owner
 notices; started/sent email cannot safely be recalled. Recovery uses the same hooks.
 
-### Temporary Turn seam (#253)
+### WhatsApp Turn contract
 
-The Turn, inbound school resolution, conversation store and booking intents still
-use legacy Drizzle. **WhatsApp replies do not work end to end until #253 because
-the Turn still resolves legacy schools.** Queue school identity is independently
-resolved from private public school settings by the job/delivery phone-number ID,
-never from the legacy Turn's school ID. Failed Turn processing consumes an execution;
-per-job persistence failures are logged/deferred without aborting the batch.
-The worker commits that Turn first and then enqueues its
-public delivery intents. A crash/enqueue failure between these commits can lose
-the reply after its inbound duplicate marker commits. This is the explicitly
-accepted integration-branch non-atomic seam, not an atomic outbox guarantee.
-The no-intent `handleConfirmation` path also saves the inbound message and queues
-the notice separately, with the same gap. There is no dual-read/write queue.
+`functions/whatsapp-turns.sql` owns `commit_whatsapp_turn`, an empty-search-path
+SECURITY INVOKER function executable only by service_role (plus its SQL owner).
+The application prepares assistant output; the function commits it. Inputs:
+
+- Public school/conversation IDs, generation timestamp string, raw recipient and
+  school phone-number ID. SQL checks publication, routing, identity and generation.
+- Inbound row UUID, provider wamid and text; assistant row UUID, UI message ID,
+  text and pre-split text chunks; timestamp for lifecycle deadlines.
+- One typed prepared effect: `reply`, `booking_intent` (offering, encoded slot,
+  participant name/age), `lead_request` (offering, participant details, contact name,
+  stated need), or the deterministic `expired_confirmation` notice.
+
+Effects in order: inbound append/deadline extension; pending intent supersession
+and replacement OR `create_lead` (including contact, email and event); assistant
+append; reply enqueue. For a Booking Intent, the interactive confirmation notice
+is the reply delivery, not a duplicate text send. SQL builds buttons from the new
+intent ID. Expired confirmation saves only inbound + notice, preserving the existing
+transcript policy. Lead contact attachment is school-scoped. SQL validates slot
+window/offering scope; confirmation must recheck availability. No booking is created.
+
+Return: explicit `already_committed` flag, assistant row ID, optional lead ID,
+queued delivery IDs. Inbound replay across active or ended conversations returns
+`already_committed: true` with no writes or queued deliveries. Empty model output
+saves the user message and an empty assistant message, queues no reply, and
+completes the job without retry. The worker rejects missing or unpublished/unapproved
+schools permanently before conversation creation, with no apology. Stale generation
+or mismatched scope raises `generation_or_scope_lost`; malformed effects/chunks,
+cross-tenant references and constraint/append/outbox failures raise and roll back
+**all** writes. Email and WhatsApp sends happen only after commit; durable outboxes
+recover crashes between commit and send. Trace creation/export stays outside SQL
+and unchanged (ADR 0001).
+
+### Conversation identity and maintenance
+
+WhatsApp resolves by `(school_id, hashWaId(wa_id))`, using the existing partial
+unique index for one open conversation and a per-identity advisory lock for first
+creation. Each WhatsApp row gets a random, unshared SHA-256 resume-token hash to
+satisfy the shared NOT NULL column; it is never used for WhatsApp routing. Web chat
+still resolves by its real resume-token hash. Both share generation claim/release,
+fenced append/deadline extension, transcript reads and message-limit termination.
+Atomic Turns use `clock_timestamp()` for message creation so inbound precedes reply
+even when both inserts share the transaction timestamp.
+
+Maintenance ends expired public conversations on **both** channels, retains every
+message, and skips live generation claims (ten-minute abandonment threshold).
+Every end transition expires pending intents through an invoker trigger;
+maintenance also expires 30-minute intents on conversations that remain open.
+Web-chat lazy expiry is preserved, with proactive maintenance now reaching public
+web-chat rows too. An expired WhatsApp conversation with a live worker is not replaced.
+
+### Remaining booking confirmation work (#254)
+
+Booking confirmation now reads public school/intent data, carries public school
+IDs into booking quotas, links the public conversation to `book_trial`, and uses
+fenced public message appends. Its booking, intent-confirmed transition, transcript
+and reply are still separate commits: #254 must make that workflow atomic and
+cover replay after booking succeeds but a follow-up fails. No dual-write remains.
+
 Hooks intentionally use transaction `now()` for receipt-window/notification
-eligibility on every path, including fenced table finalizers without `p_now`;
-RPC `p_now` controls claim/recovery cutoffs and retry scheduling only.
-Legacy `app` seeds are empty locally: full
-assistant/confirmation Turns cannot run end-to-end until #253. Book Trial now
-returns public booking IDs compatible with the public confirmation/death hooks;
-the legacy Turn/intent/transcript path still prevents full WhatsApp confirmation.
-Atomic booking plus confirmation transcript/reply writes remain #254; `booking.ts`
-still uses legacy school/intent/message lookups and deliberately omits the legacy
-conversation ID from `book_trial`. Queue identity does not bridge those Turn IDs.
-Public queue mechanics and signed webhooks are verified
-directly in `queues.integration.test.ts` in the meantime.
+eligibility; queue RPC `p_now` controls claim/recovery scheduling only.
 
 ## Changes
 
