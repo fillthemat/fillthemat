@@ -11,6 +11,7 @@ import * as turnTrace from "@/lib/tracing/turn-trace";
 import { authSql, loadLocalEnv, requireRow, whileSavingMessages } from "@/test/integration-env";
 import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
 import { post, textInboundPayload } from "@/test/whatsapp-webhook";
+import * as booking from "./booking";
 import * as deliveries from "./deliveries";
 import { getPendingBookingIntent } from "./intents";
 import { loadWhatsAppSchool } from "./school";
@@ -455,18 +456,6 @@ it("message-limit termination and TTL maintenance expire pending choices", async
   expect(data?.ended_at).toBeNull();
 });
 
-it("expired confirmation notice and inbound marker commit together without an assistant message", async () => {
-  const input = await turn({ kind: "expired_confirmation" });
-  const result = requireRow(await commitWhatsAppTurn(input), "notice");
-  expect(result.reply_message_id).toBeNull();
-  expect(result.delivery_ids).toHaveLength(1);
-  expect(
-    (await conversations.loadTranscript(schoolId, input.conversationId)).map(
-      (message) => message.role,
-    ),
-  ).toEqual(["user"]);
-});
-
 it("rejects mismatched prepared offering/window scope and rolls back inbound", async () => {
   const input = await turn({ ...bookingEffect(), trialOfferingId: randomUUID() });
   await expect(commitWhatsAppTurn(input)).rejects.toMatchObject({ message: "invalid_slot_scope" });
@@ -615,7 +604,7 @@ it("replay after conversation replacement explicitly reports already committed w
   }
 });
 
-it.each(["assistant", "expired_confirmation"] as const)(
+it.each(["assistant", "booking_confirmation"] as const)(
   "worker suppresses post-commit effects and answer tracing for a replayed %s Turn",
   async (kind) => {
     const end = vi.fn();
@@ -633,6 +622,17 @@ it.each(["assistant", "expired_confirmation"] as const)(
       lead_id: randomUUID(),
       delivery_ids: [randomUUID()],
     });
+    const confirm = vi.spyOn(booking, "confirmWhatsAppBooking").mockResolvedValue({
+      already_committed: true,
+      outcome: "already_committed",
+      booking_id: randomUUID(),
+      reply_message_id: randomUUID(),
+      reply_text: "Must not trace",
+      delivery_ids: [randomUUID()],
+    });
+    const bookingEmail = vi
+      .spyOn(emailDeliveries, "attemptPendingForBooking")
+      .mockRejectedValue(new Error("replay must not attempt booking email"));
     const email = vi
       .spyOn(emailDeliveries, "attemptPendingForLead")
       .mockRejectedValue(new Error("replay must not attempt email"));
@@ -669,15 +669,18 @@ it.each(["assistant", "expired_confirmation"] as const)(
         retrying: 0,
         dead: 0,
       });
-      expect(commit).toHaveBeenCalledOnce();
+      expect(commit).toHaveBeenCalledTimes(kind === "assistant" ? 1 : 0);
+      expect(confirm).toHaveBeenCalledTimes(kind === "assistant" ? 0 : 1);
       expect(email).not.toHaveBeenCalled();
+      expect(bookingEmail).not.toHaveBeenCalled();
       expect(send).not.toHaveBeenCalled();
       expect(end).toHaveBeenCalledExactlyOnceWith({ text: "" });
       expect(school).toHaveBeenCalledOnce();
       expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"whatsapp_turn_replayed"'));
       expect(model).toHaveBeenCalledTimes(kind === "assistant" ? 1 : 0);
     } finally {
-      for (const spy of [...spies, commit, email, send, school, log, model]) spy.mockRestore();
+      for (const spy of [...spies, commit, confirm, bookingEmail, email, send, school, log, model])
+        spy.mockRestore();
     }
   },
 );

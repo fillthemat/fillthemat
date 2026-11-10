@@ -1,5 +1,5 @@
 -- Atomic Turn contract. The app prepares text/chunks and exactly one effect:
--- reply, booking_intent, lead_request, or expired_confirmation (notice).
+-- reply, booking_intent, or lead_request.
 -- Check scope/control, save inbound, apply effect, save reply and enqueue.
 -- Any exception rolls everything back, including create_lead's email/events.
 -- Duplicate inbound returns no writes; stale generation raises before writes.
@@ -29,7 +29,7 @@ BEGIN
         AND s.whatsapp_phone_number_id = p_phone_number_id
         AND school.approved_at IS NOT NULL AND school.published_at IS NOT NULL FOR UPDATE OF c;
     IF NOT FOUND THEN RAISE EXCEPTION 'generation_or_scope_lost' USING ERRCODE = '22023'; END IF;
-    IF v_kind IS NULL OR v_kind NOT IN ('reply', 'booking_intent', 'lead_request', 'expired_confirmation') THEN
+    IF v_kind IS NULL OR v_kind NOT IN ('reply', 'booking_intent', 'lead_request') THEN
         RAISE EXCEPTION 'invalid_prepared_effect' USING ERRCODE = '22023';
     END IF;
     IF EXISTS (SELECT 1 FROM public.messages m JOIN public.conversations c ON c.id = m.conversation_id
@@ -65,20 +65,17 @@ BEGIN
             (p_effect->>'trialOfferingId')::uuid, p_effect->>'statedNeed');
         UPDATE public.conversations SET contact_id = coalesce(contact_id, v_lead.contact_id) WHERE id = p_conversation_id;
     END IF;
-    -- Expired confirmation is a notice, not an assistant transcript message.
-    IF v_kind <> 'expired_confirmation' THEN
-        reply_message_id := public.append_web_message(p_school_id, p_conversation_id, p_generation,
-            p_reply_id, p_reply_message_id, 'assistant',
-            CASE WHEN p_reply_text = '' THEN '[]'::jsonb ELSE
-                jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_reply_text)) END, 'complete', p_now);
-    END IF;
-    IF v_kind IN ('booking_intent', 'expired_confirmation') THEN
+    reply_message_id := public.append_web_message(p_school_id, p_conversation_id, p_generation,
+        p_reply_id, p_reply_message_id, 'assistant',
+        CASE WHEN p_reply_text = '' THEN '[]'::jsonb ELSE
+            jsonb_build_array(jsonb_build_object('type', 'text', 'text', p_reply_text)) END, 'complete', p_now);
+    IF v_kind = 'booking_intent' THEN
         v_delivery := public.enqueue_whatsapp_delivery(p_school_id, p_wa_id, p_phone_number_id,
-            CASE WHEN v_intent_id IS NULL THEN 'wa-notice/' || p_wa_id || '/' || p_wamid ELSE 'wa-confirm/' || p_wamid END,
+            'wa-confirm/' || p_wamid,
             p_body => p_reply_text,
-            p_buttons => CASE WHEN v_intent_id IS NULL THEN NULL ELSE jsonb_build_array(
+            p_buttons => jsonb_build_array(
                 jsonb_build_object('id', 'confirm_booking:' || v_intent_id, 'title', 'Confirm booking'),
-                jsonb_build_object('id', 'choose_another_time', 'title', 'Choose another time')) END,
+                jsonb_build_object('id', 'choose_another_time', 'title', 'Choose another time')),
             p_window_expires_at => p_now + interval '24 hours', p_now => p_now);
         IF v_delivery IS NOT NULL THEN v_deliveries := array_append(v_deliveries, v_delivery); END IF;
     ELSE

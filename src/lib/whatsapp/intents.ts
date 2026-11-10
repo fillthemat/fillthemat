@@ -15,7 +15,6 @@ function intentFromRow(row: Tables<"whatsapp_booking_intents">) {
     expiresAt: new Date(row.expires_at),
   };
 }
-export type WhatsAppBookingIntent = ReturnType<typeof intentFromRow>;
 
 async function ensureNotExpired(row: Tables<"whatsapp_booking_intents"> | null, now: Date) {
   if (!row) return null;
@@ -39,29 +38,4 @@ export async function getPendingBookingIntent(conversationId: string, now = new 
     .maybeSingle()
     .throwOnError();
   return ensureNotExpired(data, now);
-}
-
-export async function getPendingBookingIntentById(
-  intentId: string,
-  schoolId: string,
-  now = new Date(),
-) {
-  const { data } = await createAdminClient()
-    .from("whatsapp_booking_intents")
-    .select()
-    .eq("id", intentId)
-    .eq("school_id", schoolId)
-    .eq("state", "pending")
-    .maybeSingle()
-    .throwOnError();
-  return ensureNotExpired(data, now);
-}
-
-export async function markBookingIntentConfirmed(intentId: string) {
-  await createAdminClient()
-    .from("whatsapp_booking_intents")
-    .update({ state: "confirmed" })
-    .eq("id", intentId)
-    .eq("state", "pending")
-    .throwOnError();
 }

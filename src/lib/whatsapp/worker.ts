@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { completedReply } from "@/lib/ai/assistant";
 import { CONVERSATION_LIMIT_NOTICE } from "@/lib/chat/protocol";
 import {
-  appendMessage,
   claimGeneration,
   endConversationAtMessageLimit,
   findConversation,
@@ -12,7 +11,7 @@ import {
   hasWhatsAppMessage,
   loadTranscript,
 } from "@/lib/conversations/conversation-store";
-import { attemptPendingForLead } from "@/lib/email/deliveries";
+import { attemptPendingForBooking, attemptPendingForLead } from "@/lib/email/deliveries";
 import { InternalFailure, internalFailureReasonFrom, MAX_EXECUTIONS } from "@/lib/retry-policy";
 import { loadSchoolCatalog } from "@/lib/schools/public";
 import { whatsappOutboundQuotaExceeded } from "@/lib/security/limits";
@@ -30,11 +29,7 @@ import {
 } from "./deliveries";
 import { type WhatsAppWorkerDependencies, whatsappWorkerDependencies } from "./dependencies";
 import { resolveInboundSchool } from "./inbound";
-import {
-  getPendingBookingIntent,
-  getPendingBookingIntentById,
-  type WhatsAppBookingIntent,
-} from "./intents";
+import { getPendingBookingIntent } from "./intents";
 import {
   claimDueWhatsAppJobs,
   failJob,
@@ -72,18 +67,6 @@ type InboundContext = JobContext & {
   dependencies: WhatsAppWorkerDependencies;
 };
 
-async function saveInboundMessage(ctx: InboundContext): Promise<void> {
-  await appendMessage({
-    id: ctx.inboundMessageId,
-    schoolId: ctx.schoolId,
-    generation: ctx.generation,
-    conversationId: ctx.conversationId,
-    messageId: ctx.message.wamid,
-    role: "user",
-    parts: [{ type: "text", text: ctx.inboundText }],
-  });
-}
-
 async function enqueueNotice(
   ctx: Pick<InboundContext, "schoolId" | "message" | "dependencies">,
   text: string,
@@ -117,45 +100,35 @@ async function sendNotice(
  */
 async function handleConfirmation(
   ctx: InboundContext,
-  intent: WhatsAppBookingIntent | null,
+  intentId: string | null,
   now: Date,
 ): Promise<TurnReply> {
-  // Book BEFORE persisting the user message so a crash/retry replays into the
-  // same deterministic idempotency key instead of silently dropping a confirm.
-  if (!intent) {
-    const text =
-      "That booking option has expired or was replaced. Please ask for available times again.";
-    const committed = await commitWhatsAppTurn({
-      ...ctx,
-      waId: ctx.message.waId,
-      phoneNumberId: ctx.message.phoneNumberId,
-      wamid: ctx.message.wamid,
-      replyText: text,
-      effect: { kind: "expired_confirmation" },
-      now,
-    });
-    if (committed.already_committed) return replayedTurn(ctx);
-    await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
-    return { text };
+  const committed = await confirmWhatsAppBooking({
+    ...ctx,
+    intentId,
+    waId: ctx.message.waId,
+    phoneNumberId: ctx.message.phoneNumberId,
+    wamid: ctx.message.wamid,
+    profileName: ctx.message.profileName,
+    now,
+  });
+  if (committed.already_committed) return replayedTurn(ctx);
+  await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
+  if (committed.booking_id) {
+    try {
+      await attemptPendingForBooking(committed.booking_id);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "whatsapp_booking_email_attempt_failed",
+          bookingId: committed.booking_id,
+          runId: ctx.runId,
+          error: error instanceof Error ? error.message : error,
+        }),
+      );
+    }
   }
-
-  const { reply } = await confirmWhatsAppBooking(
-    {
-      schoolId: ctx.schoolId,
-      conversationId: ctx.conversationId,
-      generation: ctx.generation,
-      intent,
-      waId: ctx.message.waId,
-      phoneNumberId: ctx.message.phoneNumberId,
-      wamid: ctx.message.wamid,
-      profileName: ctx.message.profileName,
-      runId: ctx.runId,
-    },
-    ctx.dependencies,
-  );
-
-  await saveInboundMessage(ctx);
-  return reply;
+  return { text: committed.reply_text, messageId: committed.reply_message_id ?? undefined };
 }
 
 function replayedTurn(ctx: InboundContext): TurnReply {
@@ -230,13 +203,14 @@ async function handleAssistantTurn(
     now,
   });
   if (committed.already_committed) return replayedTurn(ctx);
+  await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
   const leadId = committed.lead_id;
   if (leadId) {
     try {
       await attemptPendingForLead(leadId);
     } catch (error) {
       // The durable email outbox has its own retry lifecycle. An immediate
-      // email-attempt failure must not fail this Turn or suppress its reply.
+      // email-attempt failure must not fail this Turn after sending its reply.
       console.error(
         JSON.stringify({
           event: "whatsapp_lead_email_attempt_failed",
@@ -247,7 +221,6 @@ async function handleAssistantTurn(
       );
     }
   }
-  await attemptWhatsAppDeliveriesNow(committed.delivery_ids, ctx.runId, ctx.dependencies);
   return { text: replyText, messageId: committed.reply_message_id ?? undefined, provenance };
 }
 
@@ -258,7 +231,7 @@ async function handleAssistantTurn(
  *
  * Deterministic confirmation path (addendum "Deterministic confirmation"): a
  * `confirm_booking:<id>` reply button, or an exact affirmative while a pending
- * intent exists, goes straight to `bookSlot` instead of the assistant.
+ * intent exists, goes straight to the atomic confirmation RPC, not the assistant.
  */
 async function planReply(
   ctx: InboundContext,
@@ -266,13 +239,10 @@ async function planReply(
 ): Promise<(() => Promise<TurnReply>) | null> {
   // Booking confirmations bypass the assistant's message limit.
   const buttonIntentId = parseConfirmBookingButton(ctx.inboundText);
+  if (buttonIntentId) return () => handleConfirmation(ctx, buttonIntentId, now);
   const pending = await getPendingBookingIntent(ctx.conversationId, now);
-  if (buttonIntentId || (pending && isAffirmativeConfirmation(ctx.inboundText))) {
-    const intent = buttonIntentId
-      ? await getPendingBookingIntentById(buttonIntentId, ctx.schoolId, now)
-      : pending;
-    return () =>
-      handleConfirmation(ctx, intent?.conversationId === ctx.conversationId ? intent : null, now);
+  if (pending && isAffirmativeConfirmation(ctx.inboundText)) {
+    return () => handleConfirmation(ctx, pending.id, now);
   }
 
   const history = await loadTranscript(ctx.schoolId, ctx.conversationId);

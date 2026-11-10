@@ -11,7 +11,6 @@ export {
 } from "./request-limits";
 
 // WhatsApp budgets are distinct from the email delivery budget.
-export const MAX_BOOKINGS_PER_WA_ID_PER_DAY = 6;
 export const MAX_WHATSAPP_OUTBOUND_PER_WA_ID_PER_DAY = 12;
 
 export async function emailBookingQuotaExceeded(
@@ -44,22 +43,6 @@ export async function recipientQuotaExceeded(
     .gte("created_at", since.toISOString());
   if (error) throw error;
   return (count ?? 0) >= MAX_OUTBOUND_RECIPIENTS_PER_DAY;
-}
-
-export async function whatsappBookingQuotaExceeded(
-  schoolId: string,
-  waId: string,
-  now = new Date(),
-): Promise<boolean> {
-  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const { count, error } = await createAdminClient()
-    .from("bookings")
-    .select("id", { count: "exact", head: true })
-    .eq("school_id", schoolId)
-    .eq("contact_phone_snapshot", waId)
-    .gte("created_at", since.toISOString());
-  if (error) throw error;
-  return (count ?? 0) >= MAX_BOOKINGS_PER_WA_ID_PER_DAY;
 }
 
 export async function whatsappOutboundQuotaExceeded(

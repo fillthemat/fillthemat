@@ -9,8 +9,7 @@ import { splitWhatsAppText } from "./text";
 export type PreparedEffect =
   | { kind: "reply" }
   | ({ kind: "booking_intent" } & BookingIntent)
-  | ({ kind: "lead_request"; contactName: string } & LeadRequest)
-  | { kind: "expired_confirmation" };
+  | ({ kind: "lead_request"; contactName: string } & LeadRequest);
 
 export async function commitWhatsAppTurn(input: {
   schoolId: string;
