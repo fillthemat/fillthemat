@@ -142,7 +142,6 @@ html.dark {
   --color-page-error: #dc2626;
   --color-page-accent-default: #111111;
 
-  /* Scoped design values that were previously arbitrary classes. */
   --tracking-eyebrow: 0.2em;
   --text-metric: 1.75rem;
   --text-metric-lg: 2rem;

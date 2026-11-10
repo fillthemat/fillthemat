@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { hasGatewayToken } from "../src/lib/ai/gateway-token";
 import { getSupabaseEnv, upsertEnv } from "./local-env";
 import { claimAppPort } from "./local-ports";
@@ -24,15 +23,6 @@ async function main() {
   // Commit the updated vars to the current process.
   Object.assign(process.env, updatedVars);
 
-  console.log("Applying Drizzle migrations…");
-  execFileSync("bunx", ["drizzle-kit", "migrate"], {
-    stdio: "inherit",
-    env: { ...process.env },
-  });
-
-  const { seedLocal } = await import("./seed-local");
-  await seedLocal();
-
   console.log("");
   console.log("Local stack is ready.");
   console.log(`  App       bun run dev  → ${updatedVars["NEXT_PUBLIC_SITE_URL"]}`);
@@ -44,7 +34,6 @@ async function main() {
       "Optional: bunx vercel env pull  (real assistant model; scripted local model otherwise).",
     );
   }
-  // seedLocal() leaves the postgres-js pool open; without this, bun never exits.
   process.exit(0);
 }
 
@@ -76,6 +65,7 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
     TURNSTILE_SECRET_KEY: TURNSTILE_TEST_SECRET_KEY,
     ALLOW_SELF_APPROVAL: "true",
     NEXT_PUBLIC_DEV_AUTH: "true",
+    BOOKING_AGENT_MODEL: "google/gemini-2.5-flash-lite",
   };
   if (!process.env.NEXT_PUBLIC_SITE_URL) {
     const LOCAL_BASE_URL = "http://127.0.0.1";
@@ -86,14 +76,12 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
 
   // Set Supabase vars
   const SUPABASE_MAPPINGS = [
-    ["DB_URL", "DATABASE_URL"],
-    ["DB_URL", "DIRECT_URL"],
+    ["DB_URL", "SUPABASE_DB_URL"],
     ["API_URL", "NEXT_PUBLIC_SUPABASE_URL"],
     ["PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"],
+    ["SECRET_KEY", "SUPABASE_SECRET_KEY"],
   ] as const;
   const supabaseEnv = await getSupabaseEnv();
-
-  console.log(`DEBUG: ${JSON.stringify(supabaseEnv)}`);
 
   for (const [sourceKey, targetKey] of SUPABASE_MAPPINGS) {
     const value = supabaseEnv[sourceKey];

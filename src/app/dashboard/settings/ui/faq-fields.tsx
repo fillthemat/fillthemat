@@ -1,17 +1,14 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import { LIMITS } from "../schemas";
 import { TextAreaField, TextField } from "./controls";
 
 export function FaqFields({
-  values,
-  setField,
-  errorFor,
+  control,
   disabled = false,
 }: {
-  values: Record<string, string>;
-  setField: (name: string, value: string) => void;
-  errorFor: (name: string) => string | undefined;
+  control: ComponentProps<typeof TextField>["control"];
   disabled?: boolean;
 }) {
   return (
@@ -23,9 +20,7 @@ export function FaqFields({
         disabled={disabled}
         maxLength={LIMITS.faqQuestion}
         showCount
-        value={values.question}
-        onValueChange={(value) => setField("question", value)}
-        error={errorFor("question")}
+        control={control}
         placeholder="Do we need a uniform for the first class?…"
       />
       <TextAreaField
@@ -35,9 +30,7 @@ export function FaqFields({
         disabled={disabled}
         rows={5}
         maxLength={LIMITS.faqAnswer}
-        value={values.answer}
-        onValueChange={(value) => setField("answer", value)}
-        error={errorFor("answer")}
+        control={control}
         placeholder="No. Comfortable clothes are fine for the trial class…"
       />
     </>

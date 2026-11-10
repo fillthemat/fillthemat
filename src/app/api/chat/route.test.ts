@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_REQUEST_BYTES, MAX_USER_MESSAGE_CHARS } from "@/lib/security/limits";
+import { MAX_REQUEST_BYTES, MAX_USER_MESSAGE_CHARS } from "@/lib/security/request-limits";
 import { loadWebTranscript, startWebTurn } from "@/lib/web-chat/web-chat";
 import { GET, maxDuration, POST } from "./route";
 
@@ -107,7 +107,6 @@ describe("chat request parsing", () => {
 describe("chat refusal statuses", () => {
   it.each([
     ["not_found", 404, "not_found"],
-    ["invalid_conversation", 403, "invalid_conversation"],
     ["generation_in_progress", 409, "generation_in_progress"],
     ["duplicate", 409, "duplicate"],
     ["message_limit", 429, "limit"],

@@ -2,9 +2,9 @@
 
 import { updateProfileAction } from "../actions";
 import { formatTimezone } from "../format";
-import { LIMITS } from "../schemas";
+import { LIMITS, profileSchema, publicAddressSchema } from "../schemas";
 import { Callout, FieldGroup, SelectField, TextAreaField, TextField } from "../ui/controls";
-import { SaveBar, useSettingsForm } from "../ui/section-form";
+import { SaveBar, useSettingsForm } from "../ui/settings-form";
 
 export type ProfileValues = {
   name: string;
@@ -30,17 +30,16 @@ export function ProfileSection({
   published: boolean;
   timezones: string[];
 }) {
-  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
-    useSettingsForm({
-      action: updateProfileAction,
-      initialValues,
-      dirtyKey: "profile:details",
-    });
+  const { state, onSubmit, pending, control, dirty, reset } = useSettingsForm({
+    action: updateProfileAction,
+    initialValues,
+    schema: published ? profileSchema : profileSchema.extend(publicAddressSchema.shape),
+  });
 
   const lockedBadge = published ? "Locked" : undefined;
 
   return (
-    <form ref={formRef} action={formAction} className="flex flex-col gap-6">
+    <form noValidate onSubmit={onSubmit} className="flex flex-col gap-6">
       {published ? (
         <Callout tone="locked" title="Published page">
           Public address and time zone stay locked so shared links and booked classes keep working.
@@ -54,9 +53,7 @@ export function ProfileSection({
           required
           autoComplete="organization"
           maxLength={LIMITS.schoolName}
-          value={values.name}
-          onValueChange={(value) => setField("name", value)}
-          error={errorFor("name")}
+          control={control}
           placeholder="Northside Martial Arts…"
         />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -65,9 +62,7 @@ export function ProfileSection({
             name="slug"
             disabled={published}
             badge={lockedBadge}
-            value={values.slug}
-            onValueChange={(value) => setField("slug", value)}
-            error={errorFor("slug")}
+            control={control}
             spellCheck={false}
             placeholder="northside-martial-arts…"
             helper={
@@ -76,30 +71,22 @@ export function ProfileSection({
                 : "Lowercase letters, numbers, and hyphens. Locks once you publish."
             }
           />
-          {published ? (
-            <TextField
-              label="Time zone"
-              name="timezoneDisplay"
-              disabled
-              badge={lockedBadge}
-              value={formatTimezone(initialValues.timezone)}
-              onValueChange={() => {}}
-              helper="Locked after publishing. Class times use this zone."
-            />
-          ) : (
-            <SelectField
-              label="Time zone"
-              name="timezone"
-              value={values.timezone}
-              onValueChange={(value) => setField("timezone", value)}
-              error={errorFor("timezone")}
-              helper="Class times use this zone. Locks once you publish."
-              options={timezones.map((zone) => ({
-                value: zone,
-                label: formatTimezone(zone),
-              }))}
-            />
-          )}
+          <SelectField
+            label="Time zone"
+            name="timezone"
+            disabled={published}
+            badge={lockedBadge}
+            control={control}
+            helper={
+              published
+                ? "Locked after publishing. Class times use this zone."
+                : "Class times use this zone. Locks once you publish."
+            }
+            options={(published ? [initialValues.timezone] : timezones).map((zone) => ({
+              value: zone,
+              label: formatTimezone(zone),
+            }))}
+          />
         </div>
       </FieldGroup>
 
@@ -112,9 +99,7 @@ export function ProfileSection({
           autoComplete="email"
           spellCheck={false}
           inputMode="email"
-          value={values.notificationEmail}
-          onValueChange={(value) => setField("notificationEmail", value)}
-          error={errorFor("notificationEmail")}
+          control={control}
           helper="Booking and lead alerts. Internal only — never shared with families."
           placeholder="owner@example.com…"
         />
@@ -126,9 +111,7 @@ export function ProfileSection({
             autoComplete="tel"
             inputMode="tel"
             maxLength={LIMITS.phone}
-            value={values.phone}
-            onValueChange={(value) => setField("phone", value)}
-            error={errorFor("phone")}
+            control={control}
             placeholder="(555) 123-4567…"
           />
           <TextField
@@ -138,9 +121,7 @@ export function ProfileSection({
             autoComplete="url"
             spellCheck={false}
             maxLength={LIMITS.website}
-            value={values.website}
-            onValueChange={(value) => setField("website", value)}
-            error={errorFor("website")}
+            control={control}
             placeholder="https://example.com…"
           />
         </div>
@@ -149,9 +130,7 @@ export function ProfileSection({
           name="address"
           autoComplete="street-address"
           maxLength={LIMITS.address}
-          value={values.address}
-          onValueChange={(value) => setField("address", value)}
-          error={errorFor("address")}
+          control={control}
           placeholder="120 Main Street, Suite 3…"
         />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -160,9 +139,7 @@ export function ProfileSection({
             name="city"
             autoComplete="address-level2"
             maxLength={LIMITS.city}
-            value={values.city}
-            onValueChange={(value) => setField("city", value)}
-            error={errorFor("city")}
+            control={control}
             placeholder="Austin…"
           />
           <TextField
@@ -171,9 +148,7 @@ export function ProfileSection({
             autoComplete="country"
             spellCheck={false}
             maxLength={2}
-            value={values.country}
-            onValueChange={(value) => setField("country", value)}
-            error={errorFor("country")}
+            control={control}
             helper="Two letters, such as US or CA."
             placeholder="US…"
             variant="uppercase"
@@ -187,9 +162,7 @@ export function ProfileSection({
           name="parkingNotes"
           rows={3}
           maxLength={LIMITS.parkingNotes}
-          value={values.parkingNotes}
-          onValueChange={(value) => setField("parkingNotes", value)}
-          error={errorFor("parkingNotes")}
+          control={control}
           placeholder="Free lot behind the building, plus street parking after 6 PM…"
         />
         <TextAreaField
@@ -197,9 +170,7 @@ export function ProfileSection({
           name="accessNotes"
           rows={3}
           maxLength={LIMITS.accessNotes}
-          value={values.accessNotes}
-          onValueChange={(value) => setField("accessNotes", value)}
-          error={errorFor("accessNotes")}
+          control={control}
           placeholder="Use the glass door on the left side of the plaza; we are on the second floor…"
         />
         <TextAreaField
@@ -207,9 +178,7 @@ export function ProfileSection({
           name="trialGuidance"
           rows={3}
           maxLength={LIMITS.trialGuidance}
-          value={values.trialGuidance}
-          onValueChange={(value) => setField("trialGuidance", value)}
-          error={errorFor("trialGuidance")}
+          control={control}
           helper="Class-specific clothing belongs in Trial classes."
           placeholder="Arrive 10 minutes early, check in at the front desk, parents watch from the benches…"
         />

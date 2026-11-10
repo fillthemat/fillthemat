@@ -1,49 +1,28 @@
-import { and, asc, eq, gt, inArray, lt, lte, notInArray, sql } from "drizzle-orm";
-import { getDb } from "@/db";
-import { type WhatsAppJob, whatsappJobs } from "@/db/schema";
-import {
-  orderClaimedRows,
-  ownedQueueClaim,
-  recoverClaimedRows,
-  takeClaimLanes,
-} from "@/lib/queue-claims";
 import { deadEventFrom, logDeadTransition } from "@/lib/retry-log";
-import {
-  internalFailureReasonFrom,
-  MAX_EXECUTIONS,
-  type RetryFailure,
-  whatsappRetryDecision as retryDecision,
-} from "@/lib/retry-policy";
+import { type RetryFailure, whatsappRetryDecision as retryDecision } from "@/lib/retry-policy";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { InboundWhatsAppMessage } from "./parse";
-import { enqueueJobFallback } from "./job-fallback";
+import { jobFromRow, updateJobClaim, type WhatsAppJob } from "./queue-store";
+export type { WhatsAppJob } from "./queue-store";
 
-/** A claim is fenced by owner, timestamp and execution count, not just row ID. */
-function ownedClaim(job: WhatsAppJob) {
-  return ownedQueueClaim(whatsappJobs, job);
-}
-
-/**
- * Enqueue one `whatsapp_jobs` row per inbound message. `dedupe_key` is the
- * inbound wamid, so a Meta retry of the same webhook creates at most one job.
- */
 export async function enqueueInboundJobs(messages: InboundWhatsAppMessage[]): Promise<number> {
-  const db = getDb();
   let enqueued = 0;
   for (const message of messages) {
-    const [row] = await db
-      .insert(whatsappJobs)
-      .values({
-        dedupeKey: message.wamid,
-        phoneNumberId: message.phoneNumberId,
-        kind: "inbound_message",
-        payload: message,
-        state: "pending",
-        // Immediate work uses the same clock as the worker's due-time cutoff.
-        nextAttemptAt: new Date(),
-      })
-      .onConflictDoNothing({ target: whatsappJobs.dedupeKey })
-      .returning({ id: whatsappJobs.id });
-    if (row) enqueued += 1;
+    const { data } = await createAdminClient()
+      .from("whatsapp_jobs")
+      .upsert(
+        {
+          dedupe_key: message.wamid,
+          phone_number_id: message.phoneNumberId,
+          kind: "inbound_message",
+          payload: { ...message },
+          next_attempt_at: new Date().toISOString(),
+        },
+        { onConflict: "dedupe_key", ignoreDuplicates: true },
+      )
+      .select("id")
+      .throwOnError();
+    enqueued += data?.length ?? 0;
   }
   return enqueued;
 }
@@ -56,72 +35,30 @@ export async function claimDueWhatsAppJobs(
     retryOnly?: boolean;
     phoneNumberIds?: string[];
   },
-) {
-  const db = getDb();
-  const now = opts?.now ?? new Date();
-  const limit = opts?.limit ?? 10;
-  if (limit <= 0 || opts?.phoneNumberIds?.length === 0) return [];
-  return db.transaction(async (tx) => {
-    const due = await takeClaimLanes(
-      limit,
-      async (fresh, count, excludedIds) => {
-        const rows = await tx
-          .select()
-          .from(whatsappJobs)
-          .where(
-            and(
-              inArray(whatsappJobs.state, ["pending", "failed"]),
-              lte(whatsappJobs.nextAttemptAt, now),
-              opts?.phoneNumberIds
-                ? inArray(whatsappJobs.phoneNumberId, opts.phoneNumberIds)
-                : undefined,
-              fresh ? eq(whatsappJobs.attempts, 0) : gt(whatsappJobs.attempts, 0),
-              excludedIds.length ? notInArray(whatsappJobs.id, excludedIds) : undefined,
-            ),
-          )
-          .orderBy(asc(whatsappJobs.createdAt), asc(whatsappJobs.id))
-          .for("update", { skipLocked: true })
-          .limit(count);
-        return rows;
-      },
-      opts?.retryOnly,
-    );
-
-    if (due.length === 0) return [];
-
-    const ids = due.map((row) => row.id);
-    const claimed = await tx
-      .update(whatsappJobs)
-      .set({
-        state: "claimed",
-        claimedAt: now,
-        claimedBy: runId,
-        updatedAt: now,
-      })
-      .where(inArray(whatsappJobs.id, ids))
-      .returning();
-    return orderClaimedRows(due, claimed);
-  });
+): Promise<WhatsAppJob[]> {
+  const { data } = await createAdminClient()
+    .rpc("claim_whatsapp_jobs", {
+      p_run_id: runId,
+      p_limit: opts?.limit ?? 10,
+      p_now: (opts?.now ?? new Date()).toISOString(),
+      p_retry_only: opts?.retryOnly,
+      p_phone_number_ids: opts?.phoneNumberIds,
+    })
+    .throwOnError();
+  return (data ?? []).map(jobFromRow);
 }
 
-/** Future retries only: already-due locked rows must not cause a busy loop. */
 export async function nextWhatsAppJobRetryAt(now: Date, before: Date, phoneNumberIds?: string[]) {
-  if (phoneNumberIds?.length === 0) return null;
-  const [row] = await getDb()
-    .select({ at: whatsappJobs.nextAttemptAt })
-    .from(whatsappJobs)
-    .where(
-      and(
-        inArray(whatsappJobs.state, ["pending", "failed"]),
-        gt(whatsappJobs.attempts, 0),
-        gt(whatsappJobs.nextAttemptAt, now),
-        lt(whatsappJobs.nextAttemptAt, before),
-        phoneNumberIds ? inArray(whatsappJobs.phoneNumberId, phoneNumberIds) : undefined,
-      ),
-    )
-    .orderBy(asc(whatsappJobs.nextAttemptAt))
-    .limit(1);
-  return row?.at ?? null;
+  let query = createAdminClient()
+    .from("whatsapp_jobs")
+    .select("next_attempt_at")
+    .in("state", ["pending", "failed"])
+    .gt("attempts", 0)
+    .gt("next_attempt_at", now.toISOString())
+    .lt("next_attempt_at", before.toISOString());
+  if (phoneNumberIds) query = query.in("phone_number_id", phoneNumberIds);
+  const { data } = await query.order("next_attempt_at").limit(1).maybeSingle().throwOnError();
+  return data ? new Date(data.next_attempt_at) : null;
 }
 
 export async function markJobDone(
@@ -129,40 +66,36 @@ export async function markJobDone(
   schoolId?: string | null,
   now = new Date(),
 ): Promise<boolean> {
-  const db = getDb();
-  const rows = await db
-    .update(whatsappJobs)
-    .set({
+  return Boolean(
+    await updateJobClaim(job, {
       state: "done",
-      schoolId: schoolId ?? undefined,
-      lastError: null,
-      failureReason: null,
-      terminalCause: null,
-      claimedAt: null,
-      claimedBy: null,
-      updatedAt: now,
-    })
-    .where(ownedClaim(job))
-    .returning({ id: whatsappJobs.id });
-  return rows.length > 0;
+      school_id: schoolId ?? undefined,
+      last_error: null,
+      failure_reason: null,
+      terminal_cause: null,
+      claimed_at: null,
+      claimed_by: null,
+      updated_at: now.toISOString(),
+    }),
+  );
 }
 
-/** Persist the execution before doing reply work; a lock deferral never calls this. */
 export async function startJobExecution(
   job: WhatsAppJob,
   schoolId?: string | null,
-  now = new Date(),
+  _now = new Date(),
 ): Promise<WhatsAppJob | null> {
-  const [row] = await getDb()
-    .update(whatsappJobs)
-    .set({
-      attempts: sql`${whatsappJobs.attempts} + 1`,
-      schoolId: schoolId ?? undefined,
-      updatedAt: now,
+  if (!job.claimedAt || !job.claimedBy) return null;
+  const { data } = await createAdminClient()
+    .rpc("start_whatsapp_job", {
+      p_id: job.id,
+      p_claimed_by: job.claimedBy,
+      p_claimed_at: job.claimedAt,
+      p_attempts: job.attempts,
+      p_school_id: schoolId ?? undefined,
     })
-    .where(and(ownedClaim(job), lt(whatsappJobs.attempts, MAX_EXECUTIONS)))
-    .returning();
-  return row ?? null;
+    .throwOnError();
+  return data?.[0] ? jobFromRow(data[0]) : null;
 }
 
 export async function failJob(
@@ -171,30 +104,21 @@ export async function failJob(
   message: string,
   now = new Date(),
 ): Promise<"retrying" | "dead" | "deferred"> {
-  const db = getDb();
   const decision = retryDecision(failure, job.attempts, now);
-  const rows = await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(whatsappJobs)
-      .set({
-        state: decision.action === "stop" ? "dead" : "failed",
-        nextAttemptAt: decision.action === "retry" ? decision.at : undefined,
-        lastError: message.slice(0, 500),
-        failureReason: failure.reason,
-        terminalCause: decision.action === "stop" ? decision.cause : null,
-        claimedAt: null,
-        claimedBy: null,
-        updatedAt: now,
-      })
-      .where(ownedClaim(job))
-      .returning();
-    if (rows[0]) await enqueueJobFallback(tx, rows[0], now);
-    return rows;
+  // The SQL death hook enqueues the fallback in this same transaction.
+  const row = await updateJobClaim(job, {
+    state: decision.action === "stop" ? "dead" : "failed",
+    next_attempt_at: decision.action === "retry" ? decision.at.toISOString() : undefined,
+    last_error: message.slice(0, 500),
+    failure_reason: failure.reason,
+    terminal_cause: decision.action === "stop" ? decision.cause : null,
+    claimed_at: null,
+    claimed_by: null,
+    updated_at: now.toISOString(),
   });
-  if (rows.length === 0) return "deferred";
-  if (decision.action === "stop") {
-    logDeadTransition(deadEventFrom(rows[0], "whatsapp_job", job.claimedBy ?? "unknown"));
-  }
+  if (!row) return "deferred";
+  if (decision.action === "stop")
+    logDeadTransition(deadEventFrom(row, "whatsapp_job", job.claimedBy ?? "unknown"));
   return decision.action === "stop" ? "dead" : "retrying";
 }
 
@@ -203,84 +127,37 @@ export async function rescheduleJob(
   delayMs = 1000,
   now = new Date(),
 ): Promise<void> {
-  const db = getDb();
-  await db
-    .update(whatsappJobs)
-    .set({
-      state: "pending",
-      nextAttemptAt: new Date(now.getTime() + delayMs),
-      claimedAt: null,
-      claimedBy: null,
-      updatedAt: now,
-    })
-    .where(ownedClaim(job));
+  await updateJobClaim(job, {
+    state: "pending",
+    next_attempt_at: new Date(now.getTime() + delayMs).toISOString(),
+    claimed_at: null,
+    claimed_by: null,
+    updated_at: now.toISOString(),
+  });
 }
 
-/** Return untouched budget-limited work without consuming an execution. */
 export async function releaseWhatsAppJobClaim(job: WhatsAppJob, now: Date) {
-  await getDb()
-    .update(whatsappJobs)
-    .set({
-      state: job.attempts > 0 ? "failed" : "pending",
-      claimedAt: null,
-      claimedBy: null,
-      updatedAt: now,
-    })
-    .where(ownedClaim(job));
+  await updateJobClaim(job, {
+    state: job.attempts > 0 ? "failed" : "pending",
+    claimed_at: null,
+    claimed_by: null,
+    updated_at: now.toISOString(),
+  });
 }
 
-/**
- * Requeue `claimed` jobs whose worker died mid-flight (e.g. an `after()`
- * invocation that crashed) so a later sweep can retry them instead of
- * stranding them forever.
- */
 export async function recoverStuckWhatsAppJobs(
   staleBeforeMs = 5 * 60_000,
   now = new Date(),
   runId = "recovery",
   phoneNumberIds?: string[],
 ): Promise<{ recovered: number; dead: number }> {
-  if (phoneNumberIds?.length === 0) return { recovered: 0, dead: 0 };
-  const db = getDb();
-  const recovered = await db.transaction(async (tx) => {
-    const stale = await tx
-      .select()
-      .from(whatsappJobs)
-      .where(
-        and(
-          eq(whatsappJobs.state, "claimed"),
-          lt(whatsappJobs.claimedAt, new Date(now.getTime() - staleBeforeMs)),
-          phoneNumberIds ? inArray(whatsappJobs.phoneNumberId, phoneNumberIds) : undefined,
-        ),
-      )
-      .for("update", { skipLocked: true });
-    return recoverClaimedRows(stale, async (job) => {
-      const reason = internalFailureReasonFrom(job.failureReason, "worker_crashed");
-      const decision = retryDecision({ kind: "internal", reason }, job.attempts, now);
-      const [row] = await tx
-        .update(whatsappJobs)
-        .set({
-          state: decision.action === "stop" ? "dead" : "pending",
-          claimedAt: null,
-          claimedBy: null,
-          updatedAt: now,
-          // Keep the previous diagnostic; crash recovery must not erase it.
-          failureReason:
-            decision.action === "stop" ? (job.failureReason ?? reason) : job.failureReason,
-          lastError:
-            decision.action === "stop" ? (job.lastError ?? "worker_crashed") : job.lastError,
-          terminalCause: decision.action === "stop" ? decision.cause : null,
-        })
-        .where(ownedClaim(job))
-        .returning();
-      if (row?.state === "dead") {
-        await enqueueJobFallback(tx, row, now);
-      }
-      return row;
-    });
-  });
-  for (const job of recovered.dead) {
-    logDeadTransition(deadEventFrom(job, "whatsapp_job", runId));
-  }
-  return { recovered: recovered.recovered, dead: recovered.dead.length };
+  const { data } = await createAdminClient()
+    .rpc("recover_whatsapp_jobs", {
+      p_stale_before: new Date(now.getTime() - staleBeforeMs).toISOString(),
+      p_phone_number_ids: phoneNumberIds,
+    })
+    .throwOnError();
+  const dead = (data ?? []).filter((row) => row.state === "dead");
+  for (const row of dead) logDeadTransition(deadEventFrom(row, "whatsapp_job", runId));
+  return { recovered: (data?.length ?? 0) - dead.length, dead: dead.length };
 }

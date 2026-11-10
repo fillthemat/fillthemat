@@ -43,7 +43,11 @@ export function foldIcsLine(line: string): string {
 
   while (offset < bytes.length) {
     let end = Math.min(offset + limit, bytes.length);
-    while (end > offset && (bytes[end] & 0b1100_0000) === 0b1000_0000) {
+    while (
+      end > offset &&
+      end < bytes.length &&
+      (bytes.readUInt8(end) & 0b1100_0000) === 0b1000_0000
+    ) {
       end -= 1;
     }
     if (end === offset) {

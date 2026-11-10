@@ -28,7 +28,7 @@ Safe class-time management (reopen / guided replacement for windows with future 
 
 ## WhatsApp
 
-Phases 1–5 (schema through WhatsApp-sourced leads and bookings) are implemented. Remaining work is Phase 6: human Meta production rollout (app, WABA, tokens, templates, webhook HTTPS, App Review, pilot school). Checklist: `docs/whatsapp-plan.md` § Phase 6. Cron decision: `docs/decisions/whatsapp-cron-after.md`.
+Phases 1–5 (schema through WhatsApp-sourced leads and bookings) are implemented. Remaining work is Phase 6: human Meta production rollout (app, WABA, tokens, templates, webhook HTTPS, App Review, pilot school).
 
 - **Pre-pilot gate: [#78](https://github.com/fillthemat/fillthemat/issues/78)** — use verified customer
   message timestamps for the 24-hour customer-service window, not worker processing time. Bounded

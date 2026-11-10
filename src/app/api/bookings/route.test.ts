@@ -18,6 +18,7 @@ vi.mock("@/lib/schools/public", () => ({
 vi.mock("@/lib/security/turnstile", () => ({
   verifyTurnstile: dependencies.verifyTurnstile,
 }));
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/security/limits", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/security/limits")>()),
   emailBookingQuotaExceeded: dependencies.emailBookingQuotaExceeded,
@@ -84,7 +85,7 @@ it.each(["unexpected", "degraded"])(
     expect(response.status).toBe(unexpected ? 500 : 200);
     const envelope = await response.json();
     expect(log).toHaveBeenCalledExactlyOnceWith(expect.any(String));
-    const line = log.mock.calls[0][0];
+    const line = log.mock.calls[0]![0];
     expect(line).not.toContain("\n");
     expect(line).not.toContain("SENTINEL");
     const record = JSON.parse(line);

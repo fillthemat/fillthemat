@@ -31,10 +31,6 @@ export function formatOwnerDate(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, "MMM d, yyyy");
 }
 
-export function formatOwnerDateTime(date: Date, timezone: string): string {
-  return formatInTimeZone(date, timezone, "MMM d, yyyy, h:mm a");
-}
-
 export function bookingStatusVariant(status: string): "outline" | "success" | "warning" | "muted" {
   if (status === "showed") return "success";
   if (status === "no_show") return "warning";

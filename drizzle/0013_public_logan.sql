@@ -1,1 +1,0 @@
-ALTER TYPE "app"."email_kind" ADD VALUE 'owner_whatsapp_confirmation_failed';

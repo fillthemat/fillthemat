@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getOwnedSchool } from "@/lib/auth/current-school";
+import { getCurrentSchool } from "@/lib/auth/current-school";
 import { requireUser } from "@/lib/auth/current-user";
 import { listTimezones } from "@/lib/timezones";
 import { createSchoolAction } from "./actions";
@@ -12,8 +12,9 @@ export default async function OnboardingPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const user = await requireUser();
-  const school = await getOwnedSchool(user.id);
+  const school = await getCurrentSchool();
   if (school) redirect("/dashboard");
+
   const params = await searchParams;
   const timezones = listTimezones();
 

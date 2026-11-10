@@ -24,10 +24,10 @@ function runGh(args: string[], allowedStatuses = [0]) {
 }
 
 export function queuePullRequest(args: string[]) {
-  if (args.length !== 1 || !/^[1-9]\d*$/.test(args[0])) {
+  const number = args[0];
+  if (args.length !== 1 || !number || !/^[1-9]\d*$/.test(number)) {
     throw new Error("Usage: bun run pr:queue <pr-number>");
   }
-  const number = args[0];
   const pr = z
     .object({
       id: z.string().min(1),

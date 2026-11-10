@@ -1,10 +1,10 @@
 import { DashboardNav } from "@/components/dashboard/nav";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { school } = await requireOwnedSchool();
+  const { school } = await requireSchool();
 
   return (
     <div className="dashboard flex min-h-dvh flex-col md:flex-row">

@@ -20,15 +20,24 @@ export function loadLocalEnv(envFile = ".env.local") {
     if (value !== undefined && !process.env[key]) process.env[key] = value;
   }
   for (const name of GATEWAY_TOKEN_ENV_VARS) delete process.env[name];
-  if (!process.env.DATABASE_URL) {
-    throw new Error(`DATABASE_URL is not set after loading ${envFile}.`);
+  if (!process.env.SUPABASE_DB_URL) {
+    throw new Error(`SUPABASE_DB_URL is not set after loading ${envFile}.`);
   }
 }
 
 export function authSql() {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is not set");
+  const url = localDatabaseUrl();
   return postgres(url, { prepare: false, max: 1 });
+}
+
+/** Refuse destructive fixtures against anything but this machine's local stack. */
+export function localDatabaseUrl() {
+  const url = process.env.SUPABASE_DB_URL;
+  if (!url) throw new Error("SUPABASE_DB_URL is not set");
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname)) {
+    throw new Error("Integration fixtures require a local database");
+  }
+  return url;
 }
 
 /**
@@ -54,12 +63,12 @@ export async function whileSavingMessages(
     `create function public.${name}() returns trigger language plpgsql as $$ begin ${statement}; return new; end $$`,
   );
   await sql.unsafe(
-    `create trigger ${name} before insert on app.messages for each row when (new.conversation_id = '${conversationId}' and new.role = '${role}') execute function public.${name}()`,
+    `create trigger ${name} before insert on public.messages for each row when (new.conversation_id = '${conversationId}' and new.role = '${role}') execute function public.${name}()`,
   );
   try {
     await work();
   } finally {
-    await sql.unsafe(`drop trigger ${name} on app.messages`);
+    await sql.unsafe(`drop trigger ${name} on public.messages`);
     await sql.unsafe(`drop function public.${name}()`);
   }
 }

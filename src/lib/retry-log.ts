@@ -1,24 +1,45 @@
-import type { TerminalCause } from "@/db/schema";
+import type { TerminalCause } from "./retry-policy";
 
 export function deadEventFrom(
-  row: {
-    id: string;
-    schoolId: string | null;
-    failureReason: string | null;
-    failureCode?: number | null;
-    terminalCause: TerminalCause | null;
-    attempts: number;
-  },
+  row: { id: string; attempts: number } & (
+    | {
+        schoolId: string | null;
+        failureReason: string | null;
+        failureCode?: number | null;
+        terminalCause: TerminalCause | null;
+      }
+    | {
+        school_id: string | null;
+        failure_reason: string | null;
+        failure_code?: number | null;
+        terminal_cause: string | null;
+      }
+  ),
   queue: "whatsapp_job" | "whatsapp_delivery" | "email_delivery",
   runId: string,
 ) {
+  const fields =
+    "school_id" in row
+      ? {
+          schoolId: row.school_id,
+          failureReason: row.failure_reason,
+          failureCode: row.failure_code,
+          terminalCause: row.terminal_cause,
+        }
+      : row;
+  const terminalCause: TerminalCause =
+    fields.terminalCause === "permanent"
+      ? "permanent"
+      : fields.terminalCause === "stale"
+        ? "stale"
+        : "attempts_exhausted";
   return {
     queue,
     id: row.id,
-    schoolId: row.schoolId,
-    reason: row.failureReason ?? "unknown_failure",
-    code: row.failureCode,
-    terminalCause: row.terminalCause ?? "attempts_exhausted",
+    schoolId: fields.schoolId,
+    reason: fields.failureReason ?? "unknown_failure",
+    code: fields.failureCode,
+    terminalCause,
     executions: row.attempts,
     runId,
   };

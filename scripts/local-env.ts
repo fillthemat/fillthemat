@@ -1,9 +1,8 @@
 export function missingRequiredKeys(): string[] {
   const REQUIRED_LOCAL_KEYS = [
-    "DATABASE_URL",
-    "DIRECT_URL",
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+    "SUPABASE_SECRET_KEY",
     "NEXT_PUBLIC_SITE_URL",
     "CRON_SECRET",
     "NEXT_PUBLIC_TURNSTILE_SITE_KEY",

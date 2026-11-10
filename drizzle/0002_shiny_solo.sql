@@ -1,2 +1,0 @@
-ALTER TABLE "app"."conversations" ADD COLUMN "wa_id_hash" text;--> statement-breakpoint
-ALTER TABLE "app"."conversations" ADD CONSTRAINT "conversations_school_wa_id_hash" UNIQUE("school_id","wa_id_hash");
