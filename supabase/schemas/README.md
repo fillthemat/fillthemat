@@ -280,3 +280,25 @@ eligibility; queue RPC `p_now` controls claim/recovery scheduling only.
    add transactional backfills before removing or enforcing moved columns.
 4. Run `bun run db:migrate:up` and `bun run db:typegen`.
 5. Run the integration tests and generate again to confirm no remaining drift.
+
+## Baseline cutover
+
+New databases apply `20261121213025_baseline.sql` normally. For disposable local
+stacks with the old history, run `supabase db reset` from the intended worktree
+(this deletes local data).
+
+For existing hosted databases, **do not run the baseline SQL**. Before merging
+the squash, coordinate with the operator of the
+[production migration workflow](../../.github/workflows/migrations.yml):
+
+1. Pause migration pushes, take a backup, and verify on each target that all 17
+   pre-squash migrations are applied and that its application schema matches the
+   baseline. The old files are listed by `git ls-tree --name-only 23aaf64:supabase/migrations`.
+   Resolve missing migrations or schema drift before proceeding.
+2. From the squash checkout, record the baseline without running its SQL:
+   `supabase migration repair --remote --status applied 20261121213025`.
+   Then use `supabase migration repair --remote --status reverted` with the 17
+   replaced versions to remove only those history records, not their schema or data.
+3. Confirm `supabase migration list --remote` agrees with the new files and
+   `supabase db push --remote --dry-run` has nothing to apply. Resume migration
+   pushes only once the squash is on `main`.
