@@ -1,10 +1,11 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { FieldGroup } from "@/components/ui/field";
 import { updatePricingAction } from "../actions";
-import { LIMITS } from "../schemas";
+import { LIMITS, pricingSchema } from "../schemas";
 import { Callout, TextAreaField } from "../ui/controls";
-import { SaveBar, useSettingsForm } from "../ui/section-form";
+import { SaveBar, useSettingsForm } from "../ui/settings-form";
 
 const EXAMPLE = `Trial class: free for first-time students.
 Kids program: $120 per month, no sign-up fee.
@@ -13,32 +14,31 @@ Uniform: $60, ordered after the first month.
 Family discount: 10% off for each additional sibling.`;
 
 export function PricingSection({ pricing }: { pricing: string }) {
-  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
-    useSettingsForm({
-      action: updatePricingAction,
-      initialValues: { pricing },
-      dirtyKey: "pricing:text",
-    });
+  const { state, onSubmit, pending, control, values, setField, dirty, reset } = useSettingsForm({
+    action: updatePricingAction,
+    initialValues: { pricing },
+    schema: pricingSchema,
+  });
 
   return (
-    <form ref={formRef} action={formAction} className="flex flex-col gap-5">
+    <form noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
       <Callout>
         Your agent shares only what you write here. It will not invent discounts or guess a missing
         price.
       </Callout>
 
-      <TextAreaField
-        label="Prices and conditions your agent may share"
-        name="pricing"
-        rows={10}
-        maxLength={LIMITS.pricing}
-        value={values.pricing}
-        onValueChange={(value) => setField("pricing", value)}
-        error={errorFor("pricing")}
-        placeholder="Trial class: free for first-time students…"
-      />
+      <FieldGroup>
+        <TextAreaField
+          label="Prices and conditions your agent may share"
+          name="pricing"
+          rows={10}
+          maxLength={LIMITS.pricing}
+          control={control}
+          placeholder="Trial class: free for first-time students…"
+        />
+      </FieldGroup>
 
-      {values.pricing.trim().length === 0 ? (
+      {(values.pricing ?? "").trim().length === 0 ? (
         <div className="flex flex-col items-start gap-2">
           <p className="text-sm font-medium">Example</p>
           <pre className="max-w-full overflow-x-auto text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">

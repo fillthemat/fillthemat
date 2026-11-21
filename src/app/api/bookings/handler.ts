@@ -5,11 +5,11 @@ import type {
   BookSlotResult,
   findBookingByIdempotencyKey,
 } from "@/lib/schedule/book-slot";
-import type { getPublicSchoolBySlug } from "@/lib/schools/public";
+import type { getSchoolForBooking } from "@/lib/schools/public";
 import type { emailBookingQuotaExceeded, recipientQuotaExceeded } from "@/lib/security/limits";
 import type { verifyTurnstile } from "@/lib/security/turnstile";
 import { getRequestIp } from "@/lib/request";
-import { requestBodyTooLarge } from "@/lib/security/limits";
+import { requestBodyTooLarge } from "@/lib/security/request-limits";
 import { bookingRequestSchema } from "@/lib/validation";
 
 export type BookingFailure = {
@@ -28,7 +28,7 @@ export type BookingFailure = {
 };
 
 type Dependencies = {
-  getPublicSchoolBySlug: typeof getPublicSchoolBySlug;
+  getSchoolForBooking: typeof getSchoolForBooking;
   verifyTurnstile: typeof verifyTurnstile;
   findBookingByIdempotencyKey: typeof findBookingByIdempotencyKey;
   emailBookingQuotaExceeded: typeof emailBookingQuotaExceeded;
@@ -120,8 +120,11 @@ export function createBookingHandler(dependencies: Dependencies) {
       if (!parsed.success) return refuse("invalid", 400);
       const body = parsed.data;
       operation = "school_lookup";
-      const school = await dependencies.getPublicSchoolBySlug(body.schoolSlug);
-      if (!school) return refuse("not_found", 404);
+      const access = await dependencies.getSchoolForBooking(body.schoolSlug, {
+        preview: body.preview,
+      });
+      if (!access) return refuse("not_found", 404);
+      const { school, previewOwnerId } = access;
       schoolId = school.id;
       operation = "verification";
       if (!(await dependencies.verifyTurnstile(body.turnstileToken, getRequestIp(request.headers))))
@@ -151,6 +154,7 @@ export function createBookingHandler(dependencies: Dependencies) {
           participant: body.participant,
           landingSessionToken: body.landingSessionToken,
           conversationResumeToken: body.conversationResumeToken,
+          ...(previewOwnerId ? { previewOwnerId } : {}),
         });
       }
       if (!result.ok) {
@@ -174,6 +178,7 @@ export function createBookingHandler(dependencies: Dependencies) {
         offeringName: result.booking.offeringNameSnapshot,
         participantName: result.booking.participantNameSnapshot,
         idempotent: result.idempotent,
+        preview: result.booking.isPreview,
       });
     } catch (error) {
       return refuse("internal_error", 500, error);

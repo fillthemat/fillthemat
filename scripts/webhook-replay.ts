@@ -17,7 +17,7 @@ async function main() {
   let fixture = "text-inbound.json";
   const fixtureIndex = args.indexOf("--fixture");
   if (fixtureIndex >= 0 && args[fixtureIndex + 1]) {
-    fixture = args[fixtureIndex + 1];
+    fixture = args[fixtureIndex + 1]!;
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;

@@ -19,6 +19,8 @@ export type ConfirmationValues = {
   contactName: string;
   contactEmail: string;
   contactPhone: string;
+  /** Asks for owner-preview access; the server decides whether it applies. */
+  preview: boolean;
 };
 
 export function BookingConfirmationForm({
@@ -26,7 +28,7 @@ export function BookingConfirmationForm({
   onBooked,
 }: {
   values: ConfirmationValues;
-  onBooked: (result: { offeringName: string; whenLabel: string }) => void;
+  onBooked: (result: { offeringName: string; whenLabel: string; preview: boolean }) => void;
 }) {
   const [contactName, setContactName] = useState(values.contactName);
   const [contactEmail, setContactEmail] = useState(values.contactEmail);
@@ -76,11 +78,13 @@ export function BookingConfirmationForm({
         turnstileToken,
         landingSessionToken: readLandingSessionToken(values.slug),
         conversationResumeToken: readConversationToken(values.slug),
+        preview: values.preview,
       }),
-      onBooked: () =>
+      onBooked: ({ preview }) =>
         onBooked({
           offeringName: values.offeringName,
           whenLabel: values.whenLabel,
+          preview,
         }),
     });
   }

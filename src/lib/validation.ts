@@ -70,6 +70,8 @@ export const bookingRequestSchema = z.object({
   turnstileToken: z.string().min(1).max(4096),
   landingSessionToken: z.string().min(1).max(256).optional(),
   conversationResumeToken: z.string().min(1).max(256).optional(),
+  /** Requests owner-preview access; the server verifies ownership. */
+  preview: z.boolean().optional(),
 });
 
 export const leadRequestSchema = z.object({

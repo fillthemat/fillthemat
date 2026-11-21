@@ -2,8 +2,7 @@ import type { VercelConfig } from "@vercel/config/v1";
 
 export const config: VercelConfig = {
   bunVersion: "1.4.x",
-  // Production builds migrate, check schema readiness, then build the app.
-  // Preview builds and the application runtime never apply migrations.
+  // GitHub Actions owns production migrations; Vercel only builds.
   buildCommand: "bun run build:vercel",
   framework: "nextjs",
   // Playwright HTML reports live on GitHub Pages (`gh-pages`). Vercel must not
@@ -17,7 +16,7 @@ export const config: VercelConfig = {
     },
   },
   // Belt-and-suspenders if a gh-pages deployment is created anyway (exit 0 =
-  // skip). See docs/decisions/vercel-gh-pages-deployments.md. Check in the shell
+  // skip). Check in the shell
   // first: the report branch has no package.json or scripts/.
   // Other branches use the docs-only Preview skip; Production/uncertainty build.
   ignoreCommand: '[ "$VERCEL_GIT_COMMIT_REF" = "gh-pages" ] || bun run vercel:ignore-build',

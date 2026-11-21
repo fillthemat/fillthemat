@@ -514,7 +514,7 @@ describe("the assistant's streamed reply", () => {
         text: "Wednesday at 6:00 PM; contact request for Sam.",
       }),
     );
-    const call = model.doStreamCalls[0];
+    const call = model.doStreamCalls[0]!;
     expect(call.tools?.map((tool) => tool.name)).toEqual([
       "list_trial_offerings",
       "list_trial_occurrences",
@@ -555,7 +555,7 @@ describe("the assistant's streamed reply", () => {
     await response.text();
 
     expect(finishes).toHaveLength(1);
-    const [{ reply, completion }] = finishes;
+    const { reply, completion } = finishes[0]!;
     expect(completion).toBe("complete");
     expect(reply.id).not.toBe("");
     expect(reply.role).toBe("assistant");

@@ -1,5 +1,5 @@
-import { portFromSiteUrl } from "./local-ports";
-import { fail } from "./local-process";
+import { portFromSiteUrl } from "./local-ports.ts";
+import { fail } from "./local-process.ts";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 const port = portFromSiteUrl(siteUrl);

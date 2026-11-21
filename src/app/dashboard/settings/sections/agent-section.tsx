@@ -1,12 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { FieldGroup as UiFieldGroup } from "@/components/ui/field";
 import { updateAgentAction } from "../actions";
-import { LIMITS } from "../schemas";
+import { agentSchema, LIMITS } from "../schemas";
 import { Callout, FieldGroup, TextAreaField } from "../ui/controls";
 import { PreviewPanel } from "../ui/preview-panel";
 import { PublicPagePreview } from "../ui/public-page-preview";
-import { SaveBar, useSettingsForm } from "../ui/section-form";
+import { SaveBar, useSettingsForm } from "../ui/settings-form";
 
 const EXAMPLE_INSTRUCTIONS = `Sound warm and encouraging, and keep answers short.
 Call students by their first name once you know it.
@@ -29,27 +30,26 @@ export function AgentSection({
   logoUrl: string | null;
   primaryColor: string | null;
 }) {
-  const { state, formAction, formRef, pending, values, setField, dirty, reset, errorFor } =
-    useSettingsForm({
-      action: updateAgentAction,
-      initialValues: { welcomeMessage, agentInstructions },
-      dirtyKey: "agent:settings",
-    });
+  const { state, onSubmit, pending, control, values, setField, dirty, reset } = useSettingsForm({
+    action: updateAgentAction,
+    initialValues: { welcomeMessage, agentInstructions },
+    schema: agentSchema,
+  });
 
   return (
     <div className="grid gap-6 xl:grid-cols-(--settings-page-columns)">
-      <form ref={formRef} action={formAction} className="flex min-w-0 flex-col gap-5">
-        <TextAreaField
-          label="Welcome message"
-          name="welcomeMessage"
-          rows={4}
-          maxLength={LIMITS.welcomeMessage}
-          value={values.welcomeMessage}
-          onValueChange={(value) => setField("welcomeMessage", value)}
-          error={errorFor("welcomeMessage")}
-          helper="Leave blank to use a simple default greeting."
-          placeholder="Hi! I can answer questions about our kids and adult classes and help you book a free trial…"
-        />
+      <form noValidate onSubmit={onSubmit} className="flex min-w-0 flex-col gap-5">
+        <UiFieldGroup>
+          <TextAreaField
+            label="Welcome message"
+            name="welcomeMessage"
+            rows={4}
+            maxLength={LIMITS.welcomeMessage}
+            control={control}
+            helper="Leave blank to use a simple default greeting."
+            placeholder="Hi! I can answer questions about our kids and adult classes and help you book a free trial…"
+          />
+        </UiFieldGroup>
 
         <FieldGroup title="Tone and qualification questions">
           <TextAreaField
@@ -57,13 +57,11 @@ export function AgentSection({
             name="agentInstructions"
             rows={8}
             maxLength={LIMITS.agentInstructions}
-            value={values.agentInstructions}
-            onValueChange={(value) => setField("agentInstructions", value)}
-            error={errorFor("agentInstructions")}
+            control={control}
             helper="Tone and extra questions only. Facts belong in the other categories."
             placeholder="Sound warm and encouraging, and keep answers short…"
           />
-          {values.agentInstructions.trim().length === 0 ? (
+          {(values.agentInstructions ?? "").trim().length === 0 ? (
             <div className="flex flex-col items-start gap-2">
               <p className="text-sm font-medium">Example</p>
               <pre className="max-w-full overflow-x-auto text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
@@ -111,7 +109,7 @@ export function AgentSection({
           location={location}
           logoUrl={logoUrl ?? undefined}
           accentColor={primaryColor ?? undefined}
-          welcomeMessage={values.welcomeMessage}
+          welcomeMessage={values.welcomeMessage ?? ""}
         />
       </PreviewPanel>
     </div>

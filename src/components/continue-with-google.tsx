@@ -1,10 +1,10 @@
 "use client";
 
-import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { createClient } from "@/lib/supabase/browser";
 
 export function ContinueWithGoogle({ next = "/dashboard" }: { next?: string }) {
   async function onClick() {
-    const supabase = createBrowserSupabaseClient();
+    const supabase = createClient();
     const redirectTo = new URL("/auth/callback", window.location.origin);
     redirectTo.searchParams.set("next", next);
     await supabase.auth.signInWithOAuth({

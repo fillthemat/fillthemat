@@ -96,7 +96,7 @@ describe("assistant reply provenance", () => {
     await response.text();
 
     expect(finishes).toHaveLength(1);
-    expect(finishes[0].provenance).toEqual(completed.provenance);
+    expect(finishes[0]!.provenance).toEqual(completed.provenance);
   });
 
   it.each([

@@ -10,7 +10,7 @@ Routes in `src/app/api` check requests, call library functions and return respon
 _Example_: `src/app/api/bookings/route.ts` → `src/lib/schedule/book-slot.ts`
 
 **Separate database setup from business work**:
-`src/db` holds the connection, table definitions and database row types; `drizzle` holds migrations. Library functions and dashboard server code run queries; booking checks and writes stay together in `book-slot.ts`.
+`supabase/schemas` holds declarative definitions and `supabase/migrations` holds generated migrations. `src/db/types.ts` holds generated Supabase types. Library functions and dashboard server code use Supabase clients; direct SQL connections are only for test fixtures and helpers. Booking checks and writes stay together in `book-slot.ts`.
 
 **The assistant prepares; the platform books**:
 The assistant proposes a Booking Intent or Lead Request, never a booking or lead. Enforce rules in code, not just instructions; keep school facts in instructions and fetch trial offerings and occurrences through tools.
@@ -18,11 +18,18 @@ _Example_: `src/lib/ai/tools/prepare-booking.ts`; `docs/adr/0003-school-facts-in
 
 ## Database migrations
 
-**Generate metadata; preserve applied history**:
-Never hand-edit `drizzle/meta/*` or an applied migration's SQL. Add a new migration instead, and commit each migration's SQL, snapshot and journal entry together.
+Migration files are generated from the schema files in `supabase/schemas/`, using `pg-delta`. Follow this workflow when modifying the DB schema:
 
-**Regenerate after migration conflicts**:
-After rebasing, delete only your branch's unmerged, unapplied migration and regenerate it with `bun run db:generate` against the rebased history. Never hand-merge journal or snapshot JSON; retain the target branch's metadata as the generation baseline.
+1. Add/update table, grant and policy files in `supabase/schemas/`; put invoker function bodies and execution grants in `supabase/schemas/functions/`, grouped by their primary table
+2. Generate a migration file with `bun db:migrate:gen`
+3. Apply migrations with `bun db:migrate:up`
+4. Keep `src/db/types.ts` up-to-date with `bun db:typegen`
+
+Review generated migrations for data moves: add transactional backfills before dropping moved columns. Application functions must use `SECURITY INVOKER`; enforce access with grants and RLS, and mutation invariants with constraints/triggers rather than privileged RPCs.
+
+**Choose the smallest safe write path**:
+Use supabase-js table writes when one table's rules are fully enforced by grants, RLS, constraints or triggers; optimistic-concurrency filters such as `updated_at` are fine. Use a Postgres function via `.rpc()` for statements that must commit together, row/advisory locks or `SKIP LOCKED` claims, race-prone read-then-write decisions, or domain failure codes. Owner actions use the cookie client and RLS; platform workflows use the server-only secret client after app-level access checks, with functions executable by `service_role` only. Compose atomic work through SQL function calls, never transactions passed between TypeScript modules. See [ADR 0006](docs/adr/0006-supabase-table-writes-and-postgres-functions.md).
+_Examples_: offering edits and FAQ updates/deletes in `src/app/dashboard/settings/mutations.ts` (table writes); `src/app/dashboard/bookings/actions.ts` → `cancel_dashboard_booking` in `supabase/schemas/functions/bookings.sql` (RPC).
 
 ## Pages and UI
 
@@ -53,7 +60,7 @@ Use `bun run` scripts for project commands and Bun's native `bun lint` / `bun fm
 Use lowercase, hyphenated file and folder names, such as `book-slot.ts`; keep Next.js names such as `page.tsx` and `route.ts`. Use PascalCase for components and types, and camelCase for functions and variables.
 
 **Keep types and validation with their owners**:
-Export shared types from the file that defines the work; database row types live in `src/db/schema.ts`. Reuse Zod checks from `src/lib/validation.ts`, with chat checks in `src/lib/chat/requests.ts` and settings checks beside the settings page.
+Export shared types from the file that defines the work; generated database types live in `src/db/types.ts`. Reuse Zod checks from `src/lib/validation.ts`, with chat checks in `src/lib/chat/requests.ts` and settings checks beside the settings page.
 
 **Keep tests beside the code**:
 Use `*.test.ts` for unit tests and `*.integration.test.ts` for database-backed tests. Shared test helpers and fixtures live in `src/test`; browser tests live in `e2e`.

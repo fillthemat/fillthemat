@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Bun's external-module interop loses Zod's named namespace export.
+    server: { deps: { inline: ["zod"] } },
     environment: "node",
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     exclude: ["**/*.integration.test.ts"],

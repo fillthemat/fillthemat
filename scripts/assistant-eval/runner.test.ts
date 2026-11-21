@@ -36,7 +36,7 @@ it("scores tool calls and public reply intents through the real assistant withou
       },
     ],
   });
-  const result = await runCase(cases[2], model);
+  const result = await runCase(cases[2]!, model);
   expect(result.toolCalls).toEqual(["list_trial_offerings"]);
   expect(result.reply.bookingIntent).toBeNull();
   expect(result.reply.leadRequest).toBeNull();

@@ -1,138 +1,297 @@
-import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { EmailMessage } from "@/lib/email/dependencies";
-import { getDb } from "@/db";
-import { emailDeliveries, schools, trialWindows } from "@/db/schema";
-import { attemptPendingForBooking } from "@/lib/email/deliveries";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { hashToken } from "@/lib/crypto";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { authSql, loadLocalEnv, requireRow } from "@/test/integration-env";
-import { deleteSchoolOwner, seedSchool } from "@/test/seed-school";
-import { bookSlot, cancelBooking } from "./book-slot";
+import { deletePublicSchoolOwner, seedPublicSchool } from "@/test/seed-public-school";
+import { bookSlot, type BookSlotInput, findBookingByIdempotencyKey } from "./book-slot";
 import { listOpenSlots } from "./occurrences";
+import { encodeSlotId, parseSlotId } from "./slot-id";
 
+vi.mock("server-only", () => ({}));
 loadLocalEnv();
-const db = getDb();
-const auth = authSql();
+const sql = authSql();
 const ownerId = randomUUID();
+const otherOwnerId = randomUUID();
+const now = new Date();
 let schoolId = "";
 let offeringId = "";
-let contactNumber = 0;
+let slotId = "";
+let otherSchoolId = "";
+let otherOfferingId = "";
+let otherWindowId = "";
+let input: BookSlotInput;
 
 beforeAll(async () => {
-  const seeded = await seedSchool(auth, {
+  const school = await seedPublicSchool(sql, {
     ownerId,
-    name: "Booking Clock School",
-    slug: `book-clock-${ownerId}`,
-    publishedAt: new Date(),
-    offerings: [{ name: "Trial" }],
+    slug: `book-${ownerId}`,
+    name: "Book trial",
+    publishedAt: now,
+    offerings: [{ name: "Trial", minimumAge: 5, maximumAge: 16 }],
   });
-  schoolId = seeded.schoolId;
-  offeringId = requireRow(seeded.offeringIds[0], "offering");
-  await db.insert(trialWindows).values(
-    Array.from({ length: 7 }, (_, dayOfWeek) => ({
-      schoolId,
-      trialOfferingId: offeringId,
-      dayOfWeek,
-      startMinute: 1020,
-      durationMinutes: 60,
-      capacity: 10,
-    })),
+  schoolId = school.schoolId;
+  offeringId = school.offeringIds[0]!;
+  const otherSchool = await seedPublicSchool(sql, {
+    ownerId: otherOwnerId,
+    slug: `other-${otherOwnerId}`,
+    name: "Other school",
+    offerings: [{ name: "Other trial" }],
+  });
+  otherSchoolId = otherSchool.schoolId;
+  otherOfferingId = otherSchool.offeringIds[0]!;
+  otherWindowId = requireRow(
+    (
+      await sql`INSERT INTO public.trial_windows
+    (school_id, trial_offering_id, day_of_week, start_minute, duration_minutes, capacity)
+    VALUES (${otherSchoolId}, ${otherOfferingId}, 2, 960, 60, 2) RETURNING id`
+    )[0],
+    "other window",
+  ).id;
+  const window = requireRow(
+    (
+      await sql`INSERT INTO public.trial_windows
+    (school_id, trial_offering_id, day_of_week, start_minute, duration_minutes, capacity)
+    VALUES (${schoolId}, ${offeringId}, 2, 960, 60, 1) RETURNING id`
+    )[0],
+    "window",
   );
-});
-afterEach(() => vi.useRealTimers());
-afterAll(async () => {
-  await deleteSchoolOwner(auth, ownerId);
-  await auth.end({ timeout: 5 });
-});
-
-async function createBooking() {
-  const [schoolRow] = await db.select().from(schools).where(eq(schools.id, schoolId));
-  const school = requireRow(schoolRow, "school");
-  const windows = await db.select().from(trialWindows).where(eq(trialWindows.schoolId, schoolId));
-  const slot = requireRow(
+  slotId = requireRow(
     listOpenSlots({
       offeringId,
-      timezone: school.timezone,
-      windows,
+      timezone: "America/New_York",
+      now,
       occurrences: [],
-      now: new Date(),
-    }).find(({ startAt }) => startAt.getTime() > Date.now() + 2 * 86_400_000),
-    "future trial",
-  );
-  const result = await bookSlot({
-    school,
+      windows: [
+        {
+          id: window.id,
+          trialOfferingId: offeringId,
+          dayOfWeek: 2,
+          startMinute: 960,
+          durationMinutes: 60,
+          capacity: 1,
+          active: true,
+          label: null,
+        },
+      ],
+    })[0],
+    "slot",
+  ).slotId;
+  input = {
+    school: { id: schoolId },
     offeringId,
-    slotId: slot.slotId,
+    slotId,
     idempotencyKey: randomUUID(),
-    contact: {
-      name: "Booking Contact",
-      email: `${randomUUID()}@local.test`,
-      phone: `1650555010${++contactNumber}`,
-    },
-    participant: { name: "Trial Participant", age: 8 },
+    contact: { name: " Parent ", email: " PARENT@local.test ", phone: "555-250" },
+    participant: { name: " Student ", age: 10 },
+    now,
+  };
+});
+afterAll(async () => {
+  await deletePublicSchoolOwner(sql, ownerId);
+  await deletePublicSchoolOwner(sql, otherOwnerId);
+  await sql.end();
+});
+
+it("serializes last-seat bookings, replays the original, and queues each effect once", async () => {
+  const results = await Promise.all([
+    bookSlot(input),
+    bookSlot({
+      ...input,
+      idempotencyKey: randomUUID(),
+      contact: { name: "Other", email: "other@local.test", phone: "555-other" },
+    }),
+  ]);
+  expect(results.filter((result) => result.ok)).toHaveLength(1);
+  expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, code: "slot_unavailable" }]);
+  const winner = results.find((result) => result.ok);
+  if (!winner?.ok) throw new Error("missing winner");
+  const replay = await bookSlot({
+    ...input,
+    idempotencyKey: winner.booking.idempotencyKey,
+    offeringId: randomUUID(),
+    participant: { name: "Changed", age: 99 },
   });
-  expect(result.ok).toBe(true);
+  expect(replay).toEqual({ ...winner, idempotent: true });
+  expect(await findBookingByIdempotencyKey(schoolId, winner.booking.idempotencyKey)).toEqual(
+    winner.booking,
+  );
+  const [occurrence] =
+    await sql`SELECT booked_count FROM public.trial_occurrences WHERE school_id = ${schoolId}`;
+  expect(occurrence?.booked_count).toBe(1);
+  const deliveries =
+    await sql`SELECT kind FROM public.email_deliveries WHERE booking_id = ${winner.booking.id} ORDER BY kind::text`;
+  expect(deliveries.map((row) => row.kind)).toEqual(["owner_booking", "prospect_confirmation"]);
+  expect(
+    (await sql`SELECT id FROM public.funnel_events WHERE booking_id = ${winner.booking.id}`).length,
+  ).toBe(1);
+});
+
+it("links web chat, serializes concurrent replays, and rolls back duplicate participants", async () => {
+  const token = randomUUID();
+  const conversation = requireRow(
+    (
+      await sql`INSERT INTO public.conversations (school_id, resume_token_hash, expires_at)
+    VALUES (${schoolId}, ${hashToken(token)}, now() + interval '30 days') RETURNING id`
+    )[0],
+    "conversation",
+  );
+  const landing = requireRow(
+    (
+      await sql`INSERT INTO public.landing_sessions (school_id, session_key_hash)
+    VALUES (${schoolId}, ${hashToken(token)}) RETURNING id`
+    )[0],
+    "landing",
+  );
+  // A different start has its own capacity; use next week's same window.
+  // Resolve the other generated slot without depending on the slot encoding.
+  const window = requireRow(
+    (await sql`SELECT * FROM public.trial_windows WHERE school_id = ${schoolId}`)[0],
+    "window",
+  );
+  await sql`UPDATE public.trial_windows SET capacity = 2 WHERE id = ${window.id}`;
+  const slots = listOpenSlots({
+    offeringId,
+    timezone: "America/New_York",
+    now,
+    occurrences: [],
+    windows: [
+      {
+        id: window.id,
+        trialOfferingId: offeringId,
+        dayOfWeek: 2,
+        startMinute: 960,
+        durationMinutes: 60,
+        capacity: 1,
+        active: true,
+        label: null,
+      },
+    ],
+  });
+  const chatInput = {
+    ...input,
+    slotId: requireRow(slots[1], "second slot").slotId,
+    idempotencyKey: randomUUID(),
+    contact: { name: "Chat", email: null, phone: "555-chat" },
+    conversationResumeToken: token,
+    landingSessionToken: token,
+  };
+  const results = await Promise.all([bookSlot(chatInput), bookSlot(chatInput)]);
+  expect(results.filter((result) => result.ok && !result.idempotent)).toHaveLength(1);
+  expect(results.filter((result) => result.ok && result.idempotent)).toHaveLength(1);
+  const result = results[0]!;
   if (!result.ok) throw new Error(result.code);
-  return result.booking;
-}
-
-describe("inline booking emails with the app clock behind the database", () => {
-  it("sends both cancellation emails inline", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(Date.now() - 86_400_000));
-    const booking = await createBooking();
-    const send = vi.fn(async (_message: EmailMessage) => ({
-      ok: true as const,
-      kind: "accepted" as const,
-      providerId: randomUUID(),
-    }));
-    await attemptPendingForBooking(booking.id, { transport: { send } });
-    send.mockClear();
-    const result = await cancelBooking({ schoolId, bookingId: booking.id });
-    expect(result.ok).toBe(true);
-    await attemptPendingForBooking(booking.id, { transport: { send } });
-    expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls.map(([message]) => message.idempotencyKey).sort()).toEqual([
-      `booking-cancellation/${booking.id}/1`,
-      `owner-cancellation/${booking.id}/1`,
-    ]);
-    const deliveries = await db
-      .select()
-      .from(emailDeliveries)
-      .where(eq(emailDeliveries.bookingId, booking.id));
-    const cancellations = deliveries.filter(
-      ({ kind }) => kind === "booking_cancellation" || kind === "owner_cancellation",
-    );
-    expect(cancellations).toHaveLength(2);
-    for (const delivery of cancellations) {
-      expect(delivery.state).toBe("sent");
-      expect(delivery.nextAttemptAt).toEqual(new Date());
-    }
+  expect(result.booking.conversationId).toBe(conversation.id);
+  expect(result.booking.landingSessionId).toBe(landing.id);
+  expect(result.booking.contactEmailSnapshot).toBeNull();
+  expect(result.booking.contactPhoneSnapshot).toBe("555-chat");
+  expect(result.booking.participantNameSnapshot).toBe("Student");
+  expect(result.booking.icsUid).toBe(`${result.booking.id}@fillthemat.com`);
+  const [linked] =
+    await sql`SELECT contact_id FROM public.conversations WHERE id = ${conversation.id}`;
+  expect(linked?.contact_id).toBe(result.booking.contactId);
+  expect(
+    (
+      await sql`SELECT kind FROM public.email_deliveries WHERE booking_id = ${result.booking.id}`
+    ).map((row) => row.kind),
+  ).toEqual(["owner_booking"]);
+  expect(
+    await bookSlot({
+      ...chatInput,
+      idempotencyKey: randomUUID(),
+      contact: {
+        ...chatInput.contact,
+        name: "Must roll back",
+      },
+    }),
+  ).toEqual({ ok: false, code: "already_booked" });
+  const [contact] =
+    await sql`SELECT name FROM public.contacts WHERE id = ${result.booking.contactId}`;
+  expect(contact?.name).toBe("Chat");
+  const [occurrence] =
+    await sql`SELECT booked_count FROM public.trial_occurrences WHERE id = ${result.booking.trialOccurrenceId}`;
+  expect(occurrence?.booked_count).toBe(1);
+  // A later booking can link this same conversation without replacing its
+  // original contact (e.g. a family booking for another adult).
+  const later = await bookSlot({
+    ...chatInput,
+    idempotencyKey: randomUUID(),
+    contact: { name: "Another adult", email: null, phone: "555-another" },
   });
+  if (!later.ok) throw new Error(later.code);
+  expect(later.booking.conversationId).toBe(conversation.id);
+  expect(later.booking.contactId).not.toBe(result.booking.contactId);
+  const [preserved] =
+    await sql`SELECT contact_id FROM public.conversations WHERE id = ${conversation.id}`;
+  expect(preserved?.contact_id).toBe(result.booking.contactId);
+});
 
-  it("sends both booking confirmation and owner notification inline", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(Date.now() - 86_400_000));
-    const booking = await createBooking();
-    const send = vi.fn(async (_message: EmailMessage) => ({
-      ok: true as const,
-      kind: "accepted" as const,
-      providerId: randomUUID(),
-    }));
-    await attemptPendingForBooking(booking.id, { transport: { send } });
-    expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls.map(([message]) => message.idempotencyKey).sort()).toEqual([
-      `booking-confirmation/${booking.id}`,
-      `owner-booking/${booking.id}`,
-    ]);
-    const deliveries = await db
-      .select()
-      .from(emailDeliveries)
-      .where(eq(emailDeliveries.bookingId, booking.id));
-    expect(deliveries).toHaveLength(2);
-    for (const delivery of deliveries) {
-      expect(delivery.state).toBe("sent");
-      expect(delivery.nextAttemptAt).toEqual(new Date());
-    }
+it("preserves expected validation failure codes without side effects", async () => {
+  expect(await bookSlot({ ...input, slotId: "invalid" })).toEqual({
+    ok: false,
+    code: "invalid_slot",
   });
+  expect(
+    await bookSlot({
+      ...input,
+      idempotencyKey: randomUUID(),
+      participant: { name: "Too old", age: 17 },
+    }),
+  ).toEqual({ ok: false, code: "ineligible" });
+  expect(await bookSlot({ ...input, school: { ...input.school, id: randomUUID() } })).toEqual({
+    ok: false,
+    code: "school_not_public",
+  });
+  expect(
+    await bookSlot({ ...input, school: { id: otherSchoolId }, idempotencyKey: randomUUID() }),
+  ).toEqual({ ok: false, code: "school_not_public" });
+  expect(
+    await bookSlot({ ...input, offeringId: otherOfferingId, idempotencyKey: randomUUID() }),
+  ).toEqual({ ok: false, code: "ineligible" });
+  const parsed = requireRow(parseSlotId(slotId), "parsed slot");
+  expect(
+    await bookSlot({
+      ...input,
+      slotId: encodeSlotId(otherWindowId, parsed.startAt),
+      idempotencyKey: randomUUID(),
+    }),
+  ).toEqual({ ok: false, code: "invalid_slot" });
+  for (const days of [1, 21]) {
+    const start = new Date(parsed.startAt.getTime() + days * 86400000);
+    expect(
+      await bookSlot({
+        ...input,
+        slotId: encodeSlotId(parsed.windowId, start),
+        idempotencyKey: randomUUID(),
+      }),
+    ).toEqual({ ok: false, code: "slot_unavailable" });
+  }
+  expect(
+    (await sql`SELECT id FROM public.bookings WHERE school_id = ${otherSchoolId}`).length,
+  ).toBe(0);
+});
+
+it("is invoker, empty-search-path, and executable only by the service role", async () => {
+  const [routine] = await sql`SELECT prosecdef, proconfig, oid::text AS oid FROM pg_proc
+    WHERE pronamespace = 'public'::regnamespace AND proname = 'book_trial'`;
+  expect(routine?.prosecdef).toBe(false);
+  expect(routine?.proconfig).toEqual(['search_path=""']);
+  for (const role of ["anon", "authenticated", "service_role"]) {
+    const [grant] =
+      await sql`SELECT has_function_privilege(${role}, ${routine!.oid}::oid, 'EXECUTE') AS allowed`;
+    expect(grant?.allowed).toBe(role === "service_role");
+  }
+  // Exercise RPC with the real service key, not only postgres fixture writes.
+  const { error } = await createAdminClient().rpc("book_trial", {
+    p_school_id: schoolId,
+    p_offering_id: offeringId,
+    p_window_id: randomUUID(),
+    p_start_at: now.toISOString(),
+    p_idempotency_key: randomUUID(),
+    p_contact_name: "Test",
+    p_phone: "555",
+    p_participant_name: "Test",
+    p_participant_age: 10,
+  });
+  expect(error?.message).toBe("invalid_slot");
 });

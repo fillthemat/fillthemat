@@ -1,17 +1,14 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import { LIMITS } from "../schemas";
 import { TextAreaField, TextField } from "./controls";
 
 export function OfferingFields({
-  values,
-  setField,
-  errorFor,
+  control,
   disabled = false,
 }: {
-  values: Record<string, string>;
-  setField: (name: string, value: string) => void;
-  errorFor: (name: string) => string | undefined;
+  control: ComponentProps<typeof TextField>["control"];
   disabled?: boolean;
 }) {
   return (
@@ -22,9 +19,7 @@ export function OfferingFields({
         required
         disabled={disabled}
         maxLength={LIMITS.offeringName}
-        value={values.name}
-        onValueChange={(value) => setField("name", value)}
-        error={errorFor("name")}
+        control={control}
         placeholder="Kids beginner trial…"
       />
       <div className="grid gap-3 sm:grid-cols-2">
@@ -36,9 +31,7 @@ export function OfferingFields({
           max={99}
           inputMode="numeric"
           disabled={disabled}
-          value={values.minimumAge}
-          onValueChange={(value) => setField("minimumAge", value)}
-          error={errorFor("minimumAge")}
+          control={control}
           helper="Leave blank for no lower limit."
           placeholder="6…"
         />
@@ -50,9 +43,7 @@ export function OfferingFields({
           max={99}
           inputMode="numeric"
           disabled={disabled}
-          value={values.maximumAge}
-          onValueChange={(value) => setField("maximumAge", value)}
-          error={errorFor("maximumAge")}
+          control={control}
           helper="Leave blank for no upper limit."
           placeholder="12…"
         />
@@ -66,9 +57,7 @@ export function OfferingFields({
         rows={3}
         disabled={disabled}
         maxLength={LIMITS.offeringDescription}
-        value={values.description}
-        onValueChange={(value) => setField("description", value)}
-        error={errorFor("description")}
+        control={control}
         placeholder="A 45-minute beginner class focused on basics, games, and safety…"
       />
       <TextField
@@ -76,9 +65,7 @@ export function OfferingFields({
         name="attire"
         disabled={disabled}
         maxLength={LIMITS.offeringAttire}
-        value={values.attire}
-        onValueChange={(value) => setField("attire", value)}
-        error={errorFor("attire")}
+        control={control}
         placeholder="Comfortable clothes and bare feet…"
       />
       <TextAreaField
@@ -87,9 +74,7 @@ export function OfferingFields({
         rows={3}
         disabled={disabled}
         maxLength={LIMITS.offeringExpectations}
-        value={values.expectations}
-        onValueChange={(value) => setField("expectations", value)}
-        error={errorFor("expectations")}
+        control={control}
         placeholder="Warm-up, partner drills with an instructor, and time for questions afterward…"
       />
     </>

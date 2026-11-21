@@ -1,5 +1,6 @@
-import type { TerminalCause } from "@/db/schema";
 import type { WhatsAppSendFailure } from "./whatsapp/client";
+
+export type TerminalCause = "permanent" | "attempts_exhausted" | "stale";
 
 /** Started executions, including crashed work, share one budget across runs. */
 export const MAX_EXECUTIONS = 5;

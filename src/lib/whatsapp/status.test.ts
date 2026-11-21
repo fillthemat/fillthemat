@@ -57,8 +57,8 @@ describe("parseInboundWhatsAppStatuses", () => {
   it("extracts a failed status with its error", () => {
     const parsed = parseInboundWhatsAppStatuses(statusFailed);
     expect(parsed).toHaveLength(1);
-    expect(parsed[0].status).toBe("failed");
-    expect(parsed[0].errorCode).toBe("131026");
+    expect(parsed[0]!.status).toBe("failed");
+    expect(parsed[0]!.errorCode).toBe("131026");
   });
 
   it("returns an empty list for inbound payloads", () => {

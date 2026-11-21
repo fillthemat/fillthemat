@@ -1,35 +1,8 @@
 import { z } from "zod";
 import { isValidTimezone } from "@/lib/timezones";
 import { slugSchema } from "@/lib/validation";
-
-/** Limits mirrored in the UI so owners see counters before the server rejects. */
-export const LIMITS = {
-  schoolName: 80,
-  phone: 32,
-  website: 2048,
-  address: 500,
-  city: 80,
-  parkingNotes: 2000,
-  accessNotes: 2000,
-  trialGuidance: 2000,
-  pricing: 4000,
-  welcomeMessage: 1000,
-  agentInstructions: 2000,
-  offeringName: 80,
-  offeringDescription: 2000,
-  offeringExpectations: 2000,
-  offeringAttire: 1000,
-  offeringWaiverNotes: 1000,
-  windowLabel: 80,
-  faqQuestion: 200,
-  faqAnswer: 2000,
-  faqCount: 20,
-  logoUrl: 2048,
-  capacityMin: 1,
-  capacityMax: 50,
-  durationMin: 15,
-  durationMax: 480,
-} as const;
+import { LIMITS } from "./limits";
+export { LIMITS } from "./limits";
 
 function optional(max: number, tooLong: string) {
   return z

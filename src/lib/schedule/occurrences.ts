@@ -42,7 +42,9 @@ function pad(value: number): string {
 
 function localDateString(now: Date, timezone: string, dayOffset: number): string {
   const today = formatInTimeZone(now, timezone, "yyyy-MM-dd");
-  const [year, month, day] = today.split("-").map(Number);
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  const day = Number(today.slice(8, 10));
   const shifted = addDays(new Date(Date.UTC(year, month - 1, day)), dayOffset);
   return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
 }

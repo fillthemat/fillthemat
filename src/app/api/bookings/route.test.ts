@@ -4,7 +4,7 @@ import { POST } from "./route";
 // Exercise the actual HTTP adapter and production console sink, with only
 // domain/vendor boundaries replaced (no database or live vendors).
 const dependencies = vi.hoisted(() => ({
-  getPublicSchoolBySlug: vi.fn(),
+  getSchoolForBooking: vi.fn(),
   verifyTurnstile: vi.fn(),
   findBookingByIdempotencyKey: vi.fn(),
   emailBookingQuotaExceeded: vi.fn(),
@@ -13,11 +13,12 @@ const dependencies = vi.hoisted(() => ({
   attemptPendingForBooking: vi.fn(),
 }));
 vi.mock("@/lib/schools/public", () => ({
-  getPublicSchoolBySlug: dependencies.getPublicSchoolBySlug,
+  getSchoolForBooking: dependencies.getSchoolForBooking,
 }));
 vi.mock("@/lib/security/turnstile", () => ({
   verifyTurnstile: dependencies.verifyTurnstile,
 }));
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/security/limits", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/security/limits")>()),
   emailBookingQuotaExceeded: dependencies.emailBookingQuotaExceeded,
@@ -35,7 +36,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv("VERCEL_ENV", "preview");
   vi.stubEnv("VERCEL_DEPLOYMENT_ID", "deployment-test-id");
-  dependencies.getPublicSchoolBySlug.mockResolvedValue({ id: "school-id" });
+  dependencies.getSchoolForBooking.mockResolvedValue({
+    school: { id: "school-id" },
+    previewOwnerId: null,
+  });
   dependencies.verifyTurnstile.mockResolvedValue(true);
   dependencies.findBookingByIdempotencyKey.mockResolvedValue(null);
   dependencies.emailBookingQuotaExceeded.mockResolvedValue(false);
@@ -84,7 +88,7 @@ it.each(["unexpected", "degraded"])(
     expect(response.status).toBe(unexpected ? 500 : 200);
     const envelope = await response.json();
     expect(log).toHaveBeenCalledExactlyOnceWith(expect.any(String));
-    const line = log.mock.calls[0][0];
+    const line = log.mock.calls[0]![0];
     expect(line).not.toContain("\n");
     expect(line).not.toContain("SENTINEL");
     const record = JSON.parse(line);

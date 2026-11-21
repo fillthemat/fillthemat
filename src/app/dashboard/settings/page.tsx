@@ -1,8 +1,7 @@
 import { PageHeader } from "@/components/dashboard/page-header";
-import { requireOwnedSchool } from "@/lib/auth/current-school";
+import { requireSchool } from "@/lib/auth/current-school";
 import { listTimezones } from "@/lib/timezones";
-import { serializeTimestamp } from "./form-utils";
-import { formatTimezone } from "./format";
+import { formatTimezone, serializeTimestamp } from "./format";
 import { loadFaqs, loadOfferings, loadWindows } from "./queries";
 import { resolveSection, type SectionId, sectionMeta } from "./sections";
 import { AgentSection } from "./sections/agent-section";
@@ -19,7 +18,7 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ section?: string }>;
 }) {
-  const [{ school }, params] = await Promise.all([requireOwnedSchool(), searchParams]);
+  const [{ school }, params] = await Promise.all([requireSchool(), searchParams]);
   const section: SectionId = resolveSection(params.section);
   const meta = sectionMeta(section);
   const location = [school.address, school.city].filter(Boolean).join(", ") || null;
@@ -53,11 +52,11 @@ async function SectionContent({
 }: {
   section: SectionId;
   schoolId: string;
-  school: Awaited<ReturnType<typeof requireOwnedSchool>>["school"];
+  school: Awaited<ReturnType<typeof requireSchool>>["school"];
   location: string | null;
 }) {
   if (section === "profile") {
-    const published = school.publishedAt != null;
+    const published = school.published_at != null;
     return (
       <ProfileSection
         published={published}
@@ -66,15 +65,15 @@ async function SectionContent({
           name: school.name,
           slug: school.slug,
           timezone: school.timezone,
-          notificationEmail: school.notificationEmail,
+          notificationEmail: school.notification_email,
           phone: school.phone ?? "",
           website: school.website ?? "",
           address: school.address ?? "",
           city: school.city ?? "",
           country: school.country,
-          parkingNotes: school.parkingNotes ?? "",
-          accessNotes: school.accessNotes ?? "",
-          trialGuidance: school.trialGuidance ?? "",
+          parkingNotes: school.parking_notes ?? "",
+          accessNotes: school.access_notes ?? "",
+          trialGuidance: school.trial_guidance ?? "",
         }}
       />
     );
@@ -91,15 +90,15 @@ async function SectionContent({
           id: offering.id,
           name: offering.name,
           description: offering.description,
-          minimumAge: offering.minimumAge,
-          maximumAge: offering.maximumAge,
+          minimumAge: offering.minimum_age,
+          maximumAge: offering.maximum_age,
           attire: offering.attire,
           expectations: offering.expectations,
           active: offering.active,
-          updatedAt: serializeTimestamp(offering.updatedAt),
-          windowCount: windows.filter((window) => window.trialOfferingId === offering.id).length,
+          updatedAt: serializeTimestamp(offering.updated_at),
+          windowCount: windows.filter((window) => window.trial_offering_id === offering.id).length,
           activeWindowCount: windows.filter(
-            (window) => window.trialOfferingId === offering.id && window.active,
+            (window) => window.trial_offering_id === offering.id && window.active,
           ).length,
         }))}
       />
@@ -121,17 +120,17 @@ async function SectionContent({
         }))}
         windows={windows.map((window) => ({
           id: window.id,
-          offeringName: window.offeringName,
-          offeringActive: window.offeringActive,
-          dayOfWeek: window.dayOfWeek,
-          startMinute: window.startMinute,
-          durationMinutes: window.durationMinutes,
+          offeringName: window.offering_name,
+          offeringActive: window.offering_active,
+          dayOfWeek: window.day_of_week,
+          startMinute: window.start_minute,
+          durationMinutes: window.duration_minutes,
           capacity: window.capacity,
           label: window.label,
           active: window.active,
-          onCalendar: window.onCalendar,
-          hasUpcomingBooking: window.hasUpcomingBooking,
-          maxUpcomingBooked: window.maxUpcomingBooked,
+          onCalendar: window.on_calendar,
+          hasUpcomingBooking: window.has_upcoming_booking,
+          maxUpcomingBooked: window.max_upcoming_booked,
         }))}
       />
     );
@@ -149,7 +148,7 @@ async function SectionContent({
           id: faq.id,
           question: faq.question,
           answer: faq.answer,
-          updatedAt: serializeTimestamp(faq.updatedAt),
+          updatedAt: serializeTimestamp(faq.updated_at),
         }))}
       />
     );
@@ -158,23 +157,23 @@ async function SectionContent({
   if (section === "agent") {
     return (
       <AgentSection
-        welcomeMessage={school.welcomeMessage ?? ""}
-        agentInstructions={school.agentInstructions ?? ""}
+        welcomeMessage={school.welcome_message ?? ""}
+        agentInstructions={school.agent_instructions ?? ""}
         schoolName={school.name}
         location={location}
-        logoUrl={school.logoUrl}
-        primaryColor={school.primaryColor}
+        logoUrl={school.logo_url}
+        primaryColor={school.primary_color}
       />
     );
   }
 
   return (
     <BrandingSection
-      logoUrl={school.logoUrl ?? ""}
-      primaryColor={school.primaryColor ?? ""}
+      logoUrl={school.logo_url ?? ""}
+      primaryColor={school.primary_color ?? ""}
       schoolName={school.name}
       location={location}
-      welcomeMessage={school.welcomeMessage ?? ""}
+      welcomeMessage={school.welcome_message ?? ""}
     />
   );
 }

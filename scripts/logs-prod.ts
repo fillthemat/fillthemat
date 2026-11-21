@@ -6,7 +6,7 @@ export function buildArgs(filters: string[]): string[] {
   if (filters.length === 1 && filters[0] === "--help") return ["logs", "--help"];
   const flags = new Set("--since --until --request-id --status-code --query --limit".split(" "));
   for (let i = 0; i < filters.length; i += 2) {
-    if (!flags.has(filters[i]) || !filters[i + 1]?.match(/^[^-]/)) {
+    if (!flags.has(filters[i]!) || !filters[i + 1]?.match(/^[^-]/)) {
       throw new Error("Invalid filters; see bun run logs:prod --help.");
     }
   }

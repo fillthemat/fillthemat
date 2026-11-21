@@ -9,9 +9,9 @@ export async function GET(request: Request) {
   return Response.json({
     id: run.id,
     result: run.result,
-    sentCount: run.sentCount,
-    failedCount: run.failedCount,
-    reminderCount: run.reminderCount,
-    endedConversationCount: run.endedConversationCount,
+    sentCount: run.sent_count,
+    failedCount: run.failed_count,
+    reminderCount: run.reminder_count,
+    endedConversationCount: run.ended_conversation_count,
   });
 }

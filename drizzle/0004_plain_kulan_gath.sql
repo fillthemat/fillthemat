@@ -1,2 +1,0 @@
-ALTER TABLE "app"."conversations" DROP CONSTRAINT "conversations_school_wa_id_hash";--> statement-breakpoint
-CREATE UNIQUE INDEX "conversations_school_wa_id_hash" ON "app"."conversations" USING btree ("school_id","wa_id_hash") WHERE "app"."conversations"."wa_id_hash" IS NOT NULL;
