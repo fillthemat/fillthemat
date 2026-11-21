@@ -1,5 +1,5 @@
 import { hasGatewayToken } from "../src/lib/ai/gateway-token";
-import { getSupabaseEnv, removeEnv, RETIRED_LOCAL_KEYS, upsertEnv } from "./local-env";
+import { getSupabaseEnv, upsertEnv } from "./local-env";
 import { claimAppPort } from "./local-ports";
 import { fail } from "./local-process";
 
@@ -7,8 +7,8 @@ const LOCAL_ENV_FILE = ".env.local";
 const LOCAL_SUPABASE_ENV_FILE = "supabase/.env";
 
 async function main() {
-  await ensureExperimentalStackEnabled();
-  await ensureGooglePlaceholder();
+  ensureExperimentalStackEnabled();
+  ensureGooglePlaceholder();
 
   Bun.spawnSync(["bun", "install"], {
     stdout: "inherit",
@@ -42,7 +42,7 @@ main().catch((error) => {
 });
 
 async function ensureGooglePlaceholder() {
-  await upsertEnv(LOCAL_SUPABASE_ENV_FILE, {
+  upsertEnv(LOCAL_SUPABASE_ENV_FILE, {
     SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID: "local-placeholder",
     SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET: "local-placeholder",
   });
@@ -50,7 +50,7 @@ async function ensureGooglePlaceholder() {
 }
 
 async function ensureExperimentalStackEnabled() {
-  await upsertEnv(LOCAL_ENV_FILE, { SUPABASE_EXPERIMENTAL_STACK: "1" });
+  upsertEnv(LOCAL_ENV_FILE, { SUPABASE_EXPERIMENTAL_STACK: "1" });
   console.log(`Wrote ${LOCAL_ENV_FILE} with SUPABASE_EXPERIMENTAL_STACK=1.`);
 }
 
@@ -94,7 +94,5 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
 
   await upsertEnv(LOCAL_ENV_FILE, updates);
   console.log(`Wrote ${LOCAL_ENV_FILE} with live values.`);
-  const removed = await removeEnv(LOCAL_ENV_FILE, RETIRED_LOCAL_KEYS);
-  if (removed.length > 0) console.log(`Removed ${removed.join(", ")} from ${LOCAL_ENV_FILE}.`);
   return updates;
 }

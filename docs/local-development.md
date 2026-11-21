@@ -27,7 +27,6 @@ project's secret key (Dashboard → Settings → API Keys). Never prefix it with
 may use this client. The publishable-key client remains subject to RLS.
 The app uses Supabase alone. Setup writes `SUPABASE_DB_URL` only for integration
 test fixtures; it is not an application or deployment credential.
-`bun run setup` also removes the retired Drizzle keys `DATABASE_URL` and `DIRECT_URL` from `.env.local`.
 
 ## Optional integrations
 

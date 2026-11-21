@@ -1,6 +1,3 @@
-// Drizzle was removed; only SUPABASE_DB_URL is still needed for test fixtures.
-export const RETIRED_LOCAL_KEYS = ["DATABASE_URL", "DIRECT_URL"];
-
 export function missingRequiredKeys(): string[] {
   const REQUIRED_LOCAL_KEYS = [
     "NEXT_PUBLIC_SUPABASE_URL",
@@ -45,24 +42,4 @@ export async function upsertEnv(
 
   await Bun.write(env_file_name, lines.join("\n").replace(/\n?$/, "\n"));
   return updated;
-}
-
-export async function removeEnv(env_file_name: string, keys: string[]): Promise<string[]> {
-  const envFile = Bun.file(env_file_name);
-  if (!(await envFile.exists())) return [];
-
-  const contents = await envFile.text();
-  const removed = new Set<string>();
-  const lines = contents.split("\n").filter((line) => {
-    const key = keys.find((key) => line.startsWith(`${key}=`));
-    if (key === undefined) return true;
-    removed.add(key);
-    return false;
-  });
-
-  if (removed.size > 0) {
-    const remaining = lines.join("\n");
-    await Bun.write(env_file_name, remaining || (contents.endsWith("\n") ? "\n" : ""));
-  }
-  return [...removed];
 }
