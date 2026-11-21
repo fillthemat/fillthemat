@@ -95,7 +95,7 @@ describe("booking HTTP failures", () => {
 
   it("keeps request contexts separate across concurrent failures", async () => {
     const { dependencies, handler } = setup();
-    dependencies.getPublicSchoolBySlug.mockResolvedValue(null);
+    dependencies.getSchoolForBooking.mockResolvedValue(null);
     const responses = await Promise.all([handler(request()), handler(request())]);
     const envelopes = await Promise.all(responses.map((response) => response.json()));
     expect(envelopes[0].requestId).not.toBe(envelopes[1].requestId);
@@ -141,7 +141,10 @@ describe("booking HTTP failures", () => {
   });
   function setup() {
     const dependencies = {
-      getPublicSchoolBySlug: vi.fn().mockResolvedValue({ id: "school-internal-id" }),
+      getSchoolForBooking: vi.fn().mockResolvedValue({
+        school: { id: "school-internal-id" },
+        previewOwnerId: null,
+      }),
       verifyTurnstile: vi.fn().mockResolvedValue(true),
       findBookingByIdempotencyKey: vi.fn().mockResolvedValue(null),
       emailBookingQuotaExceeded: vi.fn().mockResolvedValue(false),
@@ -155,6 +158,7 @@ describe("booking HTTP failures", () => {
           startAt: new Date("2026-10-12T10:00:00Z"),
           offeringNameSnapshot: "Trial",
           participantNameSnapshot: "Participant",
+          isPreview: false,
         },
       }),
       attemptPendingForBooking: vi.fn().mockResolvedValue(undefined),
@@ -202,7 +206,7 @@ describe("booking HTTP failures", () => {
     let input = request();
     if (code === "too_large") input = request(undefined, { "content-length": "999999999" });
     else if (code === "invalid") input = request("{}");
-    else if (code === "not_found") d.getPublicSchoolBySlug.mockResolvedValue(null);
+    else if (code === "not_found") d.getSchoolForBooking.mockResolvedValue(null);
     else if (code === "verification_failed") d.verifyTurnstile.mockResolvedValue(false);
     else if (code === "rate_limited") d.emailBookingQuotaExceeded.mockResolvedValue(true);
     else
@@ -233,7 +237,7 @@ describe("booking HTTP failures", () => {
       error: "invalid",
       requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
-    expect(dependencies.getPublicSchoolBySlug).not.toHaveBeenCalled();
+    expect(dependencies.getSchoolForBooking).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -273,6 +277,7 @@ describe("booking HTTP failures", () => {
         offeringName: "Trial",
         participantName: "Participant",
         idempotent,
+        preview: false,
       });
       expect(dependencies.attemptPendingForBooking).toHaveBeenCalledTimes(idempotent ? 0 : 1);
       expect(dependencies.logFailure).not.toHaveBeenCalled();
@@ -354,10 +359,54 @@ describe("booking HTTP failures", () => {
       }
     },
   );
+  it("books an owner preview with the verified owner, never the client's claim alone", async () => {
+    const { dependencies, handler } = setup();
+    dependencies.getSchoolForBooking.mockResolvedValue({
+      school: { id: "school-internal-id" },
+      previewOwnerId: "owner-user-id",
+    });
+    const booked = await dependencies.bookSlot();
+    dependencies.bookSlot.mockResolvedValue({
+      ...booked,
+      booking: { ...booked.booking, isPreview: true },
+    });
+    const response = await handler(request(JSON.stringify({ ...body, preview: true })));
+    expect(response.status).toBe(200);
+    expect((await response.json()).preview).toBe(true);
+    expect(dependencies.getSchoolForBooking).toHaveBeenCalledExactlyOnceWith("demo", {
+      preview: true,
+    });
+    expect(dependencies.bookSlot).toHaveBeenLastCalledWith(
+      expect.objectContaining({ previewOwnerId: "owner-user-id" }),
+    );
+    // Preview bookings keep the same verification, quotas and confirmation.
+    expect(dependencies.verifyTurnstile).toHaveBeenCalledTimes(1);
+    expect(dependencies.emailBookingQuotaExceeded).toHaveBeenCalledTimes(1);
+    expect(dependencies.recipientQuotaExceeded).toHaveBeenCalledTimes(1);
+    expect(dependencies.attemptPendingForBooking).toHaveBeenCalledExactlyOnceWith("booking-id");
+  });
+
+  it("makes an ordinary booking when a preview request has no verified owner", async () => {
+    const { dependencies, handler } = setup();
+    await handler(request(JSON.stringify({ ...body, preview: true })));
+    expect(dependencies.bookSlot).toHaveBeenCalledTimes(1);
+    expect(dependencies.bookSlot.mock.calls[0]![0]).not.toHaveProperty("previewOwnerId");
+  });
+
+  it("refuses a preview of a school the requester cannot see", async () => {
+    const { dependencies, handler } = setup();
+    dependencies.getSchoolForBooking.mockResolvedValue(null);
+    const response = await handler(request(JSON.stringify({ ...body, preview: true })));
+    expect(response.status).toBe(404);
+    expect((await response.json()).error).toBe("not_found");
+    expect(dependencies.verifyTurnstile).not.toHaveBeenCalled();
+    expect(dependencies.bookSlot).not.toHaveBeenCalled();
+  });
+
   it("correlates a wrapped database failure without exposing exception data", async () => {
     const logFailure = vi.fn();
     const handler = createBookingHandler({
-      getPublicSchoolBySlug: vi.fn().mockRejectedValue(
+      getSchoolForBooking: vi.fn().mockRejectedValue(
         new Error("SENTINEL_SQL", {
           cause: Object.assign(new Error("SENTINEL_PARAMETERS"), {
             code: "42703",

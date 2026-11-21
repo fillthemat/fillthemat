@@ -68,6 +68,38 @@ export async function getPublicSchoolBySlug(slug: string) {
   return findSchool(slug, false);
 }
 
+export type BookingAccess = { school: LandingSchool; previewOwnerId: string | null };
+
+/**
+ * A preview flag only loosens access for the school's signed-in owner: RLS
+ * hides drafts and private settings from everyone else. Anyone else on a
+ * published school makes an ordinary booking; a draft stays not found.
+ */
+export async function getSchoolForBooking(
+  slug: string,
+  options?: { preview?: boolean },
+): Promise<BookingAccess | null> {
+  if (options?.preview !== true) {
+    const school = await findSchool(slug, false);
+    return school ? { school, previewOwnerId: null } : null;
+  }
+  const school = await findSchool(slug, true);
+  if (!school) return null;
+  const supabase = await createClient();
+  // Anonymous visitors have no grant on private settings at all.
+  const { data: session } = await supabase.auth.getClaims();
+  if (session?.claims) {
+    const { data, error } = await supabase
+      .from("school_settings")
+      .select("owner_user_id")
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return { school, previewOwnerId: data.owner_user_id };
+  }
+  return school.approvedAt && school.publishedAt ? { school, previewOwnerId: null } : null;
+}
+
 // PostgREST caps each response; catalogs must not silently lose later rows.
 async function readAll<Row>(query: {
   range: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: unknown }>;

@@ -15,6 +15,8 @@ export type BookSlotInput = {
   conversationResumeToken?: string;
   /** Public conversation ID only; never a legacy WhatsApp conversation ID. */
   conversationId?: string;
+  /** The verified owner's user ID, only for a booking from their preview page. */
+  previewOwnerId?: string;
   now?: Date;
 };
 
@@ -57,6 +59,7 @@ function bookingRecord(row: Tables<"bookings">) {
     contactPhoneSnapshot: row.contact_phone_snapshot,
     icsUid: row.ics_uid,
     icsSequence: row.ics_sequence,
+    isPreview: row.is_preview,
     cancelledAt: row.cancelled_at ? new Date(row.cancelled_at) : null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -100,6 +103,7 @@ export async function bookSlot(input: BookSlotInput): Promise<BookSlotResult> {
       : undefined,
     p_conversation_id: input.conversationId,
     p_now: input.now?.toISOString(),
+    p_preview_owner_id: input.previewOwnerId,
   });
   if (error) {
     const code = failureCodes.find(

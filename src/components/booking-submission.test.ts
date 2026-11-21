@@ -201,7 +201,7 @@ it("calls success only after both successful requests", async () => {
     .mockResolvedValueOnce(Response.json({ idempotencyKey: key }))
     .mockResolvedValueOnce(Response.json({ bookingId: "booking-id" }));
   await submitBooking(options);
-  expect(options.onBooked).toHaveBeenCalledTimes(1);
+  expect(options.onBooked).toHaveBeenCalledExactlyOnceWith({ preview: false });
   expect(options.setError.mock.calls).toEqual([[null]]);
   expect(options.resetVerification).not.toHaveBeenCalled();
   expect(options.setPending).toHaveBeenLastCalledWith(false);
@@ -229,4 +229,13 @@ it("preserves a provided reference on an invalid key response", async () => {
   expect(options.setError).toHaveBeenLastCalledWith(`${fallback} Support reference: ${reference}.`);
   expect(options.fetcher).toHaveBeenCalledTimes(1);
   expect(options.onBooked).not.toHaveBeenCalled();
+});
+
+it("reports the server's preview verdict to the success handler", async () => {
+  const options = setup();
+  options.fetcher
+    .mockResolvedValueOnce(Response.json({ idempotencyKey: key }))
+    .mockResolvedValueOnce(Response.json({ bookingId: "booking-id", preview: true }));
+  await submitBooking(options);
+  expect(options.onBooked).toHaveBeenCalledExactlyOnceWith({ preview: true });
 });

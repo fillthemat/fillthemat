@@ -38,6 +38,7 @@ export type Database = {
           id: string;
           idempotency_key: string;
           instructions_snapshot: string | null;
+          is_preview: boolean;
           landing_session_id: string | null;
           location_snapshot: string | null;
           offering_name_snapshot: string;
@@ -68,6 +69,7 @@ export type Database = {
           id?: string;
           idempotency_key: string;
           instructions_snapshot?: string | null;
+          is_preview?: boolean;
           landing_session_id?: string | null;
           location_snapshot?: string | null;
           offering_name_snapshot: string;
@@ -97,6 +99,7 @@ export type Database = {
           id?: string;
           idempotency_key?: string;
           instructions_snapshot?: string | null;
+          is_preview?: boolean;
           landing_session_id?: string | null;
           location_snapshot?: string | null;
           offering_name_snapshot?: string;
@@ -1383,6 +1386,7 @@ export type Database = {
           p_participant_age: number;
           p_participant_name: string;
           p_phone: string;
+          p_preview_owner_id?: string;
           p_resume_token_hash?: string;
           p_school_id: string;
           p_start_at: string;

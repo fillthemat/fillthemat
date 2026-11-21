@@ -1,11 +1,14 @@
 -- Application access/Turnstile/quota checks precede this service-only boundary.
+-- A preview booking passes the verified owner's user ID; ownership is checked
+-- again here so a client preview flag can never book an unpublished school.
 -- No INSERT booking triggers exist: this function owns all booking side effects.
 CREATE FUNCTION public.book_trial(
     p_school_id uuid, p_offering_id uuid, p_window_id uuid, p_start_at timestamptz,
     p_idempotency_key text, p_contact_name text, p_phone text,
     p_participant_name text, p_participant_age integer, p_email text DEFAULT NULL,
     p_landing_token_hash text DEFAULT NULL, p_resume_token_hash text DEFAULT NULL,
-    p_conversation_id uuid DEFAULT NULL, p_now timestamptz DEFAULT now()
+    p_conversation_id uuid DEFAULT NULL, p_now timestamptz DEFAULT now(),
+    p_preview_owner_id uuid DEFAULT NULL
 )
 RETURNS TABLE (booking public.bookings, idempotent boolean)
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
@@ -33,7 +36,15 @@ BEGIN
     WHERE school_id = p_school_id AND idempotency_key = p_idempotency_key;
     IF FOUND THEN RETURN QUERY SELECT v_booking, true; RETURN; END IF;
     SELECT * INTO v_school FROM public.schools WHERE id = p_school_id;
-    IF NOT FOUND OR v_school.approved_at IS NULL OR v_school.published_at IS NULL THEN
+    IF NOT FOUND THEN RAISE EXCEPTION 'school_not_public'; END IF;
+    IF p_preview_owner_id IS NULL THEN
+        IF v_school.approved_at IS NULL OR v_school.published_at IS NULL THEN
+            RAISE EXCEPTION 'school_not_public';
+        END IF;
+    ELSIF NOT EXISTS (
+        SELECT 1 FROM public.school_settings
+        WHERE school_id = p_school_id AND owner_user_id = p_preview_owner_id
+    ) THEN
         RAISE EXCEPTION 'school_not_public';
     END IF;
     SELECT * INTO v_profile FROM public.school_profiles WHERE school_id = p_school_id;
@@ -96,7 +107,7 @@ BEGIN
         trial_occurrence_id, conversation_id, landing_session_id, idempotency_key,
         participant_name_snapshot, participant_age_snapshot, offering_name_snapshot,
         timezone_snapshot, start_at, end_at, location_snapshot, instructions_snapshot,
-        contact_email_snapshot, contact_name_snapshot, contact_phone_snapshot, ics_uid
+        contact_email_snapshot, contact_name_snapshot, contact_phone_snapshot, ics_uid, is_preview
     ) VALUES (
         v_booking.id, p_school_id, v_contact_id, v_participant_id, p_offering_id, p_window_id,
         v_occurrence.id, v_conversation_id, v_landing_id, p_idempotency_key,
@@ -104,7 +115,8 @@ BEGIN
         nullif(concat_ws(', ', nullif(v_profile.address, ''), nullif(v_profile.city, ''), nullif(v_profile.country, '')), ''),
         nullif(concat_ws(E'\n', nullif(v_profile.access_notes, ''), nullif(v_profile.parking_notes, ''),
             nullif(coalesce(v_offering.attire, v_profile.trial_guidance), '')), ''),
-        v_email, btrim(p_contact_name), btrim(p_phone), v_booking.id::text || '@fillthemat.com'
+        v_email, btrim(p_contact_name), btrim(p_phone), v_booking.id::text || '@fillthemat.com',
+        p_preview_owner_id IS NOT NULL
     ) RETURNING * INTO v_booking;
     UPDATE public.trial_occurrences SET booked_count = booked_count + 1 WHERE id = v_occurrence.id;
     SELECT notification_email INTO STRICT v_notification_email FROM public.school_settings WHERE school_id = p_school_id;
@@ -116,7 +128,8 @@ BEGIN
         'owner-booking/' || v_booking.id, v_booking.id, NULL, p_now);
     INSERT INTO public.funnel_events (school_id, booking_id, landing_session_id, conversation_id, event_type, metadata)
     VALUES (p_school_id, v_booking.id, v_landing_id, v_conversation_id, 'booking_confirmed',
-        jsonb_build_object('source', CASE WHEN v_conversation_id IS NULL THEN 'direct' ELSE 'chat' END));
+        jsonb_build_object('source', CASE WHEN v_conversation_id IS NULL THEN 'direct' ELSE 'chat' END)
+        || CASE WHEN p_preview_owner_id IS NULL THEN '{}'::jsonb ELSE '{"preview": true}'::jsonb END);
     RETURN QUERY SELECT v_booking, false;
 EXCEPTION WHEN unique_violation THEN
     -- Roll back every effect, including contact changes and a new occurrence.
@@ -126,5 +139,5 @@ EXCEPTION WHEN unique_violation THEN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.book_trial(uuid, uuid, uuid, timestamptz, text, text, text, text, integer, text, text, text, uuid, timestamptz) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.book_trial(uuid, uuid, uuid, timestamptz, text, text, text, text, integer, text, text, text, uuid, timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.book_trial(uuid, uuid, uuid, timestamptz, text, text, text, text, integer, text, text, text, uuid, timestamptz, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.book_trial(uuid, uuid, uuid, timestamptz, text, text, text, text, integer, text, text, text, uuid, timestamptz, uuid) TO service_role;

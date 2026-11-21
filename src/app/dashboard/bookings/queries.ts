@@ -8,7 +8,7 @@ export async function loadBookings(filter: string, status: "booked" | null, now:
   let query = supabase
     .from("bookings")
     .select(
-      "id, status, start_at, timezone_snapshot, participant_name_snapshot, participant_age_snapshot, offering_name_snapshot, contact_name_snapshot, contact_email_snapshot, email_deliveries(state, created_at)",
+      "id, status, start_at, timezone_snapshot, participant_name_snapshot, participant_age_snapshot, offering_name_snapshot, contact_name_snapshot, contact_email_snapshot, is_preview, email_deliveries(state, created_at)",
     )
     .eq("school_id", school.id)
     .order("start_at", { ascending: false })

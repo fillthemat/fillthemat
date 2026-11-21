@@ -23,6 +23,7 @@ AS $$
             FROM public.bookings b
             WHERE b.school_id = s.id
               AND b.status = 'booked'
+              AND NOT b.is_preview
               AND b.start_at >= p_now
         ),
         (
@@ -54,6 +55,7 @@ AS $$
             WHERE fe.school_id = s.id
               AND fe.event_type = 'booking_confirmed'
               AND fe.metadata ->> 'source' = 'chat'
+              AND fe.metadata ->> 'preview' IS NULL
         ),
         (
             SELECT count(*)::integer

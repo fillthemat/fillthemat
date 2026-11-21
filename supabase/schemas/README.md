@@ -135,6 +135,15 @@ only handle owner status updates, never INSERT. The dispatcher and reminder sche
 read **public only**. WhatsApp delivery
 death notices now enqueue public email directly through SQL.
 
+Owner preview bookings: an unpublished school is bookable only by its owner from
+the preview page. The route resolves access through the cookie client (RLS shows
+drafts and private settings only to the owner) and passes the owner's user ID as
+`p_preview_owner_id`; `book_trial` rechecks that ownership, so neither a client
+`preview` flag nor a forged ID can book a draft. Preview bookings set
+`bookings.is_preview`, keep every other invariant (capacity, idempotency, quotas,
+confirmation emails), and are excluded from overview demand metrics. Owners
+cancel them from the dashboard to free the seat.
+
 ## WhatsApp queues
 
 `functions/whatsapp-jobs.sql` and `functions/whatsapp-deliveries.sql` reuse the

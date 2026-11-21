@@ -106,9 +106,7 @@ export default async function BookingsPage({
                       {formatBookingWhen(new Date(booking.start_at), booking.timezone_snapshot)}
                     </p>
                   </div>
-                  <Badge variant={bookingStatusVariant(booking.status)}>
-                    {formatBookingStatus(booking.status)}
-                  </Badge>
+                  <StatusBadges status={booking.status} preview={booking.is_preview} />
                 </div>
                 <p className="text-xs text-muted-foreground">
                   <ContactLine
@@ -154,9 +152,7 @@ export default async function BookingsPage({
                     </TableCell>
                     <TableCell className="text-pretty">{booking.offering_name_snapshot}</TableCell>
                     <TableCell>
-                      <Badge variant={bookingStatusVariant(booking.status)}>
-                        {formatBookingStatus(booking.status)}
-                      </Badge>
+                      <StatusBadges status={booking.status} preview={booking.is_preview} />
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       <ContactLine
@@ -183,6 +179,16 @@ export default async function BookingsPage({
         </>
       )}
     </main>
+  );
+}
+
+function StatusBadges({ status, preview }: { status: string; preview: boolean }) {
+  return (
+    <span className="flex flex-wrap gap-1">
+      <Badge variant={bookingStatusVariant(status)}>{formatBookingStatus(status)}</Badge>
+      {/* Owner test bookings from the preview page, kept out of overview metrics. */}
+      {preview ? <Badge variant="outline">Preview</Badge> : null}
+    </span>
   );
 }
 

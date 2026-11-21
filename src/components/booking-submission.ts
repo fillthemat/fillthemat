@@ -48,7 +48,8 @@ export async function submitBooking(options: {
   setPending: (pending: boolean) => void;
   setError: (error: string | null) => void;
   resetVerification: () => void;
-  onBooked: () => void;
+  /** `preview` is the server's verdict, not the page's request. */
+  onBooked: (result: { preview: boolean }) => void;
 }): Promise<void> {
   const fetcher = options.fetcher ?? fetch;
   options.setPending(true);
@@ -94,7 +95,7 @@ export async function submitBooking(options: {
       options.setError(messageFromBody(booked));
       return;
     }
-    options.onBooked();
+    options.onBooked({ preview: "preview" in booked && booked.preview === true });
     confirmed = true;
   } catch {
     options.setError(fallback);
