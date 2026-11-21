@@ -1,5 +1,5 @@
 import { GATEWAY_TOKEN_ENV_VARS, hasGatewayToken } from "../src/lib/ai/gateway-token";
-import { getSupabaseEnv, missingRequiredKeys } from "./local-env";
+import { getSupabaseEnv, missingRequiredKeys, RETIRED_LOCAL_KEYS } from "./local-env";
 import { portFromSiteUrl } from "./local-ports";
 import { fail, tryCapture } from "./local-process";
 
@@ -48,6 +48,16 @@ async function main() {
       `${ENV_LOCAL} has required keys`,
       `${ENV_LOCAL} missing: ${missing.join(", ")}. Run bun run setup.`,
     ) && healthy;
+
+  const envFile = Bun.file(ENV_LOCAL);
+  const lines = (await envFile.exists()) ? (await envFile.text()).split("\n") : [];
+  const retired = RETIRED_LOCAL_KEYS.filter((key) =>
+    lines.some((line) => line.startsWith(`${key}=`)),
+  );
+  if (retired.length > 0)
+    console.log(
+      `…   ${ENV_LOCAL} has retired keys: ${retired.join(", ")}. Run bun run setup to remove.`,
+    );
 
   const appPort = portFromSiteUrl(process.env.NEXT_PUBLIC_SITE_URL);
   if (process.env.NEXT_PUBLIC_SITE_URL && appPort === undefined) {
