@@ -86,8 +86,12 @@ export function BookingFlow({
     return (
       <BookingConfirmationForm
         values={confirmation}
-        onBooked={({ offeringName, whenLabel }) =>
-          setDone(`You're booked for ${offeringName} on ${whenLabel}. Check email for details.`)
+        onBooked={({ offeringName, whenLabel, preview: savedAsPreview }) =>
+          setDone(
+            savedAsPreview
+              ? `Preview booking saved for ${offeringName} on ${whenLabel}. It is marked Preview on your dashboard; cancel it there to free the seat.`
+              : `You're booked for ${offeringName} on ${whenLabel}. Check email for details.`,
+          )
         }
       />
     );
@@ -111,6 +115,7 @@ export function BookingFlow({
       contactName,
       contactEmail,
       contactPhone,
+      preview,
     });
   }
 

@@ -26,6 +26,8 @@ CREATE TABLE public.bookings (
     ics_uid text NOT NULL,
     ics_sequence integer DEFAULT 0 NOT NULL,
     cancelled_at timestamp with time zone,
+    -- An owner's booking from their own preview page, never a family's.
+    is_preview boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT bookings_school_id_id UNIQUE (school_id, id),

@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getPublicSchoolBySlug,
   getSchoolBySlug,
+  getSchoolForBooking,
   getSchoolForLandingAccess,
   loadSchoolCatalog,
 } from "./public";
 
-const mocks = vi.hoisted(() => ({ from: vi.fn(), createClient: vi.fn() }));
+const mocks = vi.hoisted(() => ({ from: vi.fn(), createClient: vi.fn(), getClaims: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 
@@ -37,8 +38,60 @@ const school = {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.createClient.mockResolvedValue({ from: mocks.from });
+  mocks.createClient.mockResolvedValue({ from: mocks.from, auth: { getClaims: mocks.getClaims } });
+  mocks.getClaims.mockResolvedValue({ data: { claims: { sub: "owner-id" } } });
   mocks.from.mockReturnValue(query(school));
+});
+
+describe("booking access", () => {
+  function tables(schoolRow: unknown, settings: unknown) {
+    mocks.from.mockImplementation((table: string) =>
+      table === "school_settings" ? query(settings) : query(schoolRow),
+    );
+  }
+  const draft = { ...school, published_at: null };
+
+  it("books ordinary visitors only through the public lookup", async () => {
+    expect(await getSchoolForBooking("demo")).toMatchObject({
+      school: { id: school.id },
+      previewOwnerId: null,
+    });
+    expect(mocks.from).not.toHaveBeenCalledWith("school_settings");
+    expect(mocks.from.mock.results[0]?.value.not).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the owner ID only when RLS shows the requester the private settings", async () => {
+    tables(draft, { owner_user_id: "owner-id" });
+    expect(await getSchoolForBooking("demo", { preview: true })).toMatchObject({
+      school: { id: school.id, publishedAt: null },
+      previewOwnerId: "owner-id",
+    });
+  });
+
+  it("treats a non-owner's preview of a published school as an ordinary booking", async () => {
+    tables(school, null);
+    expect(await getSchoolForBooking("demo", { preview: true })).toMatchObject({
+      previewOwnerId: null,
+    });
+  });
+
+  it("never queries private settings for an anonymous preview", async () => {
+    mocks.getClaims.mockResolvedValue({ data: null });
+    tables(school, { owner_user_id: "owner-id" });
+    expect(await getSchoolForBooking("demo", { preview: true })).toMatchObject({
+      previewOwnerId: null,
+    });
+    expect(mocks.from).not.toHaveBeenCalledWith("school_settings");
+    tables(draft, { owner_user_id: "owner-id" });
+    expect(await getSchoolForBooking("demo", { preview: true })).toBeNull();
+  });
+
+  it("never books a draft without verified ownership", async () => {
+    tables(draft, null);
+    expect(await getSchoolForBooking("demo", { preview: true })).toBeNull();
+    tables(null, null);
+    expect(await getSchoolForBooking("demo", { preview: true })).toBeNull();
+  });
 });
 
 describe("school access", () => {
