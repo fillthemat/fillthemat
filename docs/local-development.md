@@ -17,17 +17,6 @@ If something fails, run `bun run doctor` for a read-only probe of Bun, Docker, S
 
 Stop this checkout's frontend with `bun run dev:stop`.
 
-## Server database access
-
-Chat persistence uses `SUPABASE_SECRET_KEY`, a **server-only** Supabase secret
-key. `bun run setup` writes the local stack's `SECRET_KEY` to `.env.local`.
-For deployed Next.js environments, set `SUPABASE_SECRET_KEY` to that Supabase
-project's secret key (Dashboard → Settings → API Keys). Never prefix it with
-`NEXT_PUBLIC_`, log it, or commit it. It bypasses RLS; only trusted server code
-may use this client. The publishable-key client remains subject to RLS.
-The app uses Supabase alone. Setup writes `SUPABASE_DB_URL` only for integration
-test fixtures; it is not an application or deployment credential.
-
 ## Optional integrations
 
 All optional. The app degrades cleanly without them.

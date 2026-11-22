@@ -2,7 +2,6 @@ import type { VercelConfig } from "@vercel/config/v1";
 
 export const config: VercelConfig = {
   bunVersion: "1.4.x",
-  // GitHub Actions owns production migrations; Vercel only builds.
   buildCommand: "bun run build:vercel",
   framework: "nextjs",
   // Playwright HTML reports live on GitHub Pages (`gh-pages`). Vercel must not
