@@ -114,7 +114,7 @@ export async function POST(request: Request) {
   // Status-only callbacks don't need a sweep.
   //
   // RISK (verify post-deploy): `after()` is implemented via Vercel's `waitUntil`;
-  // support on Vercel's Bun runtime (bunVersion in vercel.ts) is not explicitly
+  // support on Vercel's Bun runtime (bunVersion in vercel.json) is not explicitly
   // documented. If Bun doesn't honor it, this fast path silently degrades to the
   // daily cron — the job is already committed/enqueued above, so nothing is lost,
   // only the instant dispatch. Verify by sending one inbound and confirming the

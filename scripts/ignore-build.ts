@@ -31,14 +31,15 @@ export function ignoredBuildExitCode(
   if (!base || !/^[a-f0-9]{40}$/.test(base)) return decision(1, "no base");
   try {
     const diff = readDiff(base);
-    if (!diff.endsWith("\0")) return decision(1, "git error");
+    if (diff === "") return decision(1, "no changed paths");
+    if (!diff.endsWith("\0")) return decision(1, "incomplete diff");
     const paths = diff.slice(0, -1).split("\0");
     const path = paths.find((path) => !isDocsPath(path));
     return path === undefined
       ? decision(0, "docs-only Preview")
       : decision(1, `non-docs path: ${JSON.stringify(path)}`);
   } catch {
-    return decision(1, "git error"); // Base may be outside the depth-10 clone.
+    return decision(1, "comparison unavailable"); // Base may be outside the depth-10 clone.
   }
 }
 

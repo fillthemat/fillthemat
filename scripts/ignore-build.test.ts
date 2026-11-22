@@ -3,7 +3,7 @@ import { mkdtempSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { config } from "../vercel";
+import config from "../vercel.json";
 import { ignoredBuildExitCode as run, isDocsPath } from "./ignore-build";
 
 const preview = {
@@ -65,7 +65,7 @@ it.each([
   ["scripts/ignore-build.ts", false],
   ["package.json", false],
   ["bun.lock", false],
-  ["vercel.ts", false],
+  ["vercel.json", false],
   [".github/workflows/checks.yml", false],
   ["docs-other/config.json", false],
   ["opencode.json.bak", false],
@@ -88,6 +88,12 @@ it("skips only when every changed path is allowlisted", () => {
   expect(run(preview, () => "src/tool.ts\0docs/tool.ts\0")).toBe(1);
 });
 
+it("still builds a redeploy with no changed paths", () => {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  expect(run(preview, () => "")).toBe(1);
+  expect(log).toHaveBeenLastCalledWith("Build: no changed paths");
+});
+
 it.each(["production", "development", undefined])("builds in %s", (environment) => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
   const readDiff = vi.fn(() => "README.md\0");
@@ -106,13 +112,13 @@ it("builds for missing bases or git errors without printing env values", () => {
       throw new Error(`missing base ${preview.VERCEL_GIT_PREVIOUS_SHA}`);
     }),
   ).toBe(1);
-  expect(log).toHaveBeenLastCalledWith("Build: git error");
+  expect(log).toHaveBeenLastCalledWith("Build: comparison unavailable");
   expect(
     run({
       ...preview,
       VERCEL_GIT_PREVIOUS_SHA: "0".repeat(40),
     }),
   ).toBe(1);
-  expect(log).toHaveBeenLastCalledWith("Build: git error");
+  expect(log).toHaveBeenLastCalledWith("Build: comparison unavailable");
   expect(JSON.stringify(log.mock.calls)).not.toContain(preview.VERCEL_GIT_PREVIOUS_SHA);
 });
