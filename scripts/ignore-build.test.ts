@@ -1,7 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import config from "../vercel.json";
 import { ignoredBuildExitCode as run, isDocsPath } from "./ignore-build";
@@ -15,26 +12,6 @@ afterEach(() => vi.restoreAllMocks());
 
 it("disables merge-queue deployments", () => {
   expect(config.git?.deploymentEnabled).toHaveProperty("gh-readonly-queue/**", false);
-});
-
-it("skips gh-pages without any repository files or Bun available", () => {
-  const directory = mkdtempSync(join(tmpdir(), "fillthemat-ignore-build-"));
-  try {
-    const result = spawnSync("/bin/sh", ["-c", config.ignoreCommand ?? ""], {
-      cwd: directory,
-      env: {
-        NODE_ENV: "test",
-        VERCEL_GIT_COMMIT_REF: "gh-pages",
-        PATH: directory,
-      },
-      encoding: "utf8",
-      timeout: 5_000,
-    });
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-  } finally {
-    rmdirSync(directory);
-  }
 });
 
 it("defers to the build script for other branches", () => {

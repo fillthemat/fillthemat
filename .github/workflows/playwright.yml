@@ -11,14 +11,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
-  pull-requests: write
+  contents: read
 
 env:
   CI: true
-  PLAYWRIGHT_HTML_OPEN: never
 
 jobs:
   e2e:
@@ -35,11 +31,9 @@ jobs:
       - run: bun run setup
       - run: bun run build
       - run: bunx playwright install --with-deps chromium
-      - id: playwright
-        run: bun run test:e2e
+      - run: bun run test:e2e
 
-      - name: Upload HTML report
-        id: html_report
+      - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
@@ -47,156 +41,3 @@ jobs:
           path: playwright-report/
           retention-days: 14
           if-no-files-found: ignore
-
-      - name: Upload traces, screenshots, and videos
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-test-results
-          path: test-results/
-          retention-days: 14
-          if-no-files-found: ignore
-
-      - name: Publish visual report to GitHub Pages
-        id: pages
-        if: github.event_name != 'merge_group' && !cancelled()
-        env:
-          DEST: playwright/${{ github.event.pull_request.number || github.run_id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ ! -f playwright-report/index.html ]; then
-            echo "No playwright-report/index.html; skipping Pages publish."
-            exit 0
-          fi
-          site=$(GH_TOKEN="$GITHUB_TOKEN" gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url)
-          report_url="${site%/}/$DEST/"
-          work=$(mktemp -d)
-          git clone --depth=1 --branch gh-pages \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$work"
-          mkdir -p "$work/$DEST"
-          rm -rf "$work/$DEST"/*
-          cp -R playwright-report/. "$work/$DEST/"
-          cd "$work"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "Report unchanged."
-            echo "report_url=$report_url" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git commit -m "Playwright report ${DEST}"
-          for attempt in 1 2 3 4 5 6; do
-            if git pull --rebase origin gh-pages && git push origin gh-pages; then
-              echo "Published ${DEST}"
-              echo "report_url=$report_url" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            echo "Push race (attempt ${attempt}); retrying..."
-            sleep $((attempt * 2))
-          done
-          echo "Failed to publish report after retries."
-          exit 1
-
-      - name: Write job summary
-        if: ${{ !cancelled() }}
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REPORT_URL: ${{ steps.pages.outputs.report_url }}
-        run: |
-          {
-            echo "## Playwright"
-            echo ""
-            echo "Status: **${{ steps.playwright.outcome || job.status }}**"
-            echo ""
-            if [ -n "$REPORT_URL" ]; then
-              echo "Visual report (screenshots + traces in the browser):"
-              echo ""
-              echo "${REPORT_URL}"
-              echo ""
-              echo "Open a test, then **Screenshot** or **Trace** to see the UI."
-              echo ""
-            fi
-            echo "Artifacts on this [workflow run](${RUN_URL}):"
-            echo ""
-            echo "- \`playwright-report\` — HTML report"
-            echo "- \`playwright-test-results\` — traces, screenshots, videos"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Comment results on the PR
-        if: github.event_name == 'pull_request' && !cancelled()
-        continue-on-error: true
-        uses: actions/github-script@v9
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REPORT_URL: ${{ steps.pages.outputs.report_url }}
-          ARTIFACT_URL: ${{ steps.html_report.outputs.artifact-url }}
-        with:
-          script: |
-            const fs = require("fs");
-            const marker = "<!-- playwright-pr-report -->";
-            const passed = "${{ steps.playwright.outcome }}" === "success";
-            const runUrl = process.env.RUN_URL;
-            const reportUrl = process.env.REPORT_URL;
-
-            const failed = [];
-            try {
-              const report = JSON.parse(
-                fs.readFileSync("test-results/results.json", "utf8"),
-              );
-              const walk = (suite) => {
-                for (const spec of suite.specs ?? []) {
-                  if (spec.ok === false) {
-                    failed.push(spec.title);
-                  }
-                }
-                for (const child of suite.suites ?? []) walk(child);
-              };
-              for (const suite of report.suites ?? []) walk(suite);
-            } catch {
-              // Report is missing when the suite never started.
-            }
-
-            const lines = [
-              marker,
-              "## Playwright e2e",
-              "",
-              `**${passed ? "Passed" : "Failed"}** · [workflow run](${runUrl})`,
-            ];
-            if (reportUrl) {
-              lines.push("", `**[Visual report](${reportUrl})** · Open a test to see its screenshots and trace.`);
-            }
-            if (process.env.ARTIFACT_URL) {
-              lines.push("", `[Download the HTML report](${process.env.ARTIFACT_URL}) (available immediately).`);
-            }
-            if (failed.length > 0) {
-              lines.push("", "Failed tests:", ...failed.map((title) => `- ${title}`));
-            }
-            const body = lines.join("\n");
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              per_page: 100,
-            });
-            const existing = comments.find((comment) =>
-              comment.body?.includes(marker),
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }

@@ -6,11 +6,10 @@
   "framework": "nextjs",
   "git": {
     "deploymentEnabled": {
-      "gh-pages": false,
       "gh-readonly-queue/**": false
     }
   },
-  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" = \"gh-pages\" ] || bun --no-env-file scripts/ignore-build.ts",
+  "ignoreCommand": "bun --no-env-file scripts/ignore-build.ts",
   "crons": [
     { "path": "/api/cron/maintenance", "schedule": "0 14 * * *" },
     { "path": "/api/cron/whatsapp", "schedule": "0 5 * * *" }
