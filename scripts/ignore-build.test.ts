@@ -1,9 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { config } from "../vercel";
+import config from "../vercel.json";
 import { ignoredBuildExitCode as run, isDocsPath } from "./ignore-build";
 
 const preview = {
@@ -15,26 +12,6 @@ afterEach(() => vi.restoreAllMocks());
 
 it("disables merge-queue deployments", () => {
   expect(config.git?.deploymentEnabled).toHaveProperty("gh-readonly-queue/**", false);
-});
-
-it("skips gh-pages without any repository files or Bun available", () => {
-  const directory = mkdtempSync(join(tmpdir(), "fillthemat-ignore-build-"));
-  try {
-    const result = spawnSync("/bin/sh", ["-c", config.ignoreCommand ?? ""], {
-      cwd: directory,
-      env: {
-        NODE_ENV: "test",
-        VERCEL_GIT_COMMIT_REF: "gh-pages",
-        PATH: directory,
-      },
-      encoding: "utf8",
-      timeout: 5_000,
-    });
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-  } finally {
-    rmdirSync(directory);
-  }
 });
 
 it("defers to the build script for other branches", () => {
@@ -65,7 +42,7 @@ it.each([
   ["scripts/ignore-build.ts", false],
   ["package.json", false],
   ["bun.lock", false],
-  ["vercel.ts", false],
+  ["vercel.json", false],
   [".github/workflows/checks.yml", false],
   ["docs-other/config.json", false],
   ["opencode.json.bak", false],
@@ -88,6 +65,12 @@ it("skips only when every changed path is allowlisted", () => {
   expect(run(preview, () => "src/tool.ts\0docs/tool.ts\0")).toBe(1);
 });
 
+it("still builds a redeploy with no changed paths", () => {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  expect(run(preview, () => "")).toBe(1);
+  expect(log).toHaveBeenLastCalledWith("Build: no changed paths");
+});
+
 it.each(["production", "development", undefined])("builds in %s", (environment) => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
   const readDiff = vi.fn(() => "README.md\0");
@@ -106,13 +89,13 @@ it("builds for missing bases or git errors without printing env values", () => {
       throw new Error(`missing base ${preview.VERCEL_GIT_PREVIOUS_SHA}`);
     }),
   ).toBe(1);
-  expect(log).toHaveBeenLastCalledWith("Build: git error");
+  expect(log).toHaveBeenLastCalledWith("Build: comparison unavailable");
   expect(
     run({
       ...preview,
       VERCEL_GIT_PREVIOUS_SHA: "0".repeat(40),
     }),
   ).toBe(1);
-  expect(log).toHaveBeenLastCalledWith("Build: git error");
+  expect(log).toHaveBeenLastCalledWith("Build: comparison unavailable");
   expect(JSON.stringify(log.mock.calls)).not.toContain(preview.VERCEL_GIT_PREVIOUS_SHA);
 });

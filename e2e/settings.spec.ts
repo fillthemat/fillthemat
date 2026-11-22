@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { authSql, loadLocalEnv } from "../src/test/integration-env";
 
 /**
  * Owner settings UI. Requires the local stack from `docs/local-development.md`
@@ -101,10 +102,11 @@ test("a valid save reports success and clears the unsaved state", async ({ page 
 
 test("updating spots confirms the save and leaves no unsaved state", async ({ page }) => {
   await page.goto("/dashboard/settings?section=schedule");
-  const row = page
-    .getByRole("listitem")
-    .filter({ has: page.getByRole("button", { name: "Update Spots" }) })
-    .first();
+  await page
+    .getByRole("button", { name: /Kids BJJ \(4-9\).*4:45 PM/ })
+    .first()
+    .click();
+  const row = page.getByRole("dialog");
   const spots = row.getByLabel(/Spots per class/);
   const original = await spots.inputValue();
   const next = String(Number(original) + 1);
@@ -161,36 +163,72 @@ test("adding and deleting a question requires confirmation to delete", async ({ 
   await expect(page.getByRole("listitem").filter({ hasText: question })).toHaveCount(0);
 });
 
-test("a class time can be added, then deleted after confirming", async ({ page }) => {
-  await page.goto("/dashboard/settings?section=schedule");
+test("walkthrough: schedule a Chalk class every Tuesday", async ({ page }, testInfo) => {
+  loadLocalEnv();
+  const sql = authSql();
+  const name = `Chalk class ${crypto.randomUUID().slice(0, 8)}`;
+  const screenshot = async (label: string) => {
+    await testInfo.attach(label, { body: await page.screenshot(), contentType: "image/png" });
+  };
+  try {
+    await test.step("Define the trial class and follow its scheduling link", async () => {
+      await page.goto("/dashboard/settings?section=offerings");
+      await page.getByRole("button", { name: "Add a Trial Class" }).click();
+      const editor = page.getByRole("dialog");
+      await editor.getByLabel(/Class name/).fill(name);
+      await editor.getByRole("button", { name: "Add Trial Class" }).click();
+      await page
+        .getByRole("listitem")
+        .filter({ hasText: name })
+        .getByRole("link", { name: "Add a class time" })
+        .click();
+    });
 
-  await page.getByRole("button", { name: "Add a Class Time" }).click();
+    await test.step("Add a recurring time from Tuesday’s column", async () => {
+      const calendar = page.getByRole("table", { name: "Recurring weekly timetable" });
+      await calendar.getByRole("button", { name: "Add class on Tuesday" }).click();
+      const editor = page.getByRole("dialog", { name: "Add a class time" });
+      await expect(editor.getByLabel(/Trial class/).locator("option:checked")).toHaveText(name);
+      await expect(editor.getByLabel(/Day of the week/)).toHaveValue("2");
+      await editor.getByLabel(/Start time/).fill("19:15");
+      await editor.getByLabel(/Class length in minutes/).fill("45");
+      await editor.getByRole("button", { name: "Add Class Time" }).click();
+      await expect(editor).toBeHidden();
+      await page.reload();
+      await expect(calendar.getByRole("button", { name: new RegExp(name) })).toContainText(
+        "7:15 PM – 8:00 PM",
+      );
+      await screenshot("Weekly calendar with the new class");
+    });
 
-  const editor = page.getByRole("dialog", { name: "Add a class time" });
-  await expect(editor).toBeVisible();
-  await editor.getByLabel(/Day of the week/).selectOption("2");
-  await editor.getByLabel(/Start time/).fill("19:15");
-  await editor.getByLabel(/Class length in minutes/).fill("45");
-  await editor.getByLabel(/^Internal label/).fill("Playwright temp window");
-  await editor.getByRole("button", { name: "Add Class Time" }).click();
-  await expect(editor).toBeHidden();
-
-  const row = page.getByRole("listitem").filter({ hasText: "Playwright temp window" });
-  await expect(row).toBeVisible();
-  await expect(row).toContainText("7:15 PM – 8:00 PM");
-
-  // Escape closes the confirmation without deleting anything.
-  await row.getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("alertdialog")).toBeHidden();
-  await expect(row).toBeVisible();
-
-  await row.getByRole("button", { name: "Delete" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Delete Class Time" }).click();
-  await expect(
-    page.getByRole("listitem").filter({ hasText: "Playwright temp window" }),
-  ).toHaveCount(0);
+    await test.step("Find the class on a phone and manage it", async () => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.getByRole("button", { name: "Tuesday", exact: true }).click();
+      const card = page
+        .getByRole("region", { name: "Tuesday" })
+        .getByRole("button", { name: new RegExp(name) });
+      await expect(card).toBeVisible();
+      await screenshot("Tuesday on mobile");
+      await card.click();
+      const details = page.getByRole("dialog", { name });
+      await details.getByRole("button", { name: "Delete" }).click();
+      await expect(
+        page.getByRole("alertdialog", { name: "Delete this class time?" }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("alertdialog")).toBeHidden();
+      await details.getByRole("button", { name: "Delete" }).click();
+      await page
+        .getByRole("alertdialog")
+        .getByRole("button", { name: "Delete Class Time" })
+        .click();
+      await expect(details).toBeHidden();
+      await expect(card).toHaveCount(0);
+    });
+  } finally {
+    await sql`delete from public.trial_offerings where name = ${name} and school_id = (select id from public.schools where slug = 'openmat')`;
+    await sql.end();
+  }
 });
 
 test("a trial class can be edited, saved, reloaded, and edited again", async ({ page }) => {
@@ -198,7 +236,7 @@ test("a trial class can be edited, saved, reloaded, and edited again", async ({ 
   const row = page
     .getByRole("region", { name: "Your trial classes" })
     .getByRole("listitem")
-    .filter({ hasText: "Kids beginner trial" })
+    .filter({ hasText: "Kids BJJ (4-9)" })
     .first();
   await row.getByRole("button", { name: "Edit" }).click();
 
@@ -235,7 +273,7 @@ test("cancel on a clean editor closes immediately without asking", async ({ page
   const row = page
     .getByRole("region", { name: "Your trial classes" })
     .getByRole("listitem")
-    .filter({ hasText: "Kids beginner trial" })
+    .filter({ hasText: "Kids BJJ (4-9)" })
     .first();
   await row.getByRole("button", { name: "Edit" }).click();
   const editor = page.getByRole("dialog");

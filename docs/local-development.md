@@ -17,6 +17,13 @@ If something fails, run `bun run doctor` for a read-only probe of Bun, Docker, S
 
 Stop this checkout's frontend with `bun run dev:stop`.
 
+The local owner (`owner@local.test` / `local-dev-password`) manages OpenMat MMA at
+`/s/openmat?preview=1`. Fresh databases use a 2026-11-21 snapshot of its public
+production profile, 6 FAQs, 15 trial offerings, and 44 weekly trial windows.
+Production accounts, integration connections, and customer activity are excluded;
+the booking and lead examples are synthetic. Seed reruns preserve local settings
+and schedule edits rather than synchronizing with production.
+
 ## Optional integrations
 
 All optional. The app degrades cleanly without them.

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "bunVersion": "1.4.x",
+  "installCommand": "bunx bun@1.4.3 install --frozen-lockfile",
+  "buildCommand": "bun run build:vercel",
+  "framework": "nextjs",
+  "git": {
+    "deploymentEnabled": {
+      "gh-readonly-queue/**": false
+    }
+  },
+  "ignoreCommand": "bun --no-env-file scripts/ignore-build.ts",
+  "crons": [
+    { "path": "/api/cron/maintenance", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/whatsapp", "schedule": "0 5 * * *" }
+  ]
+}

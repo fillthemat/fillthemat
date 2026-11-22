@@ -1,12 +1,21 @@
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<"table"> & { variant?: "default" | "timetable" }) {
   return (
     <div data-slot="table-container" className="relative w-full overflow-x-auto">
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        className={cn(
+          "w-full caption-bottom text-sm",
+          variant === "timetable" &&
+            "table-fixed [&_tbody_th]:pt-4 [&_tbody_th]:align-top [&_tbody_th]:tabular-nums [&_td]:border-l [&_td]:border-border [&_td]:p-1 [&_thead]:bg-muted [&_thead_th]:py-2 [&_thead_th]:text-center [&_thead_th+th]:border-l [&_thead_th+th]:border-border",
+          className,
+        )}
         {...props}
       />
     </div>

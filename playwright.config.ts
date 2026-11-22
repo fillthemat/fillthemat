@@ -17,17 +17,10 @@ export default defineConfig({
   retries: isCI ? 2 : 0,
   workers: 1,
   reporter: isCI
-    ? [
-        ["html", { open: "never", outputFolder: "playwright-report" }],
-        ["github"],
-        ["json", { outputFile: "test-results/results.json" }],
-        ["list"],
-      ]
+    ? [["html", { open: "never" }], ["github"]]
     : [["html", { open: "never" }], ["list"]],
   use: {
     baseURL,
-    // CI captures a screenshot and trace for every test so the hosted HTML
-    // report shows the UI without downloading artifacts.
     trace: isCI ? "on" : "retain-on-failure",
     screenshot: isCI ? "on" : "only-on-failure",
     video: isCI ? "retain-on-failure" : "off",

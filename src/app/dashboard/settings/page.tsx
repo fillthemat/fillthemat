@@ -16,7 +16,7 @@ import { SettingsShell } from "./settings-shell";
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ section?: string }>;
+  searchParams: Promise<{ section?: string; offering?: string }>;
 }) {
   const [{ school }, params] = await Promise.all([requireSchool(), searchParams]);
   const section: SectionId = resolveSection(params.section);
@@ -37,6 +37,7 @@ export default async function SettingsPage({
             schoolId={school.id}
             school={school}
             location={location}
+            preferredOfferingId={params.offering}
           />
         </section>
       </SettingsShell>
@@ -49,11 +50,13 @@ async function SectionContent({
   schoolId,
   school,
   location,
+  preferredOfferingId,
 }: {
   section: SectionId;
   schoolId: string;
   school: Awaited<ReturnType<typeof requireSchool>>["school"];
   location: string | null;
+  preferredOfferingId?: string;
 }) {
   if (section === "profile") {
     const published = school.published_at != null;
@@ -112,6 +115,7 @@ async function SectionContent({
     ]);
     return (
       <ScheduleSection
+        preferredOfferingId={preferredOfferingId}
         timezoneLabel={formatTimezone(school.timezone)}
         offerings={offerings.map((offering) => ({
           id: offering.id,

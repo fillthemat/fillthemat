@@ -10,6 +10,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -134,18 +135,21 @@ export function ItemActionForm({
     startTransition(async () => {
       setState(await action({ id, ...extraFields }));
     });
+  const button = (
+    <Button
+      type="button"
+      variant={variant === "danger" ? "destructive" : "outline"}
+      size="sm"
+      disabled={pending || disabled}
+      aria-busy={pending || undefined}
+      onClick={confirm ? undefined : submit}
+    >
+      {pending ? pendingLabel : label}
+    </Button>
+  );
   return (
     <div className={cn("flex min-w-0 flex-col gap-1", className)}>
-      <Button
-        type="button"
-        variant={variant === "danger" ? "destructive" : "outline"}
-        size="sm"
-        disabled={pending || disabled}
-        aria-busy={pending || undefined}
-        onClick={confirm ? () => setOpen(true) : submit}
-      >
-        {pending ? pendingLabel : label}
-      </Button>
+      {!confirm && button}
       {state.status !== "idle" ? (
         <p
           role="status"
@@ -160,6 +164,7 @@ export function ItemActionForm({
       ) : null}
       {confirm ? (
         <AlertDialog open={open} onOpenChange={setOpen}>
+          <AlertDialogTrigger asChild>{button}</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>{confirm.title}</AlertDialogTitle>
