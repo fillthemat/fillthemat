@@ -1,5 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { authSql, loadLocalEnv } from "../src/test/integration-env";
+import { signIn } from "./fixtures/sign-in";
 
 /**
  * Owner settings UI. Requires the local stack from `docs/local-development.md`
@@ -7,16 +8,6 @@ import { authSql, loadLocalEnv } from "../src/test/integration-env";
  */
 
 test.describe.configure({ mode: "serial" });
-
-async function signIn(page: Page) {
-  await page.goto("/sign-in");
-  const form = page.locator("form", { hasText: "Local email auth" });
-  if ((await form.count()) === 0) {
-    test.skip(true, "Local email auth is disabled (NEXT_PUBLIC_DEV_AUTH)");
-  }
-  await form.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/dashboard/);
-}
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);

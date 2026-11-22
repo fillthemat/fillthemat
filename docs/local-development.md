@@ -17,6 +17,8 @@ If something fails, run `bun run doctor` for a read-only probe of Bun, Docker, S
 
 Stop this checkout's frontend with `bun run dev:stop`.
 
+For hosted reviewer sign-in and the reusable Open Mat account, see [Preview authentication](preview-auth.md).
+
 ## Optional integrations
 
 All optional. The app degrades cleanly without them.

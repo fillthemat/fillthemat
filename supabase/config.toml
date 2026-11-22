@@ -189,7 +189,7 @@ enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
-enable_manual_linking = false
+enable_manual_linking = true
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
 minimum_password_length = 6
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
@@ -229,7 +229,7 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Local only (hosted Auth is configured in the dashboard; production stays Google).
+# Local Auth settings. Configure email/password and Google on hosted projects as well.
 enabled = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.

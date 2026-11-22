@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 function safeNext(value: string | null): string {
-  if (value == null) return "/";
-  if (!value.startsWith("/") || value.startsWith("//")) return "/";
-  return value;
+  return value === "/dashboard" || value === "/dashboard/account" ? value : "/";
 }
 
 export async function GET(request: Request) {

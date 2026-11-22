@@ -16,6 +16,7 @@
     "eval:assistant": "bun scripts/assistant-eval.ts",
     "logs:prod": "bun --no-env-file scripts/logs-prod.ts",
     "pr:queue": "bun --no-env-file scripts/pr-queue.ts",
+    "seed:preview": "bun --no-env-file scripts/seed-preview-owner.ts",
     "setup": "bun scripts/setup-local.ts",
     "skills:install": "skills experimental_install -y",
     "skills:update": "skills update -p -y",

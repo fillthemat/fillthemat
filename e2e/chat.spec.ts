@@ -1,13 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { signIn } from "./fixtures/sign-in";
 
 test("the message-limit refusal is a notice and the next message can start afresh", async ({
   page,
 }) => {
-  await page.goto("/sign-in");
-  const form = page.locator("form", { hasText: "Local email auth" });
-  test.skip((await form.count()) === 0, "Local email auth is disabled");
-  await form.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/dashboard/);
+  await signIn(page);
 
   // Exercise the browser's HTTP boundary; lifecycle/storage is covered by
   // the web-turn integration test against real Supabase.

@@ -64,7 +64,6 @@ async function setupLocalEnvVars(): Promise<Record<string, string>> {
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: TURNSTILE_TEST_SITE_KEY,
     TURNSTILE_SECRET_KEY: TURNSTILE_TEST_SECRET_KEY,
     ALLOW_SELF_APPROVAL: "true",
-    NEXT_PUBLIC_DEV_AUTH: "true",
     BOOKING_AGENT_MODEL: "google/gemini-2.5-flash-lite",
   };
   if (!process.env.NEXT_PUBLIC_SITE_URL) {

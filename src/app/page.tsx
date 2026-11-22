@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ContinueWithGoogle } from "@/components/continue-with-google";
+import { Button } from "@/components/ui/button";
 import { getCurrentSchool } from "@/lib/auth/current-school";
 import { getCurrentUser } from "@/lib/auth/current-user";
 
@@ -34,7 +35,9 @@ export default async function HomePage({
         Give every school a branded AI concierge and a persistent Book Trial path. Prospects confirm
         a timeslot. You see who is coming.
       </p>
-      <ContinueWithGoogle />
+      <Button asChild>
+        <Link href="/sign-in">School owner sign in</Link>
+      </Button>
     </main>
   );
 }

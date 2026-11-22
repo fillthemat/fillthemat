@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "@/app/auth/actions";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
@@ -9,6 +11,7 @@ const LINKS = [
   { href: "/dashboard/bookings", label: "Bookings", match: "prefix" as const },
   { href: "/dashboard/leads", label: "Leads", match: "prefix" as const },
   { href: "/dashboard/settings", label: "Settings", match: "prefix" as const },
+  { href: "/dashboard/account", label: "Account", match: "exact" as const },
 ];
 
 function isActive(pathname: string, href: string, match: "exact" | "prefix") {
@@ -43,6 +46,11 @@ export function DashboardNav({ schoolName }: { schoolName: string }) {
           })}
         </ul>
       </nav>
+      <form action={signOut} className="px-3 pb-2 md:mt-auto">
+        <Button variant="ghost" size="sm">
+          Sign out
+        </Button>
+      </form>
     </header>
   );
 }
