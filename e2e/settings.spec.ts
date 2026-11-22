@@ -21,6 +21,63 @@ test.beforeEach(async ({ page }) => {
   await signIn(page);
 });
 
+test("branding and public pages preserve logo proportions on mobile and desktop", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/settings?section=branding");
+  const address = page.getByLabel("Logo image address");
+  const original = await address.inputValue();
+  const save = async () => {
+    await page.getByRole("button", { name: "Save Branding" }).click();
+    await expect(page.getByText("Branding saved and live on your public page.")).toBeVisible();
+  };
+  const sizes = [
+    [378, 200],
+    [200, 200],
+    [1200, 120],
+  ] as const;
+  await page.route("https://example.com/e2e-logo-*.svg", (route) => {
+    const dimensions = /e2e-logo-(\d+)-(\d+)\.svg/.exec(route.request().url());
+    return route.fulfill({
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="${dimensions?.[1]}" height="${dimensions?.[2]}"><rect width="100%" height="100%" fill="navy"/></svg>`,
+    });
+  });
+
+  try {
+    for (const [width, height] of sizes) {
+      await page.goto("/dashboard/settings?section=branding");
+      await address.fill(`https://example.com/e2e-logo-${width}-${height}.svg`);
+      await save();
+      for (const viewportWidth of [375, 1280]) {
+        await page.setViewportSize({ width: viewportWidth, height: 900 });
+        for (const path of ["/dashboard/settings?section=branding", "/s/demo?preview=1"]) {
+          await page.goto(path);
+          const showPreview = page.getByRole("button", { name: "Show Preview" });
+          if (await showPreview.isVisible()) await showPreview.click();
+          const logo = page.getByRole("img", { name: / logo$/ });
+          await expect(logo).toBeVisible();
+          await expect
+            .poll(() =>
+              logo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+            )
+            .toBe(true);
+          const bounds = await logo.boundingBox();
+          expect(bounds).not.toBeNull();
+          expect(bounds!.width / bounds!.height).toBeCloseTo(width / height, 1);
+          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewportWidth);
+        }
+      }
+    }
+  } finally {
+    await page.goto("/dashboard/settings?section=branding");
+    if ((await address.inputValue()) !== original) {
+      await address.fill(original);
+      await save();
+    }
+  }
+});
+
 test("every category is deep-linkable and marked current", async ({ page }) => {
   const sections: Array<[string, string]> = [
     ["profile", "School details"],
