@@ -24,6 +24,7 @@ import { sectionHref } from "../sections";
 import { Badge, EmptyState, FieldGroup, SelectField, TextField } from "../ui/controls";
 import { ItemActionForm, SaveBar, useSettingsForm } from "../ui/settings-form";
 import { useTimedAnnouncement } from "../ui/use-timed-announcement";
+import { WeeklyCalendar } from "./weekly-calendar";
 
 export type ScheduleWindowItem = {
   id: string;
@@ -55,21 +56,19 @@ export function ScheduleSection({
   windows,
   offerings,
   timezoneLabel,
+  preferredOfferingId,
 }: {
   windows: ScheduleWindowItem[];
   offerings: ScheduleOfferingOption[];
   timezoneLabel: string;
+  preferredOfferingId?: string;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [addDay, setAddDay] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = windows.find((item) => item.id === selectedId);
   const [announcement, setAnnouncement] = useTimedAnnouncement();
   const opener = useRef<HTMLButtonElement | null>(null);
-  const activeCount = windows.filter((item) => item.active).length;
-
-  const openAdd = (button: HTMLButtonElement) => {
-    opener.current = button;
-    setAnnouncement(null);
-    setAdding(true);
-  };
+  const heading = useRef<HTMLHeadingElement>(null);
 
   if (offerings.length === 0) {
     return (
@@ -88,7 +87,15 @@ export function ScheduleSection({
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-muted-foreground">Times are in {timezoneLabel}.</p>
+      <div>
+        <h3 ref={heading} tabIndex={-1} className="font-semibold">
+          Your recurring week
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Choose a day to add a class, or select a class to manage it. Times repeat every week in{" "}
+          {timezoneLabel}.
+        </p>
+      </div>
 
       {announcement ? (
         <p role="status" aria-live="polite" className="text-sm text-success">
@@ -96,88 +103,54 @@ export function ScheduleSection({
         </p>
       ) : null}
 
-      <section className="flex flex-col gap-4" aria-labelledby="schedule-list">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 id="schedule-list" className="text-sm font-semibold">
-            Weekly class times
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            {windows.length === 0
-              ? "None yet"
-              : `${formatCount(windows.length, "class time")} · ${activeCount} open to families`}
-          </p>
-        </div>
-
-        {windows.length === 0 ? (
-          <EmptyState
-            title="No class times yet"
-            action={
-              <Button
-                type="button"
-                variant="outline"
-                onClick={(event) => openAdd(event.currentTarget)}
-              >
-                Add a Class Time
-              </Button>
-            }
-          >
-            Add the weekly times a family can try a class.
-          </EmptyState>
-        ) : (
-          <div className="flex flex-col gap-5">
-            {WEEK_ORDER.filter((day) => windows.some((item) => item.dayOfWeek === day)).map(
-              (day) => (
-                <section key={day} className="flex flex-col gap-1">
-                  <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                    {DAY_NAMES[day]}
-                  </h4>
-                  <ul className="divide-y divide-border border-y border-border">
-                    {windows
-                      .filter((item) => item.dayOfWeek === day)
-                      .map((item) => (
-                        <WindowRow key={item.id} item={item} />
-                      ))}
-                  </ul>
-                </section>
-              ),
-            )}
-          </div>
-        )}
-      </section>
-
-      {windows.length > 0 ? (
-        <div>
-          <Button type="button" variant="outline" onClick={(event) => openAdd(event.currentTarget)}>
-            Add a Class Time
-          </Button>
-        </div>
-      ) : null}
+      <WeeklyCalendar
+        windows={windows}
+        onAdd={(button, day) => {
+          opener.current = button;
+          setAnnouncement(null);
+          setAddDay(day);
+        }}
+        onSelect={(button, id) => {
+          opener.current = button;
+          setSelectedId(id);
+        }}
+      />
 
       <Dialog
-        open={adding}
+        open={addDay !== null || !!selected}
         onOpenChange={(isOpen) => {
-          if (!isOpen) setAdding(false);
+          if (!isOpen) {
+            setAddDay(null);
+            setSelectedId(null);
+          }
         }}
       >
         <DialogContent
           className="max-h-[90dvh] overflow-y-auto"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            opener.current?.focus();
+            (opener.current?.isConnected ? opener.current : heading.current)?.focus();
           }}
         >
           <DialogHeader>
-            <DialogTitle>Add a class time</DialogTitle>
-            <DialogDescription>New class times become bookable right away.</DialogDescription>
+            <DialogTitle>{selected?.offeringName ?? "Add a class time"}</DialogTitle>
+            <DialogDescription>
+              {selected
+                ? `Every ${DAY_NAMES[selected.dayOfWeek]} · ${formatTimeRange(selected.startMinute, selected.durationMinutes)} · ${timezoneLabel}`
+                : "Choose a trial class and the time it meets each week."}
+            </DialogDescription>
           </DialogHeader>
-          {adding ? (
+          {selected && <WindowDetails item={selected} />}
+          {addDay !== null ? (
             <WindowForm
               offerings={offerings}
+              initialDay={addDay}
+              preferredOfferingId={preferredOfferingId}
               timezoneLabel={timezoneLabel}
-              onCancel={() => setAdding(false)}
+              onCancel={() => setAddDay(null)}
               onSuccess={(state) => {
                 setAnnouncement(state.message);
-                setAdding(false);
+                setAddDay(null);
               }}
             />
           ) : null}
@@ -189,11 +162,15 @@ export function ScheduleSection({
 
 function WindowForm({
   offerings,
+  initialDay,
+  preferredOfferingId,
   timezoneLabel,
   onCancel,
   onSuccess,
 }: {
   offerings: ScheduleOfferingOption[];
+  initialDay: number;
+  preferredOfferingId?: string;
   timezoneLabel: string;
   onCancel: () => void;
   onSuccess: (state: SettingsFormState) => void;
@@ -202,8 +179,13 @@ function WindowForm({
     action: createWindowAction,
     schema: windowSchema,
     initialValues: {
-      trialOfferingId: offerings[0]?.id ?? "",
-      dayOfWeek: "1",
+      trialOfferingId:
+        (
+          offerings.find((item) => item.id === preferredOfferingId) ??
+          offerings.find((item) => item.active) ??
+          offerings[0]
+        )?.id ?? "",
+      dayOfWeek: String(initialDay),
       startMinute: "18:00",
       durationMinutes: "60",
       capacity: "8",
@@ -279,31 +261,28 @@ function WindowForm({
         dirty={dirty}
         onCancel={onCancel}
         state={state}
-        idleHint="New class times become bookable right away."
+        idleHint="Repeats weekly until turned off."
       />
     </form>
   );
 }
 
-function WindowRow({ item }: { item: ScheduleWindowItem }) {
+function WindowDetails({ item }: { item: ScheduleWindowItem }) {
   return (
-    <li className="flex flex-col gap-3 py-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-medium tabular-nums">
-            {formatTimeRange(item.startMinute, item.durationMinutes)}
-          </p>
           <span className="text-xs text-muted-foreground">
             {formatDuration(item.durationMinutes)}
           </span>
-          {item.active ? <Badge tone="active">Open</Badge> : <Badge tone="muted">Turned off</Badge>}
+          {item.active && item.offeringActive ? (
+            <Badge tone="active">Open</Badge>
+          ) : (
+            <Badge tone="muted">{item.active ? "Trial class not offered" : "Turned off"}</Badge>
+          )}
           {item.hasUpcomingBooking ? <Badge tone="warning">Upcoming bookings</Badge> : null}
         </div>
-        <p className="text-sm text-pretty text-muted-foreground">
-          {item.offeringName}
-          {item.offeringActive ? "" : " · trial class is not offered"}
-          {item.label ? ` · ${item.label}` : ""}
-        </p>
+        {item.label && <p className="text-sm text-pretty text-muted-foreground">{item.label}</p>}
         <p className="text-xs text-muted-foreground">
           {formatCount(item.capacity, "spot")} per class
           {item.maxUpcomingBooked > 0
@@ -341,7 +320,7 @@ function WindowRow({ item }: { item: ScheduleWindowItem }) {
 
         {item.onCalendar ? (
           <p className="max-w-prose text-xs text-pretty text-muted-foreground">
-            Already on your calendar, so it cannot be deleted. Turn it off to stop offering it.
+            Individual dates have already been created for this class time, so it cannot be deleted.
           </p>
         ) : (
           <ItemActionForm
@@ -363,7 +342,7 @@ function WindowRow({ item }: { item: ScheduleWindowItem }) {
           />
         )}
       </div>
-    </li>
+    </div>
   );
 }
 

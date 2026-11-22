@@ -175,7 +175,10 @@ function OfferingRow({
           {offering.active && offering.activeWindowCount === 0 ? (
             <p className="text-xs text-pretty text-muted-foreground">
               Offered, but not bookable yet — add a weekly class time.{" "}
-              <Link href={sectionHref("schedule")} className="underline-offset-4 hover:underline">
+              <Link
+                href={`${sectionHref("schedule")}&offering=${encodeURIComponent(offering.id)}`}
+                className="underline-offset-4 hover:underline"
+              >
                 Add a class time
               </Link>
             </p>
