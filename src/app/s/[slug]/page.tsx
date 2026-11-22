@@ -25,7 +25,11 @@ export default async function PublicSchoolPage({
     <main className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-6 px-4 py-8">
       <LandingSession slug={school.slug} preview={isPreview || !published} />
       {school.logoUrl ? (
-        <img src={school.logoUrl} alt={`${school.name} logo`} className="h-12 w-auto" />
+        <img
+          src={school.logoUrl}
+          alt={`${school.name} logo`}
+          className="h-auto max-h-24 w-auto max-w-full self-start object-contain object-left"
+        />
       ) : null}
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">{school.name}</h1>

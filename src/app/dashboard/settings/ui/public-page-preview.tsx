@@ -38,11 +38,9 @@ export function PublicPagePreview({
             <img
               src={validLogo}
               alt={`${schoolName} logo`}
-              width={120}
-              height={40}
               loading="lazy"
               onError={() => setLogoFailed(true)}
-              className="h-10 w-auto max-w-preview-logo object-contain object-left"
+              className="h-auto max-h-24 w-auto max-w-preview-logo self-start object-contain object-left"
             />
           ) : (
             <div className="flex h-10 items-center rounded-md border border-dashed border-page-300 px-3 text-xs text-page-500">
