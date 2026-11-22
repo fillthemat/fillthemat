@@ -57,7 +57,7 @@ enabled = true
 enabled = true
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
-# Seeds run after public-schema migrations: Auth first, then the demo school,
+# Seeds run after public-schema migrations: Auth first, then the OpenMat school,
 # its owner-editable settings, trial schedule, booking, and lead.
 sql_paths = ["./seeds/*.sql"]
 

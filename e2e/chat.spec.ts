@@ -45,7 +45,7 @@ test("the message-limit refusal is a notice and the next message can start afres
       ].join("\n\n"),
     });
   });
-  await page.goto("/s/demo?preview=1");
+  await page.goto("/s/openmat?preview=1");
   await expect(page.getByText("Earlier conversation", { exact: true })).toBeVisible();
   const input = page.getByPlaceholder("Ask about classes or times");
   await input.fill("The refused question");

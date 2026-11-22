@@ -103,7 +103,7 @@ test("a valid save reports success and clears the unsaved state", async ({ page 
 test("updating spots confirms the save and leaves no unsaved state", async ({ page }) => {
   await page.goto("/dashboard/settings?section=schedule");
   await page
-    .getByRole("button", { name: /Kids beginner trial.*6:00 PM/ })
+    .getByRole("button", { name: /Kids BJJ \(4-9\).*4:45 PM/ })
     .first()
     .click();
   const row = page.getByRole("dialog");
@@ -226,7 +226,7 @@ test("walkthrough: schedule a Chalk class every Tuesday", async ({ page }, testI
       await expect(card).toHaveCount(0);
     });
   } finally {
-    await sql`delete from public.trial_offerings where name = ${name} and school_id = (select id from public.schools where slug = 'demo')`;
+    await sql`delete from public.trial_offerings where name = ${name} and school_id = (select id from public.schools where slug = 'openmat')`;
     await sql.end();
   }
 });
@@ -236,7 +236,7 @@ test("a trial class can be edited, saved, reloaded, and edited again", async ({ 
   const row = page
     .getByRole("region", { name: "Your trial classes" })
     .getByRole("listitem")
-    .filter({ hasText: "Kids beginner trial" })
+    .filter({ hasText: "Kids BJJ (4-9)" })
     .first();
   await row.getByRole("button", { name: "Edit" }).click();
 
@@ -273,7 +273,7 @@ test("cancel on a clean editor closes immediately without asking", async ({ page
   const row = page
     .getByRole("region", { name: "Your trial classes" })
     .getByRole("listitem")
-    .filter({ hasText: "Kids beginner trial" })
+    .filter({ hasText: "Kids BJJ (4-9)" })
     .first();
   await row.getByRole("button", { name: "Edit" }).click();
   const editor = page.getByRole("dialog");
