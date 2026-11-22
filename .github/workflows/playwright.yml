@@ -39,6 +39,7 @@ jobs:
         run: bun run test:e2e
 
       - name: Upload HTML report
+        id: html_report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
@@ -68,6 +69,8 @@ jobs:
             echo "No playwright-report/index.html; skipping Pages publish."
             exit 0
           fi
+          site=$(GH_TOKEN="$GITHUB_TOKEN" gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url)
+          report_url="${site%/}/$DEST/"
           work=$(mktemp -d)
           git clone --depth=1 --branch gh-pages \
             "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$work"
@@ -80,12 +83,14 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "Report unchanged."
+            echo "report_url=$report_url" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m "Playwright report ${DEST}"
           for attempt in 1 2 3 4 5 6; do
             if git pull --rebase origin gh-pages && git push origin gh-pages; then
               echo "Published ${DEST}"
+              echo "report_url=$report_url" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "Push race (attempt ${attempt}); retrying..."
@@ -98,14 +103,14 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REPORT_URL: https://jakegoodmandev.github.io/fillthemat/playwright/${{ github.event.pull_request.number || github.run_id }}/
+          REPORT_URL: ${{ steps.pages.outputs.report_url }}
         run: |
           {
             echo "## Playwright"
             echo ""
             echo "Status: **${{ steps.playwright.outcome || job.status }}**"
             echo ""
-            if [ "$GITHUB_EVENT_NAME" != "merge_group" ]; then
+            if [ -n "$REPORT_URL" ]; then
               echo "Visual report (screenshots + traces in the browser):"
               echo ""
               echo "${REPORT_URL}"
@@ -125,7 +130,8 @@ jobs:
         uses: actions/github-script@v9
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REPORT_URL: https://jakegoodmandev.github.io/fillthemat/playwright/${{ github.event.pull_request.number }}/
+          REPORT_URL: ${{ steps.pages.outputs.report_url }}
+          ARTIFACT_URL: ${{ steps.html_report.outputs.artifact-url }}
         with:
           script: |
             const fs = require("fs");
@@ -157,12 +163,13 @@ jobs:
               "## Playwright e2e",
               "",
               `**${passed ? "Passed" : "Failed"}** · [workflow run](${runUrl})`,
-              "",
-              `**Visual report:** ${reportUrl}`,
-              "",
-              "Click a test, then Screenshot or Trace to inspect the UI in the browser.",
-              "No download needed.",
             ];
+            if (reportUrl) {
+              lines.push("", `**[Visual report](${reportUrl})** · Open a test to see its screenshots and trace.`);
+            }
+            if (process.env.ARTIFACT_URL) {
+              lines.push("", `[Download the HTML report](${process.env.ARTIFACT_URL}) (available immediately).`);
+            }
             if (failed.length > 0) {
               lines.push("", "Failed tests:", ...failed.map((title) => `- ${title}`));
             }
