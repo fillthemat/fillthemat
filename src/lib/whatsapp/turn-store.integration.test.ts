@@ -46,7 +46,7 @@ beforeAll(async () => {
     await sql`INSERT INTO public.trial_windows (school_id, trial_offering_id, day_of_week, start_minute, duration_minutes, capacity)
     VALUES (${schoolId}, ${offeringId}, 1, 600, 60, 5) RETURNING id`;
   slotId = encodeSlotId(requireRow(window, "window").id, new Date(now.getTime() + 24 * 3600_000));
-  await sql`UPDATE public.school_settings SET whatsapp_phone_number_id = ${phone} WHERE school_id = ${schoolId}`;
+  await sql`INSERT INTO public.whatsapp_connections (school_id, phone_number_id, state) VALUES (${schoolId}, ${phone}, 'live')`;
 });
 afterAll(async () => {
   await sql`DELETE FROM public.whatsapp_jobs WHERE phone_number_id = ${phone}`;
@@ -525,7 +525,7 @@ it("draft school fails permanently without a conversation or apology", async () 
     name: "Draft",
     offerings: [],
   });
-  await sql`UPDATE public.school_settings SET whatsapp_phone_number_id = ${draftPhone} WHERE school_id = ${draft.schoolId}`;
+  await sql`INSERT INTO public.whatsapp_connections (school_id, phone_number_id, state) VALUES (${draft.schoolId}, ${draftPhone}, 'live')`;
   try {
     const wamid = randomUUID();
     await POST(post(textInboundPayload({ phoneNumberId: draftPhone, waId: randomUUID(), wamid })));

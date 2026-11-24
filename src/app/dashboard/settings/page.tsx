@@ -1,8 +1,14 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { requireSchool } from "@/lib/auth/current-school";
 import { listTimezones } from "@/lib/timezones";
+import {
+  whatsappApiVersion,
+  whatsappAppId,
+  whatsappEmbeddedSignupConfigId,
+  whatsappSignupConfigured,
+} from "@/lib/whatsapp/config";
 import { formatTimezone, serializeTimestamp } from "./format";
-import { loadFaqs, loadOfferings, loadWindows } from "./queries";
+import { loadFaqs, loadOfferings, loadWhatsAppConnection, loadWindows } from "./queries";
 import { resolveSection, type SectionId, sectionMeta } from "./sections";
 import { AgentSection } from "./sections/agent-section";
 import { BrandingSection } from "./sections/branding-section";
@@ -11,6 +17,7 @@ import { OfferingsSection } from "./sections/offerings-section";
 import { PricingSection } from "./sections/pricing-section";
 import { ProfileSection } from "./sections/profile-section";
 import { ScheduleSection } from "./sections/schedule-section";
+import { WhatsAppSection } from "./sections/whatsapp-section";
 import { SettingsShell } from "./settings-shell";
 
 export default async function SettingsPage({
@@ -55,6 +62,24 @@ async function SectionContent({
   school: Awaited<ReturnType<typeof requireSchool>>["school"];
   location: string | null;
 }) {
+  if (section === "whatsapp") {
+    return (
+      <WhatsAppSection
+        appId={whatsappAppId()}
+        configId={whatsappEmbeddedSignupConfigId()}
+        apiVersion={whatsappApiVersion()}
+        configured={whatsappSignupConfigured()}
+        eligible={Boolean(school.approved_at && school.published_at)}
+        connection={await loadWhatsAppConnection(schoolId)}
+        business={{
+          name: school.name,
+          email: school.notification_email,
+          website: school.website ?? "",
+          country: school.country,
+        }}
+      />
+    );
+  }
   if (section === "profile") {
     const published = school.published_at != null;
     return (

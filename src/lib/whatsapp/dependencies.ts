@@ -1,12 +1,15 @@
 import { sendWhatsAppInteractive, sendWhatsAppTemplate, sendWhatsAppText } from "./client";
+import { connectionTransport } from "./connection-transport";
 
 export type WhatsAppTransport = {
-  sendText: (input: Parameters<typeof sendWhatsAppText>[0]) => ReturnType<typeof sendWhatsAppText>;
+  sendText: (
+    input: Parameters<typeof sendWhatsAppText>[0] & { schoolId: string },
+  ) => ReturnType<typeof sendWhatsAppText>;
   sendTemplate: (
-    input: Parameters<typeof sendWhatsAppTemplate>[0],
+    input: Parameters<typeof sendWhatsAppTemplate>[0] & { schoolId: string },
   ) => ReturnType<typeof sendWhatsAppTemplate>;
   sendInteractive: (
-    input: Parameters<typeof sendWhatsAppInteractive>[0],
+    input: Parameters<typeof sendWhatsAppInteractive>[0] & { schoolId: string },
   ) => ReturnType<typeof sendWhatsAppInteractive>;
 };
 
@@ -22,11 +25,7 @@ export function whatsappWorkerDependencies(
   overrides: Partial<WhatsAppWorkerDependencies> = {},
 ): WhatsAppWorkerDependencies {
   return {
-    transport: {
-      sendText: sendWhatsAppText,
-      sendTemplate: sendWhatsAppTemplate,
-      sendInteractive: sendWhatsAppInteractive,
-    },
+    transport: connectionTransport,
     now: () => new Date(),
     sleep,
     ...overrides,

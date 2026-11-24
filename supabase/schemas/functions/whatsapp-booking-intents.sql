@@ -19,11 +19,11 @@ DECLARE
     v_delivery uuid;
 BEGIN
     -- Same lock order as Turn supersession: conversation, then intent.
-    PERFORM 1 FROM public.conversations c JOIN public.school_settings s ON s.school_id = c.school_id
+    PERFORM 1 FROM public.conversations c JOIN public.whatsapp_connections s ON s.school_id = c.school_id
         JOIN public.schools school ON school.id = c.school_id
     WHERE c.id = p_conversation_id AND c.school_id = p_school_id AND c.wa_id_hash = v_hash
         AND c.ended_at IS NULL AND c.generating_at = p_generation
-        AND s.whatsapp_phone_number_id = p_phone_number_id
+        AND s.phone_number_id = p_phone_number_id AND s.state = 'live'
         AND school.approved_at IS NOT NULL AND school.published_at IS NOT NULL FOR UPDATE OF c;
     IF NOT FOUND THEN RAISE EXCEPTION 'generation_or_scope_lost' USING ERRCODE = '22023'; END IF;
     delivery_ids := '{}';

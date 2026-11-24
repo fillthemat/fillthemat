@@ -789,8 +789,6 @@ export type Database = {
           previewed_at: string | null;
           school_id: string;
           updated_at: string;
-          whatsapp_phone_number_id: string | null;
-          whatsapp_waba_id: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -801,8 +799,6 @@ export type Database = {
           previewed_at?: string | null;
           school_id: string;
           updated_at?: string;
-          whatsapp_phone_number_id?: string | null;
-          whatsapp_waba_id?: string | null;
         };
         Update: {
           agent_instructions?: string | null;
@@ -812,8 +808,6 @@ export type Database = {
           previewed_at?: string | null;
           school_id?: string;
           updated_at?: string;
-          whatsapp_phone_number_id?: string | null;
-          whatsapp_waba_id?: string | null;
         };
         Relationships: [
           {
@@ -1122,6 +1116,84 @@ export type Database = {
             foreignKeyName: "whatsapp_booking_intents_school_id_fk";
             columns: ["school_id"];
             isOneToOne: false;
+            referencedRelation: "schools";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      whatsapp_connection_secrets: {
+        Row: {
+          encrypted_pin: string;
+          encrypted_token: string;
+          school_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          encrypted_pin: string;
+          encrypted_token: string;
+          school_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          encrypted_pin?: string;
+          encrypted_token?: string;
+          school_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_connection_secrets_school_id_fkey";
+            columns: ["school_id"];
+            isOneToOne: true;
+            referencedRelation: "whatsapp_connections";
+            referencedColumns: ["school_id"];
+          },
+        ];
+      };
+      whatsapp_connections: {
+        Row: {
+          created_at: string;
+          display_phone_number: string | null;
+          failure_code: string | null;
+          number_source: string;
+          phone_number_id: string | null;
+          school_id: string;
+          state: string;
+          updated_at: string;
+          verified_name: string | null;
+          waba_id: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          display_phone_number?: string | null;
+          failure_code?: string | null;
+          number_source?: string;
+          phone_number_id?: string | null;
+          school_id: string;
+          state?: string;
+          updated_at?: string;
+          verified_name?: string | null;
+          waba_id?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          display_phone_number?: string | null;
+          failure_code?: string | null;
+          number_source?: string;
+          phone_number_id?: string | null;
+          school_id?: string;
+          state?: string;
+          updated_at?: string;
+          verified_name?: string | null;
+          waba_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_connections_school_id_fkey";
+            columns: ["school_id"];
+            isOneToOne: true;
             referencedRelation: "schools";
             referencedColumns: ["id"];
           },
@@ -1506,6 +1578,10 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      claim_whatsapp_signup: {
+        Args: { p_phone_number_id: string; p_school_id: string };
+        Returns: string;
+      };
       commit_whatsapp_turn: {
         Args: {
           p_conversation_id: string;
@@ -1660,6 +1736,18 @@ export type Database = {
         };
         Returns: string;
       };
+      finish_whatsapp_signup: {
+        Args: {
+          p_display_phone_number: string;
+          p_encrypted_pin: string;
+          p_encrypted_token: string;
+          p_phone_number_id: string;
+          p_school_id: string;
+          p_verified_name: string;
+          p_waba_id: string;
+        };
+        Returns: undefined;
+      };
       get_overview_metrics: {
         Args: { p_now?: string; p_school_id: string };
         Returns: {
@@ -1803,6 +1891,10 @@ export type Database = {
       resolve_whatsapp_conversation: {
         Args: { p_now: string; p_school_id: string; p_token_hash: string; p_wa_id_hash: string };
         Returns: string;
+      };
+      set_whatsapp_signup_state: {
+        Args: { p_failure_code?: string; p_school_id: string; p_state: string };
+        Returns: boolean;
       };
       start_email_delivery: {
         Args: { p_attempts: number; p_claimed_at: string; p_claimed_by: string; p_id: string };

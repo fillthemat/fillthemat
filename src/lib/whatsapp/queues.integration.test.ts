@@ -61,7 +61,7 @@ beforeAll(async () => {
     offerings: [{ name: "Trial" }],
   });
   schoolId = school.schoolId;
-  await sql`UPDATE public.school_settings SET whatsapp_phone_number_id = ${phone} WHERE school_id = ${schoolId}`;
+  await sql`INSERT INTO public.whatsapp_connections (school_id, phone_number_id, state) VALUES (${schoolId}, ${phone}, 'live')`;
   const contact = requireRow(
     (
       await sql`INSERT INTO public.contacts (school_id, name, email, phone) VALUES (${schoolId}, 'Guest', 'guest@local.test', '15550000001') RETURNING id`
@@ -849,7 +849,7 @@ it("public book_trial IDs support confirmation death and receipt cancellation ho
 it("platform functions are service_role-only invokers with empty search_path", async () => {
   const functions =
     await sql`SELECT oid::regprocedure::text AS signature, proname, prosecdef, proconfig FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND (proname LIKE '%whatsapp%' AND proname NOT LIKE '%booking%')`;
-  expect(functions.length).toBe(12);
+  expect(functions.length).toBe(15);
   for (const fn of functions) {
     expect(fn.prosecdef).toBe(false);
     expect(fn.proconfig).toContain('search_path=""');

@@ -15,11 +15,16 @@ WITH seeded_school AS (
     ON CONFLICT (id) DO UPDATE SET approved_at = coalesce(public.schools.approved_at, now())
     RETURNING id
 )
-INSERT INTO public.school_settings (school_id, owner_user_id, notification_email, whatsapp_phone_number_id)
-SELECT s.id, u.id, 'owner@local.test', '106500000000000'
+INSERT INTO public.school_settings (school_id, owner_user_id, notification_email)
+SELECT s.id, u.id, 'owner@local.test'
 FROM seeded_school s CROSS JOIN auth.users u
 WHERE lower(u.email) = 'owner@local.test'
-ON CONFLICT (school_id) DO UPDATE SET whatsapp_phone_number_id = EXCLUDED.whatsapp_phone_number_id;
+ON CONFLICT (school_id) DO NOTHING;
+
+INSERT INTO public.whatsapp_connections (school_id, phone_number_id, state)
+SELECT school_id, '106500000000000', 'live' FROM public.school_settings
+WHERE owner_user_id IN (SELECT id FROM auth.users WHERE lower(email) = 'owner@local.test')
+ON CONFLICT (school_id) DO UPDATE SET phone_number_id = EXCLUDED.phone_number_id, state = 'live';
 
 INSERT INTO public.school_profiles (
     school_id, name, city, address, phone, country, welcome_message

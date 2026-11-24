@@ -1,11 +1,11 @@
 import { after } from "next/server";
 import { randomUUID } from "node:crypto";
-import { sendWhatsAppTypingIndicator } from "@/lib/whatsapp/client";
 import {
   WHATSAPP_MAX_BODY_BYTES,
   whatsappAppSecret,
   whatsappVerifyToken,
 } from "@/lib/whatsapp/config";
+import { sendConnectionTypingIndicator } from "@/lib/whatsapp/connection-transport";
 import { applyWhatsAppStatuses } from "@/lib/whatsapp/deliveries";
 import { enqueueInboundJobs } from "@/lib/whatsapp/jobs";
 import { parseInboundWhatsAppMessages } from "@/lib/whatsapp/parse";
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
   if (enqueued > 0) {
     await Promise.allSettled(
       messages.map((message) =>
-        sendWhatsAppTypingIndicator({
+        sendConnectionTypingIndicator({
           phoneNumberId: message.phoneNumberId,
           messageId: message.wamid,
         }),

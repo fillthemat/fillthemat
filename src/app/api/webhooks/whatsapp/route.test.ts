@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sendWhatsAppTypingIndicator } from "@/lib/whatsapp/client";
 import { WHATSAPP_STUB_APP_SECRET } from "@/lib/whatsapp/config";
+import { sendConnectionTypingIndicator as sendWhatsAppTypingIndicator } from "@/lib/whatsapp/connection-transport";
 import { applyWhatsAppStatuses } from "@/lib/whatsapp/deliveries";
 import { enqueueInboundJobs } from "@/lib/whatsapp/jobs";
 import { runWhatsAppWorkerOnce } from "@/lib/whatsapp/worker";
@@ -9,8 +9,8 @@ import { post, textInboundPayload } from "@/test/whatsapp-webhook";
 import { POST } from "./route";
 
 vi.mock("next/server", () => ({ after: vi.fn() }));
-vi.mock("@/lib/whatsapp/client", () => ({
-  sendWhatsAppTypingIndicator: vi.fn().mockResolvedValue(undefined),
+vi.mock("@/lib/whatsapp/connection-transport", () => ({
+  sendConnectionTypingIndicator: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/whatsapp/deliveries", () => ({
   applyWhatsAppStatuses: vi.fn(),

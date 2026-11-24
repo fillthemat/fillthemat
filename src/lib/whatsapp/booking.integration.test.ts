@@ -32,7 +32,7 @@ beforeAll(async () => {
     VALUES (${schoolId}, ${offeringId}, ${start.getUTCDay()}, 600, 60, 50) RETURNING id`;
   windowId = requireRow(window, "window").id;
   await sql`UPDATE public.schools SET timezone = 'UTC', published_at = ${now} WHERE id = ${schoolId}`;
-  await sql`UPDATE public.school_settings SET whatsapp_phone_number_id = ${phone} WHERE school_id = ${schoolId}`;
+  await sql`INSERT INTO public.whatsapp_connections (school_id, phone_number_id, state) VALUES (${schoolId}, ${phone}, 'live')`;
 });
 afterAll(async () => {
   await deletePublicSchoolOwner(sql, ownerId);
