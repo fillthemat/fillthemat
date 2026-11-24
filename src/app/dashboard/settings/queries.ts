@@ -6,11 +6,17 @@ export async function loadWhatsAppConnection(schoolId: string) {
     await createClient()
   )
     .from("whatsapp_connections")
-    .select("state, display_phone_number, failure_code")
+    .select("state, display_phone_number, failure_code, updated_at")
     .eq("school_id", schoolId)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  return data
+    ? {
+        ...data,
+        registeringStale:
+          data.state === "registering" && Date.parse(data.updated_at) < Date.now() - 10 * 60_000,
+      }
+    : null;
 }
 
 export async function loadOfferings(schoolId: string) {

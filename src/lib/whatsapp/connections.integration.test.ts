@@ -308,3 +308,85 @@ it("rejects a transport school mismatch without sending or resolving a token", a
     graph.mockRestore();
   }
 });
+
+async function abandonSignup() {
+  // Only fixture setup may bypass the timestamp trigger to simulate a dead process.
+  await sql.begin(async (tx) => {
+    await tx`ALTER TABLE public.whatsapp_connections DISABLE TRIGGER whatsapp_connections_set_updated_at`;
+    await tx`UPDATE public.whatsapp_connections SET state = 'registering',
+      updated_at = statement_timestamp() - interval '11 minutes' WHERE school_id = ${school}`;
+    await tx`ALTER TABLE public.whatsapp_connections ENABLE TRIGGER whatsapp_connections_set_updated_at`;
+  });
+}
+
+it("reclaims an abandoned signup, preserves the same number's PIN, and rejects a fresh claim", async () => {
+  await sql`UPDATE public.whatsapp_connections SET phone_number_id = ${phone} WHERE school_id = ${school}`;
+  await sql`INSERT INTO public.whatsapp_connection_secrets (school_id, encrypted_token, encrypted_pin)
+    VALUES (${school}, 'saved-token', 'saved-pin') ON CONFLICT (school_id)
+    DO UPDATE SET encrypted_token = EXCLUDED.encrypted_token, encrypted_pin = EXCLUDED.encrypted_pin`;
+  await abandonSignup();
+  const claim = () =>
+    createAdminClient()
+      .rpc("claim_whatsapp_signup", {
+        p_school_id: school,
+        p_phone_number_id: phone,
+      })
+      .throwOnError();
+  expect((await claim()).data).toBe("claimed");
+  const [row] =
+    await sql`SELECT state, updated_at > statement_timestamp() - interval '1 minute' AS fresh
+    FROM public.whatsapp_connections WHERE school_id = ${school}`;
+  expect(row).toMatchObject({ state: "registering", fresh: true });
+  const [secret] =
+    await sql`SELECT encrypted_pin FROM public.whatsapp_connection_secrets WHERE school_id = ${school}`;
+  expect(secret?.encrypted_pin).toBe("saved-pin");
+  expect((await claim()).data).toBe("signup_in_progress");
+});
+
+it("checks number ownership on stale reclaim and clears credentials only when the number changes", async () => {
+  await abandonSignup();
+  const conflict = await createAdminClient()
+    .rpc("claim_whatsapp_signup", {
+      p_school_id: school,
+      p_phone_number_id: otherPhone,
+    })
+    .throwOnError();
+  expect(conflict.data).toBe("phone_number_in_use");
+  const newPhone = randomUUID();
+  const reclaimed = await createAdminClient()
+    .rpc("claim_whatsapp_signup", {
+      p_school_id: school,
+      p_phone_number_id: newPhone,
+    })
+    .throwOnError();
+  expect(reclaimed.data).toBe("claimed");
+  expect(
+    await sql`SELECT school_id FROM public.whatsapp_connection_secrets WHERE school_id = ${school}`,
+  ).toHaveLength(0);
+  // A late completion from the abandoned, different-number attempt cannot go live.
+  const finish = (phoneNumberId: string) =>
+    createAdminClient().rpc("finish_whatsapp_signup", {
+      p_school_id: school,
+      p_phone_number_id: phoneNumberId,
+      p_waba_id: "123",
+      p_display_phone_number: "+15550000000",
+      p_verified_name: "Dojo",
+      p_encrypted_token: "new-token",
+      p_encrypted_pin: "new-pin",
+    });
+  expect((await finish(phone)).error?.message).toBe("signup_not_registering");
+  expect((await finish(newPhone)).error).toBeNull();
+  expect(await publicSchoolIdForPhone(newPhone)).toBe(school);
+});
+
+it("allows popup-state writes over abandoned registering claims, but not fresh ones", async () => {
+  for (const popup of ["popup", "cancelled", "popup-failed"] as const) {
+    await sql`UPDATE public.whatsapp_connections SET state = 'registering' WHERE school_id = ${school}`;
+    await expect(setWhatsAppSignupState(school, popup)).rejects.toThrow("signup_state_locked");
+    await abandonSignup();
+    await setWhatsAppSignupState(school, popup);
+    const [row] =
+      await sql`SELECT state FROM public.whatsapp_connections WHERE school_id = ${school}`;
+    expect(row?.state).toBe(popup);
+  }
+});

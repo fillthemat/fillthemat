@@ -44,6 +44,7 @@ export function WhatsAppSection({
     state: string;
     display_phone_number: string | null;
     failure_code: string | null;
+    registeringStale: boolean;
   } | null;
   business: { name: string; email: string; website: string; country: string };
 }) {
@@ -209,7 +210,7 @@ export function WhatsAppSection({
           busy ||
           pending ||
           connection?.state === "live" ||
-          connection?.state === "registering"
+          (connection?.state === "registering" && !connection.registeringStale)
         }
       >
         {busy ? "Connecting…" : "Connect WhatsApp"}
