@@ -9,9 +9,10 @@ type DeliveryRow = Database["public"]["Tables"]["whatsapp_deliveries"]["Row"];
 /** Private inbound routing; never expose settings to a browser client. */
 export async function publicSchoolIdForPhone(phoneNumberId: string) {
   const { data } = await createAdminClient()
-    .from("school_settings")
+    .from("whatsapp_connections")
     .select("school_id")
-    .eq("whatsapp_phone_number_id", phoneNumberId)
+    .eq("phone_number_id", phoneNumberId)
+    .eq("state", "live")
     .maybeSingle()
     .throwOnError();
   return data?.school_id ?? null;

@@ -137,12 +137,7 @@ describe("public school and catalog RLS", () => {
         .eq("id", id("published"))
         .single();
       expect(error).toBeNull();
-      for (const field of [
-        "notification_email",
-        "agent_instructions",
-        "owner_user_id",
-        "whatsapp_phone_number_id",
-      ]) {
+      for (const field of ["notification_email", "agent_instructions", "owner_user_id"]) {
         expect(data).not.toHaveProperty(field);
         expect(data?.school_profiles).not.toHaveProperty(field);
       }

@@ -62,8 +62,8 @@ BEGIN
         WHERE kind = 'inbound_message' AND phone_number_id = NEW.phone_number_id
             AND payload->>'waId' = v_recipient AND created_at <= now();
     IF v_window IS NULL OR v_window <= now() THEN RETURN NEW; END IF;
-    SELECT school_id INTO v_school FROM public.school_settings
-        WHERE whatsapp_phone_number_id = NEW.phone_number_id
+    SELECT school_id INTO v_school FROM public.whatsapp_connections
+        WHERE phone_number_id = NEW.phone_number_id AND state = 'live'
             AND (NEW.school_id IS NULL OR school_id = NEW.school_id);
     IF v_school IS NOT NULL THEN
         PERFORM public.enqueue_whatsapp_delivery(v_school, v_recipient, NEW.phone_number_id,

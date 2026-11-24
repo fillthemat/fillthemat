@@ -1,6 +1,18 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 
+export async function loadWhatsAppConnection(schoolId: string) {
+  const { data, error } = await (
+    await createClient()
+  )
+    .from("whatsapp_connections")
+    .select("state, display_phone_number, failure_code")
+    .eq("school_id", schoolId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 export async function loadOfferings(schoolId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase

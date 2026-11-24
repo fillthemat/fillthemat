@@ -39,3 +39,26 @@ export function whatsappApiVersion(): string {
 export function whatsappGraphBase(): string {
   return (process.env.WHATSAPP_GRAPH_BASE || "https://graph.facebook.com").replace(/\/+$/, "");
 }
+
+export function whatsappAppId(): string | null {
+  return process.env.WHATSAPP_APP_ID || null;
+}
+
+export function whatsappEmbeddedSignupConfigId(): string | null {
+  return process.env.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID || null;
+}
+
+export function whatsappTokenEncryptionKey(): string | null {
+  return process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY || null;
+}
+
+export function whatsappSignupConfigured(): boolean {
+  const key = whatsappTokenEncryptionKey();
+  return Boolean(
+    whatsappAppId() &&
+    whatsappEmbeddedSignupConfigId() &&
+    process.env.WHATSAPP_APP_SECRET &&
+    key &&
+    Buffer.from(key, "base64").length === 32,
+  );
+}

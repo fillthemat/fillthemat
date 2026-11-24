@@ -75,7 +75,7 @@ it("does not let another owner update the school", async () => {
   });
 });
 
-it.each(["owner_user_id", "school_id", "whatsapp_phone_number_id"])(
+it.each(["owner_user_id", "school_id"])(
   "does not grant owners direct updates to private platform field %s",
   async (column) => {
     await expect(

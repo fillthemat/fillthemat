@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { WhatsAppSendOutcome } from "./client";
 import type { InboundWhatsAppStatus } from "./status";
 import { bookingConfirmationIsStale } from "./confirmation-delivery";
+import { markWhatsAppBrokenCard } from "./connections";
 import { type WhatsAppWorkerDependencies, whatsappWorkerDependencies } from "./dependencies";
 import { deliveryFromRow, updateDeliveryClaim, type WhatsAppDelivery } from "./queue-store";
 import { WHATSAPP_TEMPLATE_LANGUAGE } from "./templates";
@@ -392,6 +393,9 @@ export async function applyWhatsAppStatuses(
         p_now: now.toISOString(),
       })
       .throwOnError();
+    if (status.status === "failed" && code === 131042) {
+      for (const row of data ?? []) await markWhatsAppBrokenCard(row.phone_number_id);
+    }
     for (const row of data ?? [])
       if (row.state === "dead")
         logDeadTransition(deadEventFrom(row, "whatsapp_delivery", "status_callback"));

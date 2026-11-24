@@ -33,6 +33,26 @@ All optional. The app degrades cleanly without them.
 
 ## Checks
 
+### WhatsApp Embedded Signup
+
+Set `WHATSAPP_APP_ID`, `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID`, `WHATSAPP_APP_SECRET`
+and `WHATSAPP_TOKEN_ENCRYPTION_KEY` in `.env.local` (and the deployment environment).
+The encryption key must be 32 cryptographically random bytes, base64-encoded
+(for example, `openssl rand -base64 32`). Keep it stable and backed up; losing it
+makes stored business tokens and registration PINs unreadable. Never prefix these
+variables with `NEXT_PUBLIC_`; only the app/config IDs are passed as client props.
+Without this configuration the settings Connect button is disabled.
+
+Manual Meta setup: create a **Facebook Login for Business** configuration for
+WhatsApp Embedded Signup and copy its `config_id` into
+`WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID`. Add the deployment's domain to the app's
+allowed domains and login configuration. Assign the testing user an app role
+while the Meta app is in development mode. Configure the existing WhatsApp
+webhook URL, app secret and verify token. Fill the Mat must manually rent the
+school's phone number before the owner completes signup/verification. The school
+owns its business portfolio and WABA. Connect requires an approved, published
+school; no payment-method pre-check is performed.
+
 See [CODING_STANDARDS.md](/CODING_STANDARDS.md#quality-checks).
 
 For the native Supabase declarative schema workflow, see

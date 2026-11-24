@@ -192,7 +192,7 @@ outcomes can be rescued.
 AFTER UPDATE invoker hooks attach cross-outbox effects to the transition itself:
 job exhaustion atomically queues a deduplicated apology within the latest inbound
 receipt's 24-hour service window, resolving the school via private
-`school_settings.whatsapp_phone_number_id`; confirmation death atomically calls
+`whatsapp_connections.phone_number_id` for live connections; confirmation death atomically calls
 `enqueue_email_delivery` with the private notification address. Stale confirmations
 do not notify. Delivered/read removes only pending/failed, zero-execution owner
 notices; started/sent email cannot safely be recalled. Recovery uses the same hooks.

@@ -6,14 +6,9 @@ CREATE TABLE public.school_settings (
     notification_email text DEFAULT '' NOT NULL,
     agent_instructions text,
     previewed_at timestamptz,
-    whatsapp_phone_number_id text,
-    whatsapp_waba_id text,
     created_at timestamptz DEFAULT now() NOT NULL,
     updated_at timestamptz DEFAULT now() NOT NULL
 );
-
-CREATE UNIQUE INDEX school_settings_whatsapp_phone_number_id_unique
-ON public.school_settings (whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL;
 
 CREATE TRIGGER school_settings_set_updated_at
 BEFORE UPDATE ON public.school_settings
