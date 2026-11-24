@@ -23,6 +23,10 @@ function setup(failedStep = -1) {
     appId: () => "app-id",
     appSecret: () => "app-secret",
     encrypt: vi.fn((value: string, school: string) => `encrypted:${school}:${value}`),
+    decrypt: vi.fn().mockReturnValue("123456"),
+    claim: vi.fn().mockResolvedValue("claimed"),
+    loadPin: vi.fn().mockResolvedValue(null),
+    persistSecrets: vi.fn().mockResolvedValue(undefined),
     setState: vi.fn().mockResolvedValue(undefined),
     save: vi.fn().mockResolvedValue(undefined),
   };
@@ -31,7 +35,7 @@ function setup(failedStep = -1) {
 it("exchanges the code, reads the number, subscribes, registers and atomically saves live credentials", async () => {
   const dependencies = setup();
   expect(await completeSignup("school", input, dependencies)).toEqual({ ok: true });
-  expect(dependencies.setState).toHaveBeenCalledWith("school", "registering");
+  expect(dependencies.claim).toHaveBeenCalledWith("school", "123");
   const calls = dependencies.fetch.mock.calls;
   expect(calls).toHaveLength(4);
   expect(dependencies.save).toHaveBeenCalledWith(
@@ -114,4 +118,107 @@ it("records encryption configuration failures before exchanging the expiring cod
     "failed",
     "encryption_failed",
   );
+});
+
+it.each(["connection_live", "signup_in_progress", "phone_number_in_use"])(
+  "rejects %s before Graph calls or cleanup writes",
+  async (code) => {
+    const dependencies = setup();
+    dependencies.claim.mockResolvedValue(code);
+    expect(await completeSignup("school", input, dependencies)).toEqual({ ok: false, code });
+    expect(dependencies.fetch).not.toHaveBeenCalled();
+    expect(dependencies.setState).not.toHaveBeenCalled();
+  },
+);
+
+it("rejects a concurrent second completion without Graph calls or failing the first claim", async () => {
+  const dependencies = setup();
+  dependencies.claim.mockResolvedValueOnce("claimed").mockResolvedValueOnce("signup_in_progress");
+  expect(
+    await Promise.all([
+      completeSignup("school", input, dependencies),
+      completeSignup("school", input, dependencies),
+    ]),
+  ).toEqual([{ ok: true }, { ok: false, code: "signup_in_progress" }]);
+  expect(dependencies.fetch).toHaveBeenCalledTimes(4);
+  expect(dependencies.save).toHaveBeenCalledOnce();
+  expect(dependencies.setState).not.toHaveBeenCalled();
+});
+
+it("persists the PIN before register and reuses it after a failed final save", async () => {
+  const dependencies = setup();
+  dependencies.save.mockRejectedValueOnce(new Error("save_unavailable"));
+  let encryptedPin: string | null = null;
+  dependencies.loadPin.mockImplementation(async () => encryptedPin);
+  dependencies.persistSecrets.mockImplementation(async (_school, _token, pin) => {
+    encryptedPin = pin;
+  });
+  dependencies.decrypt.mockImplementation((value: string) => value.split(":")[2]!);
+  expect(await completeSignup("school", input, dependencies)).toEqual({
+    ok: false,
+    code: "save_connection_failed",
+  });
+  const firstPin = JSON.parse(String(dependencies.fetch.mock.calls[3]?.[1]?.body)).pin;
+  expect(dependencies.persistSecrets.mock.invocationCallOrder[0]).toBeLessThan(
+    dependencies.fetch.mock.invocationCallOrder[3]!,
+  );
+  // A new authorization code gets a fresh Graph sequence, but the same persisted PIN.
+  const nextFetch = setup().fetch;
+  dependencies.fetch = nextFetch;
+  expect(await completeSignup("school", input, dependencies)).toEqual({ ok: true });
+  expect(JSON.parse(String(nextFetch.mock.calls[3]?.[1]?.body)).pin).toBe(firstPin);
+});
+
+it("never registers a number when persisting its PIN fails", async () => {
+  const dependencies = setup();
+  dependencies.persistSecrets.mockRejectedValue(new Error("storage_unavailable"));
+  expect(await completeSignup("school", input, dependencies)).toEqual({
+    ok: false,
+    code: "persist_secrets_failed",
+  });
+  expect(dependencies.fetch).toHaveBeenCalledTimes(3);
+  expect(dependencies.save).not.toHaveBeenCalled();
+  expect(dependencies.setState).toHaveBeenCalledExactlyOnceWith(
+    "school",
+    "failed",
+    "persist_secrets_failed",
+  );
+});
+
+it("returns the original failure when cleanup also fails and logs only Graph codes", async () => {
+  const dependencies = setup();
+  dependencies.fetch.mockResolvedValue(
+    Response.json(
+      {
+        error: {
+          code: 100,
+          error_subcode: 33,
+          message: "secret-message-do-not-log",
+        },
+      },
+      { status: 400 },
+    ),
+  );
+  dependencies.setState.mockRejectedValue(new Error("cleanup_unavailable"));
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    expect(await completeSignup("school", input, dependencies)).toEqual({
+      ok: false,
+      code: "token_exchange_failed",
+    });
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "whatsapp_signup_failed",
+        schoolId: "school",
+        code: "token_exchange_failed",
+        graphCode: 100,
+        graphSubcode: 33,
+      }),
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /secret-message|one-use-code|app-secret|https:/,
+    );
+  } finally {
+    log.mockRestore();
+  }
 });

@@ -849,7 +849,7 @@ it("public book_trial IDs support confirmation death and receipt cancellation ho
 it("platform functions are service_role-only invokers with empty search_path", async () => {
   const functions =
     await sql`SELECT oid::regprocedure::text AS signature, proname, prosecdef, proconfig FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND (proname LIKE '%whatsapp%' AND proname NOT LIKE '%booking%')`;
-  expect(functions.length).toBe(13);
+  expect(functions.length).toBe(15);
   for (const fn of functions) {
     expect(fn.prosecdef).toBe(false);
     expect(fn.proconfig).toContain('search_path=""');

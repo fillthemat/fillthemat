@@ -1578,6 +1578,10 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      claim_whatsapp_signup: {
+        Args: { p_phone_number_id: string; p_school_id: string };
+        Returns: string;
+      };
       commit_whatsapp_turn: {
         Args: {
           p_conversation_id: string;
@@ -1887,6 +1891,10 @@ export type Database = {
       resolve_whatsapp_conversation: {
         Args: { p_now: string; p_school_id: string; p_token_hash: string; p_wa_id_hash: string };
         Returns: string;
+      };
+      set_whatsapp_signup_state: {
+        Args: { p_failure_code?: string; p_school_id: string; p_state: string };
+        Returns: boolean;
       };
       start_email_delivery: {
         Args: { p_attempts: number; p_claimed_at: string; p_claimed_by: string; p_id: string };

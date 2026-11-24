@@ -139,7 +139,8 @@ export function WhatsAppSection({
         (response) => {
           if (attempt.current !== current || current.submitted) return;
           const code = response.authResponse?.code;
-          if (!code) return failPopup("cancelled");
+          // CANCEL/ERROR messages carry the reason; the login callback does not.
+          if (!code) return;
           attempt.current.code = code;
           completeIfReady();
         },
@@ -199,7 +200,18 @@ export function WhatsAppSection({
           encryption key.
         </Callout>
       ) : null}
-      <Button onClick={connect} disabled={!eligible || !configured || !ready || busy || pending}>
+      <Button
+        onClick={connect}
+        disabled={
+          !eligible ||
+          !configured ||
+          !ready ||
+          busy ||
+          pending ||
+          connection?.state === "live" ||
+          connection?.state === "registering"
+        }
+      >
         {busy ? "Connecting…" : "Connect WhatsApp"}
       </Button>
       {busy ? (

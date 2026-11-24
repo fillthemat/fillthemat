@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Fetcher } from "@/lib/fetcher";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { whatsappApiVersion, whatsappAppId, whatsappGraphBase } from "./config";
-import { encryptWhatsAppSecret } from "./encryption";
+import { decryptWhatsAppSecret, encryptWhatsAppSecret } from "./encryption";
 
 const providerId = z.string().regex(/^\d+$/).max(100);
 export const signupInput = z.object({
@@ -22,13 +22,17 @@ type RegisteredConnection = SignupInput & {
 
 export async function setWhatsAppSignupState(
   schoolId: string,
-  state: "popup" | "cancelled" | "popup-failed" | "registering" | "failed",
+  state: "popup" | "cancelled" | "popup-failed" | "failed",
   failureCode: string | null = null,
 ) {
-  await createAdminClient()
-    .from("whatsapp_connections")
-    .upsert({ school_id: schoolId, state, failure_code: failureCode })
+  const { data } = await createAdminClient()
+    .rpc("set_whatsapp_signup_state", {
+      p_school_id: schoolId,
+      p_state: state,
+      p_failure_code: failureCode ?? undefined,
+    })
     .throwOnError();
+  if (!data && state !== "failed") throw new Error("signup_state_locked");
 }
 
 const defaultDependencies = {
@@ -36,6 +40,35 @@ const defaultDependencies = {
   appId: whatsappAppId,
   appSecret: () => process.env.WHATSAPP_APP_SECRET ?? null,
   encrypt: encryptWhatsAppSecret,
+  decrypt: decryptWhatsAppSecret,
+  claim: async (schoolId: string, phoneNumberId: string) => {
+    const { data } = await createAdminClient()
+      .rpc("claim_whatsapp_signup", {
+        p_school_id: schoolId,
+        p_phone_number_id: phoneNumberId,
+      })
+      .throwOnError();
+    return data;
+  },
+  loadPin: async (schoolId: string) => {
+    const { data } = await createAdminClient()
+      .from("whatsapp_connection_secrets")
+      .select("encrypted_pin")
+      .eq("school_id", schoolId)
+      .maybeSingle()
+      .throwOnError();
+    return data?.encrypted_pin ?? null;
+  },
+  persistSecrets: async (schoolId: string, encryptedToken: string, encryptedPin: string) => {
+    await createAdminClient()
+      .from("whatsapp_connection_secrets")
+      .upsert({
+        school_id: schoolId,
+        encrypted_token: encryptedToken,
+        encrypted_pin: encryptedPin,
+      })
+      .throwOnError();
+  },
   setState: setWhatsAppSignupState,
   save: async (schoolId: string, connection: RegisteredConnection) => {
     await createAdminClient()
@@ -65,9 +98,12 @@ export async function completeSignup(
   const appSecret = dependencies.appSecret();
   if (!appId || !appSecret) return { ok: false, code: "signup_unconfigured" };
   // Validate encryption configuration before exchanging the short-lived code.
-  const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const claim = await dependencies.claim(schoolId, parsed.data.phoneNumberId);
+  if (claim !== "claimed") return { ok: false, code: claim };
   const base = `${whatsappGraphBase()}/${whatsappApiVersion()}`;
   let step = "encryption";
+  let graphCode: number | null = null;
+  let graphSubcode: number | null = null;
   const request = async (path: string, token?: string, body?: Record<string, unknown>) => {
     const response = await dependencies.fetch(`${base}/${path}`, {
       method: body ? "POST" : "GET",
@@ -79,15 +115,29 @@ export async function completeSignup(
       signal: AbortSignal.timeout(10_000),
     });
     const json: unknown = await response.json();
+    const graphError = z
+      .object({
+        error: z.object({
+          code: z.number().optional(),
+          error_subcode: z.number().optional(),
+        }),
+      })
+      .safeParse(json);
+    if (graphError.success) {
+      graphCode = graphError.data.error.code ?? null;
+      graphSubcode = graphError.data.error.error_subcode ?? null;
+    }
     if (!response.ok || (json && typeof json === "object" && "error" in json)) {
       throw new Error("graph_rejected");
     }
     return json;
   };
   try {
-    const encryptedPin = dependencies.encrypt(pin, schoolId);
-    step = "save_registering";
-    await dependencies.setState(schoolId, "registering");
+    const storedPin = await dependencies.loadPin(schoolId);
+    const pin = storedPin
+      ? dependencies.decrypt(storedPin, schoolId)
+      : String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const encryptedPin = storedPin ?? dependencies.encrypt(pin, schoolId);
     step = "token_exchange";
     const query = new URLSearchParams({
       client_id: appId,
@@ -110,6 +160,9 @@ export async function completeSignup(
     z.object({ success: z.literal(true) }).parse(
       await request(`${parsed.data.wabaId}/subscribed_apps`, token, {}),
     );
+    step = "persist_secrets";
+    const encryptedToken = dependencies.encrypt(token, schoolId);
+    await dependencies.persistSecrets(schoolId, encryptedToken, encryptedPin);
     step = "register";
     z.object({ success: z.literal(true) }).parse(
       await request(`${parsed.data.phoneNumberId}/register`, token, {
@@ -122,15 +175,21 @@ export async function completeSignup(
       ...parsed.data,
       displayPhoneNumber: phone.display_phone_number,
       verifiedName: phone.verified_name,
-      encryptedToken: dependencies.encrypt(token, schoolId),
+      encryptedToken,
       encryptedPin,
     });
     return { ok: true };
   } catch {
     const code = `${step}_failed`;
     // Never log Graph URLs, access tokens, authorization codes or PINs.
-    console.error(JSON.stringify({ event: "whatsapp_signup_failed", schoolId, code }));
-    await dependencies.setState(schoolId, "failed", code);
+    console.error(
+      JSON.stringify({ event: "whatsapp_signup_failed", schoolId, code, graphCode, graphSubcode }),
+    );
+    try {
+      await dependencies.setState(schoolId, "failed", code);
+    } catch {
+      console.error(JSON.stringify({ event: "whatsapp_signup_cleanup_failed", schoolId, code }));
+    }
     return { ok: false, code };
   }
 }

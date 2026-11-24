@@ -223,6 +223,7 @@ export async function sendWhatsAppDelivery(
   delivery = deliveryFromRow(data[0]);
   let outcome: WhatsAppSendOutcome;
   const common = {
+    schoolId: delivery.schoolId,
     phoneNumberId: delivery.phoneNumberId,
     to: delivery.recipientWaId,
     callbackData: `${delivery.id}:${delivery.attempts}`,

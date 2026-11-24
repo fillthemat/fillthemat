@@ -13,6 +13,7 @@ import { connectionTransport, sendConnectionTypingIndicator } from "./connection
 import { liveWhatsAppConnection, resolveWhatsAppToken } from "./connections";
 import { encryptWhatsAppSecret } from "./encryption";
 import { publicSchoolIdForPhone } from "./queue-store";
+import { setWhatsAppSignupState } from "./signup";
 
 vi.mock("server-only", () => ({}));
 loadLocalEnv();
@@ -120,7 +121,7 @@ it("commits secrets with live state and resolves the business token for all four
     }
     return originalFetch(url, init);
   });
-  const common = { phoneNumberId: phone, to: "15550000000" };
+  const common = { schoolId: school, phoneNumberId: phone, to: "15550000000" };
   try {
     expect((await connectionTransport.sendText({ ...common, text: "Hello" })).ok).toBe(true);
     expect(
@@ -162,7 +163,7 @@ it("payment error 131042 moves the connection to broken-card and stops subsequen
     return originalFetch(url, init);
   });
   try {
-    const input = { phoneNumberId: phone, to: "15550000000", text: "Hello" };
+    const input = { schoolId: school, phoneNumberId: phone, to: "15550000000", text: "Hello" };
     expect(await connectionTransport.sendText(input)).toMatchObject({ ok: false, code: 131042 });
     const [row] =
       await sql`SELECT state, failure_code FROM public.whatsapp_connections WHERE school_id = ${school}`;
@@ -209,4 +210,101 @@ it("the generated migration backfills pilot IDs as live/rented before dropping o
       },
     ]);
   });
+});
+
+it("guards popup and failure transitions for live/registering connections, including direct library calls", async () => {
+  for (const state of ["live", "registering"]) {
+    await sql`UPDATE public.whatsapp_connections SET state = ${state} WHERE school_id = ${school}`;
+    for (const popup of ["popup", "cancelled", "popup-failed"] as const) {
+      await expect(setWhatsAppSignupState(school, popup)).rejects.toThrow("signup_state_locked");
+    }
+    const [row] =
+      await sql`SELECT state FROM public.whatsapp_connections WHERE school_id = ${school}`;
+    expect(row?.state).toBe(state);
+  }
+  await setWhatsAppSignupState(school, "failed", "register_failed");
+  await setWhatsAppSignupState(school, "popup");
+  await setWhatsAppSignupState(school, "failed", "late_cleanup");
+  const [row] =
+    await sql`SELECT state FROM public.whatsapp_connections WHERE school_id = ${school}`;
+  expect(row?.state).toBe("popup");
+});
+
+it("atomically rejects a second signup claim and a phone owned by another school", async () => {
+  await sql`UPDATE public.whatsapp_connections SET state = 'off' WHERE school_id = ${school}`;
+  const claim = () =>
+    createAdminClient()
+      .rpc("claim_whatsapp_signup", {
+        p_school_id: school,
+        p_phone_number_id: phone,
+      })
+      .throwOnError();
+  const results = await Promise.all([claim(), claim()]);
+  expect(results.map((result) => result.data).sort()).toEqual(["claimed", "signup_in_progress"]);
+  await sql`UPDATE public.whatsapp_connections SET state = 'live' WHERE school_id = ${school}`;
+  expect((await claim()).data).toBe("connection_live");
+  await setWhatsAppSignupState(school, "failed", "late_cleanup");
+  expect(await publicSchoolIdForPhone(phone)).toBe(school);
+  await sql`UPDATE public.whatsapp_connections SET state = 'off' WHERE school_id = ${school}`;
+  const conflict = await createAdminClient()
+    .rpc("claim_whatsapp_signup", {
+      p_school_id: school,
+      p_phone_number_id: otherPhone,
+    })
+    .throwOnError();
+  expect(conflict.data).toBe("phone_number_in_use");
+});
+
+it("finish signup rejects every state other than registering without modifying secrets", async () => {
+  for (const state of [
+    "off",
+    "popup",
+    "cancelled",
+    "popup-failed",
+    "failed",
+    "live",
+    "broken-card",
+  ]) {
+    await sql`UPDATE public.whatsapp_connections SET state = ${state} WHERE school_id = ${school}`;
+    const { error } = await createAdminClient().rpc("finish_whatsapp_signup", {
+      p_school_id: school,
+      p_phone_number_id: phone,
+      p_waba_id: "123",
+      p_display_phone_number: "+15550000000",
+      p_verified_name: "Dojo",
+      p_encrypted_token: "must-not-save",
+      p_encrypted_pin: "must-not-save",
+    });
+    expect(error?.message).toBe("signup_not_registering");
+    const [row] =
+      await sql`SELECT encrypted_pin FROM public.whatsapp_connection_secrets WHERE school_id = ${school}`;
+    expect(row?.encrypted_pin).not.toBe("must-not-save");
+  }
+});
+
+it("rejects a transport school mismatch without sending or resolving a token", async () => {
+  await sql`UPDATE public.whatsapp_connections SET state = 'live' WHERE school_id = ${school}`;
+  const graph = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    if (String(url).includes("graph.facebook.com")) throw new Error("must_not_send");
+    return originalFetch(url, init);
+  });
+  try {
+    expect(
+      await connectionTransport.sendText({
+        schoolId: otherSchool,
+        phoneNumberId: phone,
+        to: "15550000000",
+        text: "Wrong school",
+      }),
+    ).toMatchObject({ ok: false, message: "whatsapp_connection_school_mismatch" });
+    expect(
+      graph.mock.calls.some(
+        ([url]) =>
+          String(url).includes("whatsapp_connection_secrets") ||
+          String(url).includes("graph.facebook.com"),
+      ),
+    ).toBe(false);
+  } finally {
+    graph.mockRestore();
+  }
 });
